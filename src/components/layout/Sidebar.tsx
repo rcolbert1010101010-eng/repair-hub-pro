@@ -10,13 +10,14 @@ import {
   Tags,
   Settings,
   ChevronLeft,
-  ChevronRight,
+  Menu,
   HardHat,
   ClipboardList,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { Button } from '@/components/ui/button';
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -37,63 +38,73 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <aside
-      className={cn(
-        'h-screen bg-sidebar border-r border-sidebar-border flex flex-col transition-all duration-300',
-        collapsed ? 'w-16' : 'w-64'
+    <>
+      {/* Floating toggle when collapsed */}
+      {collapsed && (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setCollapsed(false)}
+          className="fixed top-4 left-4 z-50 bg-card shadow-md border border-border hover:bg-accent"
+        >
+          <Menu className="w-5 h-5" />
+        </Button>
       )}
-    >
-      {/* Logo */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-sidebar-border">
-        {!collapsed && (
+
+      <aside
+        className={cn(
+          'h-screen bg-sidebar border-r border-sidebar-border flex flex-col transition-all duration-300',
+          collapsed ? 'w-0 overflow-hidden' : 'w-64'
+        )}
+      >
+        {/* Logo */}
+        <div className="h-16 flex items-center justify-between px-4 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
               <Wrench className="w-5 h-5 text-primary-foreground" />
             </div>
             <span className="font-semibold text-sidebar-foreground">ShopPro</span>
           </div>
-        )}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="p-1.5 rounded-md hover:bg-sidebar-accent transition-colors text-sidebar-foreground"
-        >
-          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-        </button>
-      </div>
+          <button
+            onClick={() => setCollapsed(true)}
+            className="p-1.5 rounded-md hover:bg-sidebar-accent transition-colors text-sidebar-foreground"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+        </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
-        {navItems.map((item) => {
-          const isActive = location.pathname === item.path || 
-            (item.path !== '/' && location.pathname.startsWith(item.path));
-          
-          return (
-            <Link
-              key={item.path}
-              to={item.path}
-              className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200',
-                isActive
-                  ? 'bg-sidebar-primary text-sidebar-primary-foreground'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
-              )}
-            >
-              <item.icon className={cn('w-5 h-5 flex-shrink-0', collapsed && 'mx-auto')} />
-              {!collapsed && <span className="font-medium">{item.label}</span>}
-            </Link>
-          );
-        })}
-      </nav>
+        {/* Navigation */}
+        <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
+          {navItems.map((item) => {
+            const isActive = location.pathname === item.path || 
+              (item.path !== '/' && location.pathname.startsWith(item.path));
+            
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200',
+                  isActive
+                    ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+                )}
+              >
+                <item.icon className="w-5 h-5 flex-shrink-0" />
+                <span className="font-medium">{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
 
-      {/* Footer with Theme Toggle */}
-      <div className="p-4 border-t border-sidebar-border flex items-center justify-between">
-        {!collapsed && (
+        {/* Footer with Theme Toggle */}
+        <div className="p-4 border-t border-sidebar-border flex items-center justify-between">
           <p className="text-xs text-sidebar-foreground/60">
             Heavy-Duty Repair
           </p>
-        )}
-        <ThemeToggle />
-      </div>
-    </aside>
+          <ThemeToggle />
+        </div>
+      </aside>
+    </>
   );
 }
