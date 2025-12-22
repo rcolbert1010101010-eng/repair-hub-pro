@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -84,14 +85,15 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Footer */}
-      {!collapsed && (
-        <div className="p-4 border-t border-sidebar-border">
-          <p className="text-xs text-muted-foreground text-center">
-            Heavy-Duty Repair Shop
+      {/* Footer with Theme Toggle */}
+      <div className="p-4 border-t border-sidebar-border flex items-center justify-between">
+        {!collapsed && (
+          <p className="text-xs text-sidebar-foreground/60">
+            Heavy-Duty Repair
           </p>
-        </div>
-      )}
+        )}
+        <ThemeToggle />
+      </div>
     </aside>
   );
 }

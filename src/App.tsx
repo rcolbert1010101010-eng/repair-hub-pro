@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { ThemeProvider } from "@/components/ThemeProvider";
 import { MainLayout } from "@/components/layout/MainLayout";
 import Dashboard from "@/pages/Dashboard";
 import Customers from "@/pages/Customers";
@@ -29,39 +30,41 @@ import NotFound from "@/pages/NotFound";
 const queryClient = new QueryClient();
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route element={<MainLayout />}>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/customers" element={<Customers />} />
-            <Route path="/customers/:id" element={<CustomerDetail />} />
-            <Route path="/units" element={<Units />} />
-            <Route path="/units/:id" element={<UnitForm />} />
-            <Route path="/vendors" element={<Vendors />} />
-            <Route path="/vendors/:id" element={<VendorDetail />} />
-            <Route path="/categories" element={<Categories />} />
-            <Route path="/categories/:id" element={<CategoryDetail />} />
-            <Route path="/inventory" element={<Inventory />} />
-            <Route path="/inventory/:id" element={<PartForm />} />
-            <Route path="/sales-orders" element={<SalesOrders />} />
-            <Route path="/sales-orders/:id" element={<SalesOrderDetail />} />
-            <Route path="/work-orders" element={<WorkOrders />} />
-            <Route path="/work-orders/:id" element={<WorkOrderDetail />} />
-            <Route path="/purchase-orders" element={<PurchaseOrders />} />
-            <Route path="/purchase-orders/:id" element={<PurchaseOrderDetail />} />
-            <Route path="/technicians" element={<Technicians />} />
-            <Route path="/technicians/:id" element={<TechnicianDetail />} />
-            <Route path="/settings" element={<Settings />} />
-          </Route>
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+  <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route element={<MainLayout />}>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/customers" element={<Customers />} />
+              <Route path="/customers/:id" element={<CustomerDetail />} />
+              <Route path="/units" element={<Units />} />
+              <Route path="/units/:id" element={<UnitForm />} />
+              <Route path="/vendors" element={<Vendors />} />
+              <Route path="/vendors/:id" element={<VendorDetail />} />
+              <Route path="/categories" element={<Categories />} />
+              <Route path="/categories/:id" element={<CategoryDetail />} />
+              <Route path="/inventory" element={<Inventory />} />
+              <Route path="/inventory/:id" element={<PartForm />} />
+              <Route path="/sales-orders" element={<SalesOrders />} />
+              <Route path="/sales-orders/:id" element={<SalesOrderDetail />} />
+              <Route path="/work-orders" element={<WorkOrders />} />
+              <Route path="/work-orders/:id" element={<WorkOrderDetail />} />
+              <Route path="/purchase-orders" element={<PurchaseOrders />} />
+              <Route path="/purchase-orders/:id" element={<PurchaseOrderDetail />} />
+              <Route path="/technicians" element={<Technicians />} />
+              <Route path="/technicians/:id" element={<TechnicianDetail />} />
+              <Route path="/settings" element={<Settings />} />
+            </Route>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  </ThemeProvider>
 );
 
 export default App;
