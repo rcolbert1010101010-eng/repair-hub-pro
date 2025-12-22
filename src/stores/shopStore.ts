@@ -65,6 +65,7 @@ interface ShopState {
   soUpdatePartQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
   soRemovePartLine: (lineId: string) => { success: boolean; error?: string };
   soInvoice: (orderId: string) => { success: boolean; error?: string };
+  updateSalesOrderNotes: (orderId: string, notes: string | null) => void;
   getSalesOrderLines: (orderId: string) => SalesOrderLine[];
 
   // Work Orders
@@ -80,6 +81,7 @@ interface ShopState {
   woRemoveLaborLine: (lineId: string) => { success: boolean; error?: string };
   woUpdateStatus: (orderId: string, status: 'IN_PROGRESS') => { success: boolean; error?: string };
   woInvoice: (orderId: string) => { success: boolean; error?: string };
+  updateWorkOrderNotes: (orderId: string, notes: string | null) => void;
   getWorkOrderPartLines: (orderId: string) => WorkOrderPartLine[];
   getWorkOrderLaborLines: (orderId: string) => WorkOrderLaborLine[];
   recalculateSalesOrderTotals: (orderId: string) => void;
@@ -447,6 +449,13 @@ export const useShopStore = create<ShopState>()(
       getSalesOrderLines: (orderId) =>
         get().salesOrderLines.filter((l) => l.sales_order_id === orderId),
 
+      updateSalesOrderNotes: (orderId, notes) =>
+        set((state) => ({
+          salesOrders: state.salesOrders.map((o) =>
+            o.id === orderId ? { ...o, notes, updated_at: now() } : o
+          ),
+        })),
+
       recalculateSalesOrderTotals: (orderId: string) => {
         const state = get();
         const lines = state.salesOrderLines.filter((l) => l.sales_order_id === orderId);
@@ -706,6 +715,13 @@ export const useShopStore = create<ShopState>()(
 
       getWorkOrderLaborLines: (orderId) =>
         get().workOrderLaborLines.filter((l) => l.work_order_id === orderId),
+
+      updateWorkOrderNotes: (orderId, notes) =>
+        set((state) => ({
+          workOrders: state.workOrders.map((o) =>
+            o.id === orderId ? { ...o, notes, updated_at: now() } : o
+          ),
+        })),
 
       recalculateWorkOrderTotals: (orderId: string) => {
         const state = get();

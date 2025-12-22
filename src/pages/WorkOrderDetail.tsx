@@ -20,12 +20,22 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useShopStore } from '@/stores/shopStore';
 import { useToast } from '@/hooks/use-toast';
-import { Save, Plus, Trash2, FileCheck, Printer, Play } from 'lucide-react';
-import { StatusBadge } from '@/components/ui/status-badge';
+import { Save, Plus, Trash2, FileCheck, Printer, Play, Edit, X } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
+import { PrintWorkOrder } from '@/components/print/PrintInvoice';
 
 export default function WorkOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -43,10 +53,10 @@ export default function WorkOrderDetail() {
     woUpdatePartQty,
     woRemovePartLine,
     woAddLaborLine,
-    woUpdateLaborLine,
     woRemoveLaborLine,
     woUpdateStatus,
     woInvoice,
+    updateWorkOrderNotes,
     addCustomer,
     addUnit,
   } = useShopStore();
@@ -72,6 +82,10 @@ export default function WorkOrderDetail() {
   const [newCustomerName, setNewCustomerName] = useState('');
   const [quickAddUnitOpen, setQuickAddUnitOpen] = useState(false);
   const [newUnitName, setNewUnitName] = useState('');
+
+  const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [notesValue, setNotesValue] = useState('');
+  const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
 
   const currentOrder = order || workOrders.find((o) => o.id === id);
   const activeCustomers = customers.filter((c) => c.is_active && c.id !== 'walkin');
@@ -180,6 +194,7 @@ export default function WorkOrderDetail() {
     const result = woInvoice(currentOrder.id);
     if (result.success) {
       toast({ title: 'Order Invoiced', description: 'Work order has been invoiced and locked' });
+      setShowInvoiceDialog(false);
     } else {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
@@ -218,6 +233,18 @@ export default function WorkOrderDetail() {
     setQuickAddUnitOpen(false);
     setNewUnitName('');
     toast({ title: 'Unit Added', description: `${newUnit.unit_name} created` });
+  };
+
+  const handleEditNotes = () => {
+    setNotesValue(currentOrder?.notes || '');
+    setIsEditingNotes(true);
+  };
+
+  const handleSaveNotes = () => {
+    if (!currentOrder) return;
+    updateWorkOrderNotes(currentOrder.id, notesValue.trim() || null);
+    setIsEditingNotes(false);
+    toast({ title: 'Notes Updated' });
   };
 
   const customer = customers.find((c) => c.id === (currentOrder?.customer_id || selectedCustomerId));
@@ -329,7 +356,7 @@ export default function WorkOrderDetail() {
         subtitle={currentOrder?.status === 'INVOICED' ? 'Invoiced' : currentOrder?.status === 'IN_PROGRESS' ? 'In Progress' : 'Open'}
         backTo="/work-orders"
         actions={
-          !isInvoiced && (
+          !isInvoiced ? (
             <>
               <Button variant="outline" onClick={() => window.print()}>
                 <Printer className="w-4 h-4 mr-2" />
@@ -341,16 +368,21 @@ export default function WorkOrderDetail() {
                   Start Work
                 </Button>
               )}
-              <Button onClick={handleInvoice}>
+              <Button onClick={() => setShowInvoiceDialog(true)}>
                 <FileCheck className="w-4 h-4 mr-2" />
                 Invoice
               </Button>
             </>
+          ) : (
+            <Button variant="outline" onClick={() => window.print()}>
+              <Printer className="w-4 h-4 mr-2" />
+              Print
+            </Button>
           )
         }
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 no-print">
         {/* Order Info */}
         <div className="form-section">
           <h2 className="text-lg font-semibold mb-4">Order Information</h2>
@@ -376,6 +408,40 @@ export default function WorkOrderDetail() {
                 <span className="text-muted-foreground">Invoiced:</span>
                 <p className="font-medium">{new Date(currentOrder.invoiced_at).toLocaleString()}</p>
               </div>
+            )}
+          </div>
+          
+          {/* Notes Section */}
+          <div className="mt-4 pt-4 border-t border-border">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-muted-foreground text-sm">Notes:</span>
+              {!isInvoiced && !isEditingNotes && (
+                <Button variant="ghost" size="sm" onClick={handleEditNotes}>
+                  <Edit className="w-3 h-3" />
+                </Button>
+              )}
+            </div>
+            {isEditingNotes ? (
+              <div className="space-y-2">
+                <Textarea
+                  value={notesValue}
+                  onChange={(e) => setNotesValue(e.target.value)}
+                  rows={3}
+                  placeholder="Add notes..."
+                />
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={handleSaveNotes}>
+                    <Save className="w-3 h-3 mr-1" />
+                    Save
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setIsEditingNotes(false)}>
+                    <X className="w-3 h-3 mr-1" />
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm">{currentOrder?.notes || '-'}</p>
             )}
           </div>
         </div>
@@ -544,6 +610,19 @@ export default function WorkOrderDetail() {
         </div>
       </div>
 
+      {/* Print Invoice */}
+      {currentOrder && (
+        <PrintWorkOrder
+          order={currentOrder}
+          partLines={partLines}
+          laborLines={laborLines}
+          customer={customer}
+          unit={unit}
+          parts={parts}
+          shopName={settings.shop_name}
+        />
+      )}
+
       {/* Add Part Dialog */}
       <QuickAddDialog
         open={addPartDialogOpen}
@@ -613,6 +692,25 @@ export default function WorkOrderDetail() {
           </div>
         </div>
       </QuickAddDialog>
+
+      {/* Invoice Confirmation Dialog */}
+      <AlertDialog open={showInvoiceDialog} onOpenChange={setShowInvoiceDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Invoice this Work Order?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently lock the order. No further changes can be made after invoicing.
+              Make sure all parts, labor, and quantities are correct.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleInvoice}>
+              Invoice Order
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
