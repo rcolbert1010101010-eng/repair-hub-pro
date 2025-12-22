@@ -19,6 +19,10 @@ import SalesOrders from "@/pages/SalesOrders";
 import SalesOrderDetail from "@/pages/SalesOrderDetail";
 import WorkOrders from "@/pages/WorkOrders";
 import WorkOrderDetail from "@/pages/WorkOrderDetail";
+import PurchaseOrders from "@/pages/PurchaseOrders";
+import PurchaseOrderDetail from "@/pages/PurchaseOrderDetail";
+import Technicians from "@/pages/Technicians";
+import TechnicianDetail from "@/pages/TechnicianDetail";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/NotFound";
 
@@ -47,6 +51,10 @@ const App = () => (
             <Route path="/sales-orders/:id" element={<SalesOrderDetail />} />
             <Route path="/work-orders" element={<WorkOrders />} />
             <Route path="/work-orders/:id" element={<WorkOrderDetail />} />
+            <Route path="/purchase-orders" element={<PurchaseOrders />} />
+            <Route path="/purchase-orders/:id" element={<PurchaseOrderDetail />} />
+            <Route path="/technicians" element={<Technicians />} />
+            <Route path="/technicians/:id" element={<TechnicianDetail />} />
             <Route path="/settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<NotFound />} />

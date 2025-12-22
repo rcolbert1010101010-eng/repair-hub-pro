@@ -44,6 +44,8 @@ export default function PartForm() {
     cost: part?.cost?.toString() || '',
     selling_price: part?.selling_price?.toString() || '',
     quantity_on_hand: part?.quantity_on_hand?.toString() || '0',
+    core_required: part?.core_required || false,
+    core_charge: part?.core_charge?.toString() || '0',
   });
 
   // Quick add dialogs
@@ -95,6 +97,8 @@ export default function PartForm() {
       cost: parseFloat(formData.cost) || 0,
       selling_price: parseFloat(formData.selling_price) || 0,
       quantity_on_hand: parseInt(formData.quantity_on_hand) || 0,
+      core_required: formData.core_required,
+      core_charge: parseFloat(formData.core_charge) || 0,
     };
 
     if (isNew) {

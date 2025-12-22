@@ -12,6 +12,11 @@ import type {
   WorkOrder,
   WorkOrderPartLine,
   WorkOrderLaborLine,
+  Technician,
+  TimeEntry,
+  PurchaseOrder,
+  PurchaseOrderLine,
+  ReceivingRecord,
 } from '@/types';
 
 // Generate unique IDs
@@ -57,6 +62,19 @@ interface ShopState {
   updatePart: (id: string, part: Partial<Part>) => void;
   deactivatePart: (id: string) => void;
 
+  // Technicians
+  technicians: Technician[];
+  addTechnician: (technician: Omit<Technician, 'id' | 'is_active' | 'created_at' | 'updated_at'>) => Technician;
+  updateTechnician: (id: string, technician: Partial<Technician>) => void;
+  deactivateTechnician: (id: string) => void;
+
+  // Time Entries
+  timeEntries: TimeEntry[];
+  clockIn: (technicianId: string, workOrderId: string) => { success: boolean; error?: string };
+  clockOut: (technicianId: string) => { success: boolean; error?: string };
+  getActiveTimeEntry: (technicianId: string) => TimeEntry | undefined;
+  getTimeEntriesByWorkOrder: (workOrderId: string) => TimeEntry[];
+
   // Sales Orders
   salesOrders: SalesOrder[];
   salesOrderLines: SalesOrderLine[];
@@ -64,6 +82,8 @@ interface ShopState {
   soAddPartLine: (orderId: string, partId: string, qty: number) => { success: boolean; error?: string };
   soUpdatePartQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
   soRemovePartLine: (lineId: string) => { success: boolean; error?: string };
+  soToggleWarranty: (lineId: string) => { success: boolean; error?: string };
+  soToggleCoreReturned: (lineId: string) => { success: boolean; error?: string };
   soInvoice: (orderId: string) => { success: boolean; error?: string };
   updateSalesOrderNotes: (orderId: string, notes: string | null) => void;
   getSalesOrderLines: (orderId: string) => SalesOrderLine[];
@@ -76,9 +96,12 @@ interface ShopState {
   woAddPartLine: (orderId: string, partId: string, qty: number) => { success: boolean; error?: string };
   woUpdatePartQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
   woRemovePartLine: (lineId: string) => { success: boolean; error?: string };
-  woAddLaborLine: (orderId: string, description: string, hours: number) => { success: boolean; error?: string };
+  woTogglePartWarranty: (lineId: string) => { success: boolean; error?: string };
+  woToggleCoreReturned: (lineId: string) => { success: boolean; error?: string };
+  woAddLaborLine: (orderId: string, description: string, hours: number, technicianId?: string) => { success: boolean; error?: string };
   woUpdateLaborLine: (lineId: string, description: string, hours: number) => { success: boolean; error?: string };
   woRemoveLaborLine: (lineId: string) => { success: boolean; error?: string };
+  woToggleLaborWarranty: (lineId: string) => { success: boolean; error?: string };
   woUpdateStatus: (orderId: string, status: 'IN_PROGRESS') => { success: boolean; error?: string };
   woInvoice: (orderId: string) => { success: boolean; error?: string };
   updateWorkOrderNotes: (orderId: string, notes: string | null) => void;
@@ -86,6 +109,20 @@ interface ShopState {
   getWorkOrderLaborLines: (orderId: string) => WorkOrderLaborLine[];
   recalculateSalesOrderTotals: (orderId: string) => void;
   recalculateWorkOrderTotals: (orderId: string) => void;
+
+  // Purchase Orders
+  purchaseOrders: PurchaseOrder[];
+  purchaseOrderLines: PurchaseOrderLine[];
+  receivingRecords: ReceivingRecord[];
+  createPurchaseOrder: (vendorId: string) => PurchaseOrder;
+  poAddLine: (orderId: string, partId: string, quantity: number) => { success: boolean; error?: string };
+  poUpdateLineQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
+  poRemoveLine: (lineId: string) => { success: boolean; error?: string };
+  poReceive: (lineId: string, quantity: number) => { success: boolean; error?: string };
+  poClose: (orderId: string) => { success: boolean; error?: string };
+  updatePurchaseOrderNotes: (orderId: string, notes: string | null) => void;
+  getPurchaseOrderLines: (orderId: string) => PurchaseOrderLine[];
+  getReceivingRecords: (lineId: string) => ReceivingRecord[];
 }
 
 const now = () => new Date().toISOString();
@@ -148,7 +185,6 @@ export const useShopStore = create<ShopState>()(
 
       deactivateCustomer: (id) => {
         const state = get();
-        // Check for active orders
         const hasActiveOrders =
           state.salesOrders.some((o) => o.customer_id === id && o.status !== 'INVOICED') ||
           state.workOrders.some((o) => o.customer_id === id && o.status !== 'INVOICED');
@@ -292,6 +328,129 @@ export const useShopStore = create<ShopState>()(
           ),
         })),
 
+      // Technicians
+      technicians: [],
+
+      addTechnician: (technician) => {
+        const newTechnician: Technician = {
+          ...technician,
+          id: generateId(),
+          is_active: true,
+          created_at: now(),
+          updated_at: now(),
+        };
+        set((state) => ({
+          technicians: [...state.technicians, newTechnician],
+        }));
+        return newTechnician;
+      },
+
+      updateTechnician: (id, technician) =>
+        set((state) => ({
+          technicians: state.technicians.map((t) =>
+            t.id === id ? { ...t, ...technician, updated_at: now() } : t
+          ),
+        })),
+
+      deactivateTechnician: (id) =>
+        set((state) => ({
+          technicians: state.technicians.map((t) =>
+            t.id === id ? { ...t, is_active: false, updated_at: now() } : t
+          ),
+        })),
+
+      // Time Entries
+      timeEntries: [],
+
+      clockIn: (technicianId, workOrderId) => {
+        const state = get();
+        
+        // Check if work order exists and is not invoiced
+        const workOrder = state.workOrders.find((wo) => wo.id === workOrderId);
+        if (!workOrder) return { success: false, error: 'Work order not found' };
+        if (workOrder.status === 'INVOICED') return { success: false, error: 'Cannot clock into invoiced order' };
+
+        // Check if technician is active
+        const technician = state.technicians.find((t) => t.id === technicianId);
+        if (!technician || !technician.is_active) return { success: false, error: 'Technician not found or inactive' };
+
+        // Auto clock-out from any current job
+        const activeEntry = state.timeEntries.find((te) => te.technician_id === technicianId && !te.clock_out);
+        if (activeEntry) {
+          const clockOutTime = now();
+          const clockInDate = new Date(activeEntry.clock_in);
+          const clockOutDate = new Date(clockOutTime);
+          const totalMinutes = Math.round((clockOutDate.getTime() - clockInDate.getTime()) / 60000);
+
+          set((state) => ({
+            timeEntries: state.timeEntries.map((te) =>
+              te.id === activeEntry.id
+                ? { ...te, clock_out: clockOutTime, total_minutes: totalMinutes, updated_at: now() }
+                : te
+            ),
+          }));
+
+          // Recalculate that work order
+          get().recalculateWorkOrderTotals(activeEntry.work_order_id);
+        }
+
+        // Create new time entry
+        const newEntry: TimeEntry = {
+          id: generateId(),
+          technician_id: technicianId,
+          work_order_id: workOrderId,
+          clock_in: now(),
+          clock_out: null,
+          total_minutes: 0,
+          created_at: now(),
+          updated_at: now(),
+        };
+
+        set((state) => ({
+          timeEntries: [...state.timeEntries, newEntry],
+        }));
+
+        // Auto-update work order status to IN_PROGRESS
+        if (workOrder.status === 'OPEN') {
+          set((state) => ({
+            workOrders: state.workOrders.map((wo) =>
+              wo.id === workOrderId ? { ...wo, status: 'IN_PROGRESS', updated_at: now() } : wo
+            ),
+          }));
+        }
+
+        return { success: true };
+      },
+
+      clockOut: (technicianId) => {
+        const state = get();
+        const activeEntry = state.timeEntries.find((te) => te.technician_id === technicianId && !te.clock_out);
+        
+        if (!activeEntry) return { success: false, error: 'No active clock-in found' };
+
+        const clockOutTime = now();
+        const clockInDate = new Date(activeEntry.clock_in);
+        const clockOutDate = new Date(clockOutTime);
+        const totalMinutes = Math.round((clockOutDate.getTime() - clockInDate.getTime()) / 60000);
+
+        set((state) => ({
+          timeEntries: state.timeEntries.map((te) =>
+            te.id === activeEntry.id
+              ? { ...te, clock_out: clockOutTime, total_minutes: totalMinutes, updated_at: now() }
+              : te
+          ),
+        }));
+
+        get().recalculateWorkOrderTotals(activeEntry.work_order_id);
+        return { success: true };
+      },
+
+      getActiveTimeEntry: (technicianId) =>
+        get().timeEntries.find((te) => te.technician_id === technicianId && !te.clock_out),
+
+      getTimeEntriesByWorkOrder: (workOrderId) =>
+        get().timeEntries.filter((te) => te.work_order_id === workOrderId),
+
       // Sales Orders
       salesOrders: [],
       salesOrderLines: [],
@@ -307,6 +466,7 @@ export const useShopStore = create<ShopState>()(
           notes: null,
           tax_rate: state.settings.default_tax_rate,
           subtotal: 0,
+          core_charges_total: 0,
           tax_amount: 0,
           total: 0,
           invoiced_at: null,
@@ -329,13 +489,11 @@ export const useShopStore = create<ShopState>()(
         const part = state.parts.find((p) => p.id === partId);
         if (!part) return { success: false, error: 'Part not found' };
 
-        // Check for existing line (merge)
         const existingLine = state.salesOrderLines.find(
           (l) => l.sales_order_id === orderId && l.part_id === partId
         );
 
         if (existingLine) {
-          // Merge quantities
           const newQty = existingLine.quantity + qty;
           const lineTotal = newQty * existingLine.unit_price;
           
@@ -352,14 +510,16 @@ export const useShopStore = create<ShopState>()(
             ),
           }));
         } else {
-          // Create new line
           const newLine: SalesOrderLine = {
             id: generateId(),
             sales_order_id: orderId,
             part_id: partId,
             quantity: qty,
-            unit_price: part.selling_price, // Snapshot price
+            unit_price: part.selling_price,
             line_total: qty * part.selling_price,
+            is_warranty: false,
+            core_charge: part.core_required ? part.core_charge : 0,
+            core_returned: false,
             created_at: now(),
             updated_at: now(),
           };
@@ -374,7 +534,6 @@ export const useShopStore = create<ShopState>()(
           }));
         }
 
-        // Recalculate order totals
         get().recalculateSalesOrderTotals(orderId);
         return { success: true };
       },
@@ -430,6 +589,44 @@ export const useShopStore = create<ShopState>()(
         return { success: true };
       },
 
+      soToggleWarranty: (lineId) => {
+        const state = get();
+        const line = state.salesOrderLines.find((l) => l.id === lineId);
+        if (!line) return { success: false, error: 'Line not found' };
+
+        const order = state.salesOrders.find((o) => o.id === line.sales_order_id);
+        if (!order) return { success: false, error: 'Order not found' };
+        if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
+
+        set((state) => ({
+          salesOrderLines: state.salesOrderLines.map((l) =>
+            l.id === lineId ? { ...l, is_warranty: !l.is_warranty, updated_at: now() } : l
+          ),
+        }));
+
+        get().recalculateSalesOrderTotals(line.sales_order_id);
+        return { success: true };
+      },
+
+      soToggleCoreReturned: (lineId) => {
+        const state = get();
+        const line = state.salesOrderLines.find((l) => l.id === lineId);
+        if (!line) return { success: false, error: 'Line not found' };
+
+        const order = state.salesOrders.find((o) => o.id === line.sales_order_id);
+        if (!order) return { success: false, error: 'Order not found' };
+        if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
+
+        set((state) => ({
+          salesOrderLines: state.salesOrderLines.map((l) =>
+            l.id === lineId ? { ...l, core_returned: !l.core_returned, updated_at: now() } : l
+          ),
+        }));
+
+        get().recalculateSalesOrderTotals(line.sales_order_id);
+        return { success: true };
+      },
+
       soInvoice: (orderId) => {
         const state = get();
         const order = state.salesOrders.find((o) => o.id === orderId);
@@ -459,17 +656,26 @@ export const useShopStore = create<ShopState>()(
       recalculateSalesOrderTotals: (orderId: string) => {
         const state = get();
         const lines = state.salesOrderLines.filter((l) => l.sales_order_id === orderId);
-        const subtotal = lines.reduce((sum, l) => sum + l.line_total, 0);
+        
+        // Calculate subtotal (warranty items are $0 to customer)
+        const subtotal = lines.reduce((sum, l) => sum + (l.is_warranty ? 0 : l.line_total), 0);
+        
+        // Calculate core charges (only for non-returned cores)
+        const core_charges_total = lines.reduce((sum, l) => 
+          sum + (l.core_charge > 0 && !l.core_returned ? l.core_charge * l.quantity : 0), 0
+        );
+        
         const order = state.salesOrders.find((o) => o.id === orderId);
         if (!order) return;
         
-        const tax_amount = subtotal * (order.tax_rate / 100);
-        const total = subtotal + tax_amount;
+        const taxableAmount = subtotal + core_charges_total;
+        const tax_amount = taxableAmount * (order.tax_rate / 100);
+        const total = taxableAmount + tax_amount;
 
         set((state) => ({
           salesOrders: state.salesOrders.map((o) =>
             o.id === orderId
-              ? { ...o, subtotal, tax_amount, total, updated_at: now() }
+              ? { ...o, subtotal, core_charges_total, tax_amount, total, updated_at: now() }
               : o
           ),
         }));
@@ -492,9 +698,11 @@ export const useShopStore = create<ShopState>()(
           tax_rate: state.settings.default_tax_rate,
           parts_subtotal: 0,
           labor_subtotal: 0,
+          core_charges_total: 0,
           subtotal: 0,
           tax_amount: 0,
           total: 0,
+          labor_cost: 0,
           invoiced_at: null,
           created_at: now(),
           updated_at: now(),
@@ -543,6 +751,9 @@ export const useShopStore = create<ShopState>()(
             quantity: qty,
             unit_price: part.selling_price,
             line_total: qty * part.selling_price,
+            is_warranty: false,
+            core_charge: part.core_required ? part.core_charge : 0,
+            core_returned: false,
             created_at: now(),
             updated_at: now(),
           };
@@ -612,14 +823,52 @@ export const useShopStore = create<ShopState>()(
         return { success: true };
       },
 
-      woAddLaborLine: (orderId, description, hours) => {
+      woTogglePartWarranty: (lineId) => {
+        const state = get();
+        const line = state.workOrderPartLines.find((l) => l.id === lineId);
+        if (!line) return { success: false, error: 'Line not found' };
+
+        const order = state.workOrders.find((o) => o.id === line.work_order_id);
+        if (!order) return { success: false, error: 'Order not found' };
+        if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
+
+        set((state) => ({
+          workOrderPartLines: state.workOrderPartLines.map((l) =>
+            l.id === lineId ? { ...l, is_warranty: !l.is_warranty, updated_at: now() } : l
+          ),
+        }));
+
+        get().recalculateWorkOrderTotals(line.work_order_id);
+        return { success: true };
+      },
+
+      woToggleCoreReturned: (lineId) => {
+        const state = get();
+        const line = state.workOrderPartLines.find((l) => l.id === lineId);
+        if (!line) return { success: false, error: 'Line not found' };
+
+        const order = state.workOrders.find((o) => o.id === line.work_order_id);
+        if (!order) return { success: false, error: 'Order not found' };
+        if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
+
+        set((state) => ({
+          workOrderPartLines: state.workOrderPartLines.map((l) =>
+            l.id === lineId ? { ...l, core_returned: !l.core_returned, updated_at: now() } : l
+          ),
+        }));
+
+        get().recalculateWorkOrderTotals(line.work_order_id);
+        return { success: true };
+      },
+
+      woAddLaborLine: (orderId, description, hours, technicianId) => {
         const state = get();
         const order = state.workOrders.find((o) => o.id === orderId);
         
         if (!order) return { success: false, error: 'Order not found' };
         if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
 
-        const rate = state.settings.default_labor_rate; // Snapshot rate
+        const rate = state.settings.default_labor_rate;
         const newLine: WorkOrderLaborLine = {
           id: generateId(),
           work_order_id: orderId,
@@ -627,6 +876,8 @@ export const useShopStore = create<ShopState>()(
           hours,
           rate,
           line_total: hours * rate,
+          is_warranty: false,
+          technician_id: technicianId || null,
           created_at: now(),
           updated_at: now(),
         };
@@ -677,6 +928,25 @@ export const useShopStore = create<ShopState>()(
         return { success: true };
       },
 
+      woToggleLaborWarranty: (lineId) => {
+        const state = get();
+        const line = state.workOrderLaborLines.find((l) => l.id === lineId);
+        if (!line) return { success: false, error: 'Line not found' };
+
+        const order = state.workOrders.find((o) => o.id === line.work_order_id);
+        if (!order) return { success: false, error: 'Order not found' };
+        if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
+
+        set((state) => ({
+          workOrderLaborLines: state.workOrderLaborLines.map((l) =>
+            l.id === lineId ? { ...l, is_warranty: !l.is_warranty, updated_at: now() } : l
+          ),
+        }));
+
+        get().recalculateWorkOrderTotals(line.work_order_id);
+        return { success: true };
+      },
+
       woUpdateStatus: (orderId, status) => {
         const state = get();
         const order = state.workOrders.find((o) => o.id === orderId);
@@ -699,6 +969,15 @@ export const useShopStore = create<ShopState>()(
         const order = state.workOrders.find((o) => o.id === orderId);
         if (!order) return { success: false, error: 'Order not found' };
         if (order.status === 'INVOICED') return { success: false, error: 'Order already invoiced' };
+
+        // Clock out all active technicians on this order
+        const activeEntries = state.timeEntries.filter(
+          (te) => te.work_order_id === orderId && !te.clock_out
+        );
+        
+        for (const entry of activeEntries) {
+          get().clockOut(entry.technician_id);
+        }
 
         set((state) => ({
           workOrders: state.workOrders.map((o) =>
@@ -727,10 +1006,30 @@ export const useShopStore = create<ShopState>()(
         const state = get();
         const partLines = state.workOrderPartLines.filter((l) => l.work_order_id === orderId);
         const laborLines = state.workOrderLaborLines.filter((l) => l.work_order_id === orderId);
+        const timeEntries = state.timeEntries.filter((te) => te.work_order_id === orderId);
         
-        const parts_subtotal = partLines.reduce((sum, l) => sum + l.line_total, 0);
-        const labor_subtotal = laborLines.reduce((sum, l) => sum + l.line_total, 0);
-        const subtotal = parts_subtotal + labor_subtotal;
+        // Parts: warranty items are $0 to customer
+        const parts_subtotal = partLines.reduce((sum, l) => sum + (l.is_warranty ? 0 : l.line_total), 0);
+        
+        // Core charges (only for non-returned cores)
+        const core_charges_total = partLines.reduce((sum, l) => 
+          sum + (l.core_charge > 0 && !l.core_returned ? l.core_charge * l.quantity : 0), 0
+        );
+        
+        // Labor: warranty items are $0 to customer
+        const labor_subtotal = laborLines.reduce((sum, l) => sum + (l.is_warranty ? 0 : l.line_total), 0);
+        
+        // Calculate labor cost (internal) from time entries
+        let labor_cost = 0;
+        for (const entry of timeEntries) {
+          const technician = state.technicians.find((t) => t.id === entry.technician_id);
+          if (technician) {
+            const hours = entry.total_minutes / 60;
+            labor_cost += hours * technician.hourly_cost_rate;
+          }
+        }
+        
+        const subtotal = parts_subtotal + labor_subtotal + core_charges_total;
         
         const order = state.workOrders.find((o) => o.id === orderId);
         if (!order) return;
@@ -741,11 +1040,203 @@ export const useShopStore = create<ShopState>()(
         set((state) => ({
           workOrders: state.workOrders.map((o) =>
             o.id === orderId
-              ? { ...o, parts_subtotal, labor_subtotal, subtotal, tax_amount, total, updated_at: now() }
+              ? { ...o, parts_subtotal, labor_subtotal, core_charges_total, subtotal, tax_amount, total, labor_cost, updated_at: now() }
               : o
           ),
         }));
       },
+
+      // Purchase Orders
+      purchaseOrders: [],
+      purchaseOrderLines: [],
+      receivingRecords: [],
+
+      createPurchaseOrder: (vendorId) => {
+        const state = get();
+        const newOrder: PurchaseOrder = {
+          id: generateId(),
+          po_number: generateOrderNumber('PO', state.purchaseOrders.length),
+          vendor_id: vendorId,
+          status: 'OPEN',
+          notes: null,
+          created_at: now(),
+          updated_at: now(),
+        };
+        set((state) => ({
+          purchaseOrders: [...state.purchaseOrders, newOrder],
+        }));
+        return newOrder;
+      },
+
+      poAddLine: (orderId, partId, quantity) => {
+        const state = get();
+        const order = state.purchaseOrders.find((o) => o.id === orderId);
+        
+        if (!order) return { success: false, error: 'Order not found' };
+        if (order.status === 'CLOSED') return { success: false, error: 'Cannot modify closed PO' };
+        
+        const part = state.parts.find((p) => p.id === partId);
+        if (!part) return { success: false, error: 'Part not found' };
+
+        // Check for existing line
+        const existingLine = state.purchaseOrderLines.find(
+          (l) => l.purchase_order_id === orderId && l.part_id === partId
+        );
+
+        if (existingLine) {
+          const newQty = existingLine.ordered_quantity + quantity;
+          set((state) => ({
+            purchaseOrderLines: state.purchaseOrderLines.map((l) =>
+              l.id === existingLine.id
+                ? { ...l, ordered_quantity: newQty, updated_at: now() }
+                : l
+            ),
+          }));
+        } else {
+          const newLine: PurchaseOrderLine = {
+            id: generateId(),
+            purchase_order_id: orderId,
+            part_id: partId,
+            ordered_quantity: quantity,
+            received_quantity: 0,
+            unit_cost: part.cost, // Snapshot cost
+            created_at: now(),
+            updated_at: now(),
+          };
+
+          set((state) => ({
+            purchaseOrderLines: [...state.purchaseOrderLines, newLine],
+          }));
+        }
+
+        return { success: true };
+      },
+
+      poUpdateLineQty: (lineId, newQty) => {
+        const state = get();
+        const line = state.purchaseOrderLines.find((l) => l.id === lineId);
+        if (!line) return { success: false, error: 'Line not found' };
+
+        const order = state.purchaseOrders.find((o) => o.id === line.purchase_order_id);
+        if (!order) return { success: false, error: 'Order not found' };
+        if (order.status === 'CLOSED') return { success: false, error: 'Cannot modify closed PO' };
+
+        if (newQty < line.received_quantity) {
+          return { success: false, error: 'Cannot reduce quantity below received amount' };
+        }
+
+        set((state) => ({
+          purchaseOrderLines: state.purchaseOrderLines.map((l) =>
+            l.id === lineId ? { ...l, ordered_quantity: newQty, updated_at: now() } : l
+          ),
+        }));
+
+        return { success: true };
+      },
+
+      poRemoveLine: (lineId) => {
+        const state = get();
+        const line = state.purchaseOrderLines.find((l) => l.id === lineId);
+        if (!line) return { success: false, error: 'Line not found' };
+
+        const order = state.purchaseOrders.find((o) => o.id === line.purchase_order_id);
+        if (!order) return { success: false, error: 'Order not found' };
+        if (order.status === 'CLOSED') return { success: false, error: 'Cannot modify closed PO' };
+
+        if (line.received_quantity > 0) {
+          return { success: false, error: 'Cannot remove line with received items' };
+        }
+
+        set((state) => ({
+          purchaseOrderLines: state.purchaseOrderLines.filter((l) => l.id !== lineId),
+        }));
+
+        return { success: true };
+      },
+
+      poReceive: (lineId, quantity) => {
+        const state = get();
+        const line = state.purchaseOrderLines.find((l) => l.id === lineId);
+        if (!line) return { success: false, error: 'Line not found' };
+
+        const order = state.purchaseOrders.find((o) => o.id === line.purchase_order_id);
+        if (!order) return { success: false, error: 'Order not found' };
+        if (order.status === 'CLOSED') return { success: false, error: 'Cannot receive on closed PO' };
+
+        const remaining = line.ordered_quantity - line.received_quantity;
+        if (quantity > remaining) {
+          return { success: false, error: `Cannot receive more than remaining quantity (${remaining})` };
+        }
+
+        const newReceivedQty = line.received_quantity + quantity;
+
+        // Create receiving record
+        const receivingRecord: ReceivingRecord = {
+          id: generateId(),
+          purchase_order_line_id: lineId,
+          quantity_received: quantity,
+          received_at: now(),
+          notes: null,
+        };
+
+        set((state) => ({
+          purchaseOrderLines: state.purchaseOrderLines.map((l) =>
+            l.id === lineId
+              ? { ...l, received_quantity: newReceivedQty, updated_at: now() }
+              : l
+          ),
+          // Update part inventory and cost
+          parts: state.parts.map((p) =>
+            p.id === line.part_id
+              ? { 
+                  ...p, 
+                  quantity_on_hand: p.quantity_on_hand + quantity,
+                  cost: line.unit_cost, // Update to last received cost
+                  updated_at: now() 
+                }
+              : p
+          ),
+          receivingRecords: [...state.receivingRecords, receivingRecord],
+        }));
+
+        return { success: true };
+      },
+
+      poClose: (orderId) => {
+        const state = get();
+        const order = state.purchaseOrders.find((o) => o.id === orderId);
+        if (!order) return { success: false, error: 'Order not found' };
+        if (order.status === 'CLOSED') return { success: false, error: 'Order already closed' };
+
+        // Check all lines are fully received
+        const lines = state.purchaseOrderLines.filter((l) => l.purchase_order_id === orderId);
+        const hasOutstanding = lines.some((l) => l.received_quantity < l.ordered_quantity);
+        
+        if (hasOutstanding) {
+          return { success: false, error: 'Cannot close PO with outstanding quantities' };
+        }
+
+        set((state) => ({
+          purchaseOrders: state.purchaseOrders.map((o) =>
+            o.id === orderId ? { ...o, status: 'CLOSED', updated_at: now() } : o
+          ),
+        }));
+
+        return { success: true };
+      },
+
+      updatePurchaseOrderNotes: (orderId, notes) =>
+        set((state) => ({
+          purchaseOrders: state.purchaseOrders.map((o) =>
+            o.id === orderId ? { ...o, notes, updated_at: now() } : o
+          ),
+        })),
+
+      getPurchaseOrderLines: (orderId) =>
+        get().purchaseOrderLines.filter((l) => l.purchase_order_id === orderId),
+
+      getReceivingRecords: (lineId) =>
+        get().receivingRecords.filter((r) => r.purchase_order_line_id === lineId),
     }),
     {
       name: 'shop-storage',

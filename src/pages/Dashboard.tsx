@@ -1,17 +1,18 @@
 import { PageHeader } from '@/components/layout/PageHeader';
 import { StatCard } from '@/components/ui/stat-card';
 import { useShopStore } from '@/stores/shopStore';
-import { Wrench, ShoppingCart, AlertTriangle, DollarSign } from 'lucide-react';
+import { Wrench, ShoppingCart, AlertTriangle, DollarSign, ClipboardList, Shield } from 'lucide-react';
 import { DataTable, Column } from '@/components/ui/data-table';
 import type { Part } from '@/types';
 import { useMemo } from 'react';
 
 export default function Dashboard() {
-  const { workOrders, salesOrders, parts, settings } = useShopStore();
+  const { workOrders, salesOrders, purchaseOrders, parts, settings, workOrderPartLines, workOrderLaborLines, salesOrderLines } = useShopStore();
 
   const stats = useMemo(() => {
     const openWorkOrders = workOrders.filter((o) => o.status !== 'INVOICED').length;
     const openSalesOrders = salesOrders.filter((o) => o.status !== 'INVOICED').length;
+    const openPurchaseOrders = purchaseOrders.filter((o) => o.status === 'OPEN').length;
     const negativeInventory = parts.filter((p) => p.quantity_on_hand < 0 && p.is_active);
     
     // Calculate daily revenue (invoiced today)
@@ -21,8 +22,37 @@ export default function Dashboard() {
       ...salesOrders.filter((o) => o.invoiced_at && new Date(o.invoiced_at).toDateString() === today),
     ].reduce((sum, o) => sum + o.total, 0);
 
-    return { openWorkOrders, openSalesOrders, negativeInventory, dailyRevenue };
-  }, [workOrders, salesOrders, parts]);
+    // Calculate warranty costs
+    let warrantyPartsCost = 0;
+    let warrantyLaborCost = 0;
+    
+    // WO warranty parts
+    workOrderPartLines.filter((l) => l.is_warranty).forEach((line) => {
+      const part = parts.find((p) => p.id === line.part_id);
+      if (part) warrantyPartsCost += part.cost * line.quantity;
+    });
+    
+    // SO warranty parts
+    salesOrderLines.filter((l) => l.is_warranty).forEach((line) => {
+      const part = parts.find((p) => p.id === line.part_id);
+      if (part) warrantyPartsCost += part.cost * line.quantity;
+    });
+    
+    // WO warranty labor
+    workOrderLaborLines.filter((l) => l.is_warranty).forEach((line) => {
+      warrantyLaborCost += line.line_total;
+    });
+
+    return { 
+      openWorkOrders, 
+      openSalesOrders, 
+      openPurchaseOrders,
+      negativeInventory, 
+      dailyRevenue,
+      warrantyPartsCost,
+      warrantyLaborCost,
+    };
+  }, [workOrders, salesOrders, purchaseOrders, parts, workOrderPartLines, workOrderLaborLines, salesOrderLines]);
 
   const negativeInventoryColumns: Column<Part>[] = [
     { key: 'part_number', header: 'Part #', sortable: true, className: 'font-mono' },
@@ -41,7 +71,7 @@ export default function Dashboard() {
     <div className="page-container">
       <PageHeader title="Dashboard" subtitle={settings.shop_name} />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <StatCard
           title="Open Work Orders"
           value={stats.openWorkOrders}
@@ -55,10 +85,22 @@ export default function Dashboard() {
           variant="default"
         />
         <StatCard
+          title="Open Purchase Orders"
+          value={stats.openPurchaseOrders}
+          icon={ClipboardList}
+          variant="default"
+        />
+        <StatCard
           title="Daily Revenue"
           value={`$${stats.dailyRevenue.toFixed(2)}`}
           icon={DollarSign}
           variant="success"
+        />
+        <StatCard
+          title="Warranty Cost"
+          value={`$${(stats.warrantyPartsCost + stats.warrantyLaborCost).toFixed(2)}`}
+          icon={Shield}
+          variant="warning"
         />
         <StatCard
           title="Negative Inventory"
