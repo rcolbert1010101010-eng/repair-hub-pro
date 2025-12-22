@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -33,7 +35,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useShopStore } from '@/stores/shopStore';
 import { useToast } from '@/hooks/use-toast';
-import { Save, Plus, Trash2, FileCheck, Printer, Play, Edit, X } from 'lucide-react';
+import { Save, Plus, Trash2, FileCheck, Printer, Play, Edit, X, Clock, Square, Shield, RotateCcw } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { PrintWorkOrder } from '@/components/print/PrintInvoice';
 
@@ -46,17 +48,25 @@ export default function WorkOrderDetail() {
     units,
     parts,
     settings,
+    technicians,
     getWorkOrderPartLines,
     getWorkOrderLaborLines,
+    getTimeEntriesByWorkOrder,
+    getActiveTimeEntry,
     createWorkOrder,
     woAddPartLine,
     woUpdatePartQty,
     woRemovePartLine,
+    woTogglePartWarranty,
+    woToggleCoreReturned,
     woAddLaborLine,
     woRemoveLaborLine,
+    woToggleLaborWarranty,
     woUpdateStatus,
     woInvoice,
     updateWorkOrderNotes,
+    clockIn,
+    clockOut,
     addCustomer,
     addUnit,
   } = useShopStore();
@@ -77,6 +87,7 @@ export default function WorkOrderDetail() {
   const [addLaborDialogOpen, setAddLaborDialogOpen] = useState(false);
   const [laborDescription, setLaborDescription] = useState('');
   const [laborHours, setLaborHours] = useState('1');
+  const [laborTechnicianId, setLaborTechnicianId] = useState('');
 
   const [quickAddCustomerOpen, setQuickAddCustomerOpen] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
@@ -95,8 +106,14 @@ export default function WorkOrderDetail() {
     return units.filter((u) => u.customer_id === custId && u.is_active);
   }, [selectedCustomerId, currentOrder?.customer_id, units]);
   const activeParts = parts.filter((p) => p.is_active);
+  const activeTechnicians = technicians.filter((t) => t.is_active);
 
   const isInvoiced = currentOrder?.status === 'INVOICED';
+
+  // Time tracking data
+  const timeEntries = currentOrder ? getTimeEntriesByWorkOrder(currentOrder.id) : [];
+  const totalMinutes = timeEntries.reduce((sum, te) => sum + te.total_minutes, 0);
+  const totalHours = (totalMinutes / 60).toFixed(2);
 
   if (!isNew && !currentOrder) {
     return (
@@ -127,7 +144,7 @@ export default function WorkOrderDetail() {
     const qty = parseInt(partQty) || 1;
     const result = woAddPartLine(currentOrder.id, selectedPartId, qty);
     if (result.success) {
-      toast({ title: 'Part Added', description: 'Part has been added to the order' });
+      toast({ title: 'Part Added' });
       setAddPartDialogOpen(false);
       setSelectedPartId('');
       setPartQty('1');
@@ -149,9 +166,7 @@ export default function WorkOrderDetail() {
 
   const handleRemovePartLine = (lineId: string) => {
     const result = woRemovePartLine(lineId);
-    if (result.success) {
-      toast({ title: 'Part Removed', description: 'Part has been removed from the order' });
-    } else {
+    if (!result.success) {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
   };
@@ -159,12 +174,13 @@ export default function WorkOrderDetail() {
   const handleAddLabor = () => {
     if (!laborDescription.trim() || !currentOrder) return;
     const hours = parseFloat(laborHours) || 1;
-    const result = woAddLaborLine(currentOrder.id, laborDescription.trim(), hours);
+    const result = woAddLaborLine(currentOrder.id, laborDescription.trim(), hours, laborTechnicianId || undefined);
     if (result.success) {
-      toast({ title: 'Labor Added', description: 'Labor line has been added' });
+      toast({ title: 'Labor Added' });
       setAddLaborDialogOpen(false);
       setLaborDescription('');
       setLaborHours('1');
+      setLaborTechnicianId('');
     } else {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
@@ -172,8 +188,26 @@ export default function WorkOrderDetail() {
 
   const handleRemoveLaborLine = (lineId: string) => {
     const result = woRemoveLaborLine(lineId);
+    if (!result.success) {
+      toast({ title: 'Error', description: result.error, variant: 'destructive' });
+    }
+  };
+
+  const handleClockIn = (technicianId: string) => {
+    if (!currentOrder) return;
+    const result = clockIn(technicianId, currentOrder.id);
     if (result.success) {
-      toast({ title: 'Labor Removed', description: 'Labor line has been removed' });
+      const tech = technicians.find((t) => t.id === technicianId);
+      toast({ title: 'Clocked In', description: `${tech?.name} is now working on this order` });
+    } else {
+      toast({ title: 'Error', description: result.error, variant: 'destructive' });
+    }
+  };
+
+  const handleClockOut = (technicianId: string) => {
+    const result = clockOut(technicianId);
+    if (result.success) {
+      toast({ title: 'Clocked Out' });
     } else {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
@@ -213,7 +247,7 @@ export default function WorkOrderDetail() {
     setSelectedCustomerId(newCustomer.id);
     setQuickAddCustomerOpen(false);
     setNewCustomerName('');
-    toast({ title: 'Customer Added', description: `${newCustomer.company_name} created` });
+    toast({ title: 'Customer Added' });
   };
 
   const handleQuickAddUnit = () => {
@@ -232,7 +266,7 @@ export default function WorkOrderDetail() {
     setSelectedUnitId(newUnit.id);
     setQuickAddUnitOpen(false);
     setNewUnitName('');
-    toast({ title: 'Unit Added', description: `${newUnit.unit_name} created` });
+    toast({ title: 'Unit Added' });
   };
 
   const handleEditNotes = () => {
@@ -311,37 +345,17 @@ export default function WorkOrderDetail() {
           </div>
         </div>
 
-        <QuickAddDialog
-          open={quickAddCustomerOpen}
-          onOpenChange={setQuickAddCustomerOpen}
-          title="Quick Add Customer"
-          onSave={handleQuickAddCustomer}
-          onCancel={() => setQuickAddCustomerOpen(false)}
-        >
+        <QuickAddDialog open={quickAddCustomerOpen} onOpenChange={setQuickAddCustomerOpen} title="Quick Add Customer" onSave={handleQuickAddCustomer} onCancel={() => setQuickAddCustomerOpen(false)}>
           <div>
             <Label>Company Name *</Label>
-            <Input
-              value={newCustomerName}
-              onChange={(e) => setNewCustomerName(e.target.value)}
-              placeholder="Enter company name"
-            />
+            <Input value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} placeholder="Enter company name" />
           </div>
         </QuickAddDialog>
 
-        <QuickAddDialog
-          open={quickAddUnitOpen}
-          onOpenChange={setQuickAddUnitOpen}
-          title="Quick Add Unit"
-          onSave={handleQuickAddUnit}
-          onCancel={() => setQuickAddUnitOpen(false)}
-        >
+        <QuickAddDialog open={quickAddUnitOpen} onOpenChange={setQuickAddUnitOpen} title="Quick Add Unit" onSave={handleQuickAddUnit} onCancel={() => setQuickAddUnitOpen(false)}>
           <div>
             <Label>Unit Name *</Label>
-            <Input
-              value={newUnitName}
-              onChange={(e) => setNewUnitName(e.target.value)}
-              placeholder="Enter unit name"
-            />
+            <Input value={newUnitName} onChange={(e) => setNewUnitName(e.target.value)} placeholder="Enter unit name" />
           </div>
         </QuickAddDialog>
       </div>
@@ -395,9 +409,6 @@ export default function WorkOrderDetail() {
               <span className="text-muted-foreground">Unit:</span>
               <p className="font-medium">{unit?.unit_name || '-'}</p>
               {unit?.vin && <p className="text-xs text-muted-foreground font-mono">{unit.vin}</p>}
-              {unit?.year && unit?.make && unit?.model && (
-                <p className="text-xs text-muted-foreground">{unit.year} {unit.make} {unit.model}</p>
-              )}
             </div>
             <div>
               <span className="text-muted-foreground">Created:</span>
@@ -423,27 +434,50 @@ export default function WorkOrderDetail() {
             </div>
             {isEditingNotes ? (
               <div className="space-y-2">
-                <Textarea
-                  value={notesValue}
-                  onChange={(e) => setNotesValue(e.target.value)}
-                  rows={3}
-                  placeholder="Add notes..."
-                />
+                <Textarea value={notesValue} onChange={(e) => setNotesValue(e.target.value)} rows={3} placeholder="Add notes..." />
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={handleSaveNotes}>
-                    <Save className="w-3 h-3 mr-1" />
-                    Save
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setIsEditingNotes(false)}>
-                    <X className="w-3 h-3 mr-1" />
-                    Cancel
-                  </Button>
+                  <Button size="sm" onClick={handleSaveNotes}><Save className="w-3 h-3 mr-1" />Save</Button>
+                  <Button size="sm" variant="outline" onClick={() => setIsEditingNotes(false)}><X className="w-3 h-3 mr-1" />Cancel</Button>
                 </div>
               </div>
             ) : (
               <p className="text-sm">{currentOrder?.notes || '-'}</p>
             )}
           </div>
+
+          {/* Time Tracking Section */}
+          {!isInvoiced && activeTechnicians.length > 0 && (
+            <div className="mt-4 pt-4 border-t border-border">
+              <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                <Clock className="w-4 h-4" />
+                Time Tracking
+              </h3>
+              <div className="space-y-2">
+                {activeTechnicians.map((tech) => {
+                  const activeEntry = getActiveTimeEntry(tech.id);
+                  const isOnThisOrder = activeEntry?.work_order_id === currentOrder?.id;
+                  
+                  return (
+                    <div key={tech.id} className="flex items-center justify-between text-sm">
+                      <span>{tech.name}</span>
+                      {isOnThisOrder ? (
+                        <Button size="sm" variant="destructive" onClick={() => handleClockOut(tech.id)}>
+                          <Square className="w-3 h-3 mr-1" />
+                          Clock Out
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="outline" onClick={() => handleClockIn(tech.id)} disabled={!!activeEntry}>
+                          <Clock className="w-3 h-3 mr-1" />
+                          {activeEntry ? 'Busy' : 'Clock In'}
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground mt-3">Total tracked: {totalHours} hrs</p>
+            </div>
+          )}
         </div>
 
         {/* Parts & Labor */}
@@ -452,6 +486,7 @@ export default function WorkOrderDetail() {
             <TabsList className="mb-4">
               <TabsTrigger value="parts">Parts ({partLines.length})</TabsTrigger>
               <TabsTrigger value="labor">Labor ({laborLines.length})</TabsTrigger>
+              {timeEntries.length > 0 && <TabsTrigger value="time">Time ({timeEntries.length})</TabsTrigger>}
             </TabsList>
 
             <TabsContent value="parts">
@@ -470,6 +505,8 @@ export default function WorkOrderDetail() {
                     <TableRow>
                       <TableHead>Part #</TableHead>
                       <TableHead>Description</TableHead>
+                      <TableHead className="text-center">Warranty</TableHead>
+                      <TableHead className="text-center">Core</TableHead>
                       <TableHead className="text-right">Qty</TableHead>
                       <TableHead className="text-right">Price</TableHead>
                       <TableHead className="text-right">Total</TableHead>
@@ -479,40 +516,47 @@ export default function WorkOrderDetail() {
                   <TableBody>
                     {partLines.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                          No parts added yet
-                        </TableCell>
+                        <TableCell colSpan={8} className="text-center text-muted-foreground py-8">No parts added yet</TableCell>
                       </TableRow>
                     ) : (
                       partLines.map((line) => {
                         const part = parts.find((p) => p.id === line.part_id);
                         return (
-                          <TableRow key={line.id}>
+                          <TableRow key={line.id} className={line.is_warranty ? 'bg-accent/30' : ''}>
                             <TableCell className="font-mono">{part?.part_number || '-'}</TableCell>
                             <TableCell>{part?.description || '-'}</TableCell>
+                            <TableCell className="text-center">
+                              {!isInvoiced ? (
+                                <Checkbox checked={line.is_warranty} onCheckedChange={() => woTogglePartWarranty(line.id)} />
+                              ) : line.is_warranty ? (
+                                <Badge variant="secondary"><Shield className="w-3 h-3" /></Badge>
+                              ) : null}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {line.core_charge > 0 && (
+                                <div className="flex items-center justify-center gap-1">
+                                  {!isInvoiced ? (
+                                    <Checkbox checked={line.core_returned} onCheckedChange={() => woToggleCoreReturned(line.id)} />
+                                  ) : line.core_returned ? (
+                                    <Badge variant="outline"><RotateCcw className="w-3 h-3" /></Badge>
+                                  ) : (
+                                    <Badge variant="destructive">${line.core_charge}</Badge>
+                                  )}
+                                </div>
+                              )}
+                            </TableCell>
                             <TableCell className="text-right">
-                              {isInvoiced ? (
-                                line.quantity
-                              ) : (
-                                <Input
-                                  type="number"
-                                  min="1"
-                                  value={line.quantity}
-                                  onChange={(e) => handleUpdateQty(line.id, parseInt(e.target.value) || 0)}
-                                  className="w-20 text-right"
-                                />
+                              {isInvoiced ? line.quantity : (
+                                <Input type="number" min="1" value={line.quantity} onChange={(e) => handleUpdateQty(line.id, parseInt(e.target.value) || 0)} className="w-16 text-right" />
                               )}
                             </TableCell>
                             <TableCell className="text-right">${line.unit_price.toFixed(2)}</TableCell>
-                            <TableCell className="text-right font-medium">${line.line_total.toFixed(2)}</TableCell>
+                            <TableCell className="text-right font-medium">
+                              {line.is_warranty ? <span className="text-muted-foreground">$0.00</span> : `$${line.line_total.toFixed(2)}`}
+                            </TableCell>
                             {!isInvoiced && (
                               <TableCell>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => handleRemovePartLine(line.id)}
-                                  className="text-destructive hover:text-destructive"
-                                >
+                                <Button variant="ghost" size="icon" onClick={() => handleRemovePartLine(line.id)} className="text-destructive hover:text-destructive">
                                   <Trash2 className="w-4 h-4" />
                                 </Button>
                               </TableCell>
@@ -541,6 +585,8 @@ export default function WorkOrderDetail() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Description</TableHead>
+                      <TableHead>Technician</TableHead>
+                      <TableHead className="text-center">Warranty</TableHead>
                       <TableHead className="text-right">Hours</TableHead>
                       <TableHead className="text-right">Rate</TableHead>
                       <TableHead className="text-right">Total</TableHead>
@@ -550,36 +596,73 @@ export default function WorkOrderDetail() {
                   <TableBody>
                     {laborLines.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                          No labor added yet
-                        </TableCell>
+                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">No labor added yet</TableCell>
                       </TableRow>
                     ) : (
-                      laborLines.map((line) => (
-                        <TableRow key={line.id}>
-                          <TableCell>{line.description}</TableCell>
-                          <TableCell className="text-right">{line.hours}</TableCell>
-                          <TableCell className="text-right">${line.rate.toFixed(2)}</TableCell>
-                          <TableCell className="text-right font-medium">${line.line_total.toFixed(2)}</TableCell>
-                          {!isInvoiced && (
-                            <TableCell>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => handleRemoveLaborLine(line.id)}
-                                className="text-destructive hover:text-destructive"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
+                      laborLines.map((line) => {
+                        const tech = technicians.find((t) => t.id === line.technician_id);
+                        return (
+                          <TableRow key={line.id} className={line.is_warranty ? 'bg-accent/30' : ''}>
+                            <TableCell>{line.description}</TableCell>
+                            <TableCell>{tech?.name || '-'}</TableCell>
+                            <TableCell className="text-center">
+                              {!isInvoiced ? (
+                                <Checkbox checked={line.is_warranty} onCheckedChange={() => woToggleLaborWarranty(line.id)} />
+                              ) : line.is_warranty ? (
+                                <Badge variant="secondary"><Shield className="w-3 h-3" /></Badge>
+                              ) : null}
                             </TableCell>
-                          )}
-                        </TableRow>
-                      ))
+                            <TableCell className="text-right">{line.hours}</TableCell>
+                            <TableCell className="text-right">${line.rate.toFixed(2)}</TableCell>
+                            <TableCell className="text-right font-medium">
+                              {line.is_warranty ? <span className="text-muted-foreground">$0.00</span> : `$${line.line_total.toFixed(2)}`}
+                            </TableCell>
+                            {!isInvoiced && (
+                              <TableCell>
+                                <Button variant="ghost" size="icon" onClick={() => handleRemoveLaborLine(line.id)} className="text-destructive hover:text-destructive">
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
               </div>
             </TabsContent>
+
+            {timeEntries.length > 0 && (
+              <TabsContent value="time">
+                <h3 className="font-medium mb-4">Time Entries</h3>
+                <div className="table-container">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Technician</TableHead>
+                        <TableHead>Clock In</TableHead>
+                        <TableHead>Clock Out</TableHead>
+                        <TableHead className="text-right">Minutes</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {timeEntries.map((entry) => {
+                        const tech = technicians.find((t) => t.id === entry.technician_id);
+                        return (
+                          <TableRow key={entry.id}>
+                            <TableCell>{tech?.name || '-'}</TableCell>
+                            <TableCell>{new Date(entry.clock_in).toLocaleString()}</TableCell>
+                            <TableCell>{entry.clock_out ? new Date(entry.clock_out).toLocaleString() : <Badge>Active</Badge>}</TableCell>
+                            <TableCell className="text-right">{entry.total_minutes}</TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </TabsContent>
+            )}
           </Tabs>
 
           {/* Totals */}
@@ -593,6 +676,12 @@ export default function WorkOrderDetail() {
                 <span className="text-muted-foreground">Labor Subtotal:</span>
                 <span>${currentOrder?.labor_subtotal.toFixed(2)}</span>
               </div>
+              {(currentOrder?.core_charges_total ?? 0) > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Core Charges:</span>
+                  <span>${currentOrder?.core_charges_total.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between border-t border-border pt-2">
                 <span className="text-muted-foreground">Subtotal:</span>
                 <span>${currentOrder?.subtotal.toFixed(2)}</span>
@@ -612,83 +701,51 @@ export default function WorkOrderDetail() {
 
       {/* Print Invoice */}
       {currentOrder && (
-        <PrintWorkOrder
-          order={currentOrder}
-          partLines={partLines}
-          laborLines={laborLines}
-          customer={customer}
-          unit={unit}
-          parts={parts}
-          shopName={settings.shop_name}
-        />
+        <PrintWorkOrder order={currentOrder} partLines={partLines} laborLines={laborLines} customer={customer} unit={unit} parts={parts} shopName={settings.shop_name} />
       )}
 
       {/* Add Part Dialog */}
-      <QuickAddDialog
-        open={addPartDialogOpen}
-        onOpenChange={setAddPartDialogOpen}
-        title="Add Part"
-        onSave={handleAddPart}
-        onCancel={() => setAddPartDialogOpen(false)}
-      >
+      <QuickAddDialog open={addPartDialogOpen} onOpenChange={setAddPartDialogOpen} title="Add Part" onSave={handleAddPart} onCancel={() => setAddPartDialogOpen(false)}>
         <div className="space-y-4">
           <div>
             <Label>Part *</Label>
             <Select value={selectedPartId} onValueChange={setSelectedPartId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select part" />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Select part" /></SelectTrigger>
               <SelectContent>
                 {activeParts.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.part_number} - {p.description} (${p.selling_price.toFixed(2)})
-                  </SelectItem>
+                  <SelectItem key={p.id} value={p.id}>{p.part_number} - {p.description} (${p.selling_price.toFixed(2)})</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div>
             <Label>Quantity</Label>
-            <Input
-              type="number"
-              min="1"
-              value={partQty}
-              onChange={(e) => setPartQty(e.target.value)}
-            />
+            <Input type="number" min="1" value={partQty} onChange={(e) => setPartQty(e.target.value)} />
           </div>
         </div>
       </QuickAddDialog>
 
       {/* Add Labor Dialog */}
-      <QuickAddDialog
-        open={addLaborDialogOpen}
-        onOpenChange={setAddLaborDialogOpen}
-        title="Add Labor"
-        onSave={handleAddLabor}
-        onCancel={() => setAddLaborDialogOpen(false)}
-      >
+      <QuickAddDialog open={addLaborDialogOpen} onOpenChange={setAddLaborDialogOpen} title="Add Labor" onSave={handleAddLabor} onCancel={() => setAddLaborDialogOpen(false)}>
         <div className="space-y-4">
           <div>
             <Label>Description *</Label>
-            <Textarea
-              value={laborDescription}
-              onChange={(e) => setLaborDescription(e.target.value)}
-              placeholder="Describe the work performed"
-              rows={2}
-            />
+            <Textarea value={laborDescription} onChange={(e) => setLaborDescription(e.target.value)} placeholder="Describe the work performed" rows={2} />
+          </div>
+          <div>
+            <Label>Technician</Label>
+            <Select value={laborTechnicianId} onValueChange={setLaborTechnicianId}>
+              <SelectTrigger><SelectValue placeholder="Select technician (optional)" /></SelectTrigger>
+              <SelectContent>
+                {activeTechnicians.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div>
             <Label>Hours</Label>
-            <Input
-              type="number"
-              min="0.25"
-              step="0.25"
-              value={laborHours}
-              onChange={(e) => setLaborHours(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              Rate: ${settings.default_labor_rate}/hr (snapshotted at time of creation)
-            </p>
+            <Input type="number" min="0.25" step="0.25" value={laborHours} onChange={(e) => setLaborHours(e.target.value)} />
           </div>
         </div>
       </QuickAddDialog>
@@ -698,16 +755,11 @@ export default function WorkOrderDetail() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Invoice this Work Order?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently lock the order. No further changes can be made after invoicing.
-              Make sure all parts, labor, and quantities are correct.
-            </AlertDialogDescription>
+            <AlertDialogDescription>This will permanently lock the order. Active time entries will be clocked out.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleInvoice}>
-              Invoice Order
-            </AlertDialogAction>
+            <AlertDialogAction onClick={handleInvoice}>Invoice Order</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
