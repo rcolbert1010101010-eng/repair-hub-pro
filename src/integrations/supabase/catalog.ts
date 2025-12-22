@@ -34,3 +34,25 @@ export async function fetchParts(): Promise<Part[]> {
   if (error) throw error;
   return (data as DbPart[]).map(mapPart);
 }
+
+export async function createVendor(input: {
+  vendor_name: string;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
+}): Promise<Vendor> {
+  const { data, error } = await supabase
+    .from("vendors")
+    .insert({
+      name: input.vendor_name,
+      phone: input.phone,
+      email: input.email,
+      notes: input.notes,
+      is_active: true,
+    })
+    .select("id,name,phone,email,notes,is_active,created_at,updated_at")
+    .single();
+
+  if (error) throw error;
+  return mapVendor(data as DbVendor);
+}
