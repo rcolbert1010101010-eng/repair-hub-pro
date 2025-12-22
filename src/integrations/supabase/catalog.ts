@@ -98,3 +98,61 @@ export async function deactivateVendorById(id: string): Promise<void> {
 
   if (error) throw error;
 }
+
+export async function createCategory(input: {
+  category_name: string;
+  description: string | null;
+}): Promise<PartCategory> {
+  const { data, error } = await supabase
+    .from("part_categories")
+    .insert({
+      name: input.category_name,
+      description: input.description,
+      is_active: true,
+    })
+    .select("id,name,description,is_active,created_at,updated_at")
+    .single();
+
+  if (error) throw error;
+  return mapCategory(data as DbCategory);
+}
+
+export async function fetchCategoryById(id: string): Promise<PartCategory | null> {
+  const { data, error } = await supabase
+    .from("part_categories")
+    .select("id,name,description,is_active,created_at,updated_at")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+  return mapCategory(data as DbCategory);
+}
+
+export async function updateCategoryById(
+  id: string,
+  input: { category_name: string; description: string | null }
+): Promise<PartCategory> {
+  const { data, error } = await supabase
+    .from("part_categories")
+    .update({
+      name: input.category_name,
+      description: input.description,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select("id,name,description,is_active,created_at,updated_at")
+    .single();
+
+  if (error) throw error;
+  return mapCategory(data as DbCategory);
+}
+
+export async function deactivateCategoryById(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("part_categories")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) throw error;
+}
