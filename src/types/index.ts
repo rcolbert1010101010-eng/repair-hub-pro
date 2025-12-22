@@ -72,11 +72,37 @@ export interface Part {
   cost: number;
   selling_price: number;
   quantity_on_hand: number;
+  core_required: boolean;
+  core_charge: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;
   vendor?: Vendor;
   category?: PartCategory;
+}
+
+// Technician
+export interface Technician {
+  id: string;
+  name: string;
+  hourly_cost_rate: number;
+  default_billable_rate: number | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Time Entry (Technician Clock In/Out)
+export interface TimeEntry {
+  id: string;
+  technician_id: string;
+  work_order_id: string;
+  clock_in: string;
+  clock_out: string | null;
+  total_minutes: number;
+  created_at: string;
+  updated_at: string;
+  technician?: Technician;
 }
 
 // Sales Order Status
@@ -92,6 +118,7 @@ export interface SalesOrder {
   notes: string | null;
   tax_rate: number;
   subtotal: number;
+  core_charges_total: number;
   tax_amount: number;
   total: number;
   invoiced_at: string | null;
@@ -110,6 +137,9 @@ export interface SalesOrderLine {
   quantity: number;
   unit_price: number;
   line_total: number;
+  is_warranty: boolean;
+  core_charge: number;
+  core_returned: boolean;
   created_at: string;
   updated_at: string;
   part?: Part;
@@ -129,9 +159,11 @@ export interface WorkOrder {
   tax_rate: number;
   parts_subtotal: number;
   labor_subtotal: number;
+  core_charges_total: number;
   subtotal: number;
   tax_amount: number;
   total: number;
+  labor_cost: number; // Internal cost tracking
   invoiced_at: string | null;
   created_at: string;
   updated_at: string;
@@ -149,6 +181,9 @@ export interface WorkOrderPartLine {
   quantity: number;
   unit_price: number;
   line_total: number;
+  is_warranty: boolean;
+  core_charge: number;
+  core_returned: boolean;
   created_at: string;
   updated_at: string;
   part?: Part;
@@ -162,14 +197,59 @@ export interface WorkOrderLaborLine {
   hours: number;
   rate: number;
   line_total: number;
+  is_warranty: boolean;
+  technician_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// Purchase Order Status
+export type PurchaseOrderStatus = 'OPEN' | 'CLOSED';
+
+// Purchase Order
+export interface PurchaseOrder {
+  id: string;
+  po_number: string;
+  vendor_id: string;
+  status: PurchaseOrderStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  vendor?: Vendor;
+  lines?: PurchaseOrderLine[];
+}
+
+// Purchase Order Line
+export interface PurchaseOrderLine {
+  id: string;
+  purchase_order_id: string;
+  part_id: string;
+  ordered_quantity: number;
+  received_quantity: number;
+  unit_cost: number; // Snapshotted at creation
+  created_at: string;
+  updated_at: string;
+  part?: Part;
+}
+
+// Receiving Record
+export interface ReceivingRecord {
+  id: string;
+  purchase_order_line_id: string;
+  quantity_received: number;
+  received_at: string;
+  notes: string | null;
 }
 
 // Dashboard Stats
 export interface DashboardStats {
   openWorkOrders: number;
   openSalesOrders: number;
+  openPurchaseOrders: number;
   dailyRevenue: number;
   negativeInventoryItems: Part[];
+  warrantyTotals: {
+    partsCost: number;
+    laborCost: number;
+  };
 }

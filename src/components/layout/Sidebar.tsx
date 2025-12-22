@@ -11,6 +11,8 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  HardHat,
+  ClipboardList,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -21,7 +23,9 @@ const navItems = [
   { path: '/units', label: 'Units', icon: Truck },
   { path: '/work-orders', label: 'Work Orders', icon: Wrench },
   { path: '/sales-orders', label: 'Sales Orders', icon: ShoppingCart },
+  { path: '/purchase-orders', label: 'Purchase Orders', icon: ClipboardList },
   { path: '/inventory', label: 'Inventory', icon: Package },
+  { path: '/technicians', label: 'Technicians', icon: HardHat },
   { path: '/vendors', label: 'Vendors', icon: Building2 },
   { path: '/categories', label: 'Categories', icon: Tags },
   { path: '/settings', label: 'Settings', icon: Settings },

@@ -1,0 +1,62 @@
+import { useNavigate } from 'react-router-dom';
+import { PageHeader } from '@/components/layout/PageHeader';
+import { DataTable, Column } from '@/components/ui/data-table';
+import { Button } from '@/components/ui/button';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { Plus } from 'lucide-react';
+import { useShopStore } from '@/stores/shopStore';
+import type { PurchaseOrder } from '@/types';
+
+export default function PurchaseOrders() {
+  const navigate = useNavigate();
+  const { purchaseOrders, vendors } = useShopStore();
+
+  const columns: Column<PurchaseOrder>[] = [
+    { key: 'po_number', header: 'PO #', sortable: true, className: 'font-mono' },
+    {
+      key: 'vendor_id',
+      header: 'Vendor',
+      sortable: true,
+      render: (item) => vendors.find((v) => v.id === item.vendor_id)?.vendor_name || '-',
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      sortable: true,
+      render: (item) => (
+        <StatusBadge status={item.status} variant={item.status === 'CLOSED' ? 'success' : 'warning'} />
+      ),
+    },
+    {
+      key: 'created_at',
+      header: 'Created',
+      sortable: true,
+      render: (item) => new Date(item.created_at).toLocaleDateString(),
+    },
+  ];
+
+  return (
+    <div className="page-container">
+      <PageHeader
+        title="Purchase Orders"
+        subtitle="Manage vendor orders and receiving"
+        actions={
+          <Button onClick={() => navigate('/purchase-orders/new')}>
+            <Plus className="w-4 h-4 mr-2" />
+            New PO
+          </Button>
+        }
+      />
+
+      <DataTable
+        data={purchaseOrders}
+        columns={columns}
+        searchKeys={['po_number']}
+        searchPlaceholder="Search purchase orders..."
+        onRowClick={(po) => navigate(`/purchase-orders/${po.id}`)}
+        emptyMessage="No purchase orders found."
+        showActiveFilter={false}
+      />
+    </div>
+  );
+}
