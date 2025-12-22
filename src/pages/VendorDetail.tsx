@@ -1,21 +1,13 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { useShopStore } from '@/stores/shopStore';
-import { useToast } from '@/hooks/use-toast';
-import { Save, Edit, X, Trash2 } from 'lucide-react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { Save, Edit, X, Trash2 } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,37 +17,157 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from "@/components/ui/alert-dialog";
+import type { Vendor, Part } from "@/types";
+import { fetchVendorById, updateVendorById, deactivateVendorById, fetchParts } from "@/integrations/supabase/catalog";
 
 export default function VendorDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { vendors, parts, updateVendor, deactivateVendor } = useShopStore();
   const { toast } = useToast();
 
-  const vendor = vendors.find((v) => v.id === id);
-  const vendorParts = parts.filter((p) => p.vendor_id === id);
-  const activeParts = vendorParts.filter((p) => p.is_active);
+  const [vendor, setVendor] = useState<Vendor | null>(null);
+  const [parts, setParts] = useState<Part[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [isEditing, setIsEditing] = useState(false);
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
   const [formData, setFormData] = useState({
-    vendor_name: '',
-    phone: '',
-    email: '',
-    notes: '',
+    vendor_name: "",
+    phone: "",
+    email: "",
+    notes: "",
   });
 
   useEffect(() => {
-    if (vendor) {
-      setFormData({
-        vendor_name: vendor.vendor_name,
-        phone: vendor.phone || '',
-        email: vendor.email || '',
-        notes: vendor.notes || '',
+    let isMounted = true;
+
+    (async () => {
+      try {
+        setLoading(true);
+        setLoadError(null);
+
+        if (!id) throw new Error("Missing vendor id");
+
+        const [v, p] = await Promise.all([fetchVendorById(id), fetchParts()]);
+        if (!isMounted) return;
+
+        setVendor(v);
+        setParts(p);
+
+        if (v) {
+          setFormData({
+            vendor_name: v.vendor_name,
+            phone: v.phone || "",
+            email: v.email || "",
+            notes: v.notes || "",
+          });
+        }
+      } catch (e: any) {
+        if (!isMounted) return;
+        setLoadError(e?.message ?? "Failed to load vendor");
+      } finally {
+        if (!isMounted) return;
+        setLoading(false);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id]);
+
+  const vendorParts = useMemo(() => parts.filter((p) => p.vendor_id === id), [parts, id]);
+  const activeParts = useMemo(() => vendorParts.filter((p) => p.is_active), [vendorParts]);
+
+  const handleSave = async () => {
+    if (!id) return;
+
+    if (!formData.vendor_name.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Vendor name is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const updated = await updateVendorById(id, {
+        vendor_name: formData.vendor_name.trim(),
+        phone: formData.phone.trim() || null,
+        email: formData.email.trim() || null,
+        notes: formData.notes.trim() || null,
+      });
+
+      setVendor(updated);
+
+      toast({
+        title: "Vendor Updated",
+        description: `${formData.vendor_name.trim()} has been updated`,
+      });
+
+      setIsEditing(false);
+    } catch (e: any) {
+      toast({
+        title: "Update failed",
+        description: e?.message ?? "Unable to update vendor",
+        variant: "destructive",
       });
     }
-  }, [vendor]);
+  };
+
+  const handleDeactivate = async () => {
+    if (!id || !vendor) return;
+
+    try {
+      await deactivateVendorById(id);
+      toast({
+        title: "Vendor Deactivated",
+        description: `${vendor.vendor_name} has been deactivated`,
+      });
+      navigate("/vendors");
+    } catch (e: any) {
+      toast({
+        title: "Deactivate failed",
+        description: e?.message ?? "Unable to deactivate vendor",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCancel = () => {
+    if (!vendor) return;
+    setFormData({
+      vendor_name: vendor.vendor_name,
+      phone: vendor.phone || "",
+      email: vendor.email || "",
+      notes: vendor.notes || "",
+    });
+    setIsEditing(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader title="Vendor" backTo="/vendors" />
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="page-container">
+        <PageHeader title="Vendor" backTo="/vendors" />
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
+          <div className="font-medium">Failed to load vendor</div>
+          <div className="opacity-80 mt-1">{loadError}</div>
+        </div>
+      </div>
+    );
+  }
 
   if (!vendor) {
     return (
@@ -66,54 +178,11 @@ export default function VendorDetail() {
     );
   }
 
-  const handleSave = () => {
-    if (!formData.vendor_name.trim()) {
-      toast({
-        title: 'Validation Error',
-        description: 'Vendor name is required',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    updateVendor(id!, {
-      vendor_name: formData.vendor_name.trim(),
-      phone: formData.phone.trim() || null,
-      email: formData.email.trim() || null,
-      notes: formData.notes.trim() || null,
-    });
-
-    toast({
-      title: 'Vendor Updated',
-      description: `${formData.vendor_name} has been updated`,
-    });
-    setIsEditing(false);
-  };
-
-  const handleDeactivate = () => {
-    deactivateVendor(id!);
-    toast({
-      title: 'Vendor Deactivated',
-      description: `${vendor.vendor_name} has been deactivated`,
-    });
-    navigate('/vendors');
-  };
-
-  const handleCancel = () => {
-    setFormData({
-      vendor_name: vendor.vendor_name,
-      phone: vendor.phone || '',
-      email: vendor.email || '',
-      notes: vendor.notes || '',
-    });
-    setIsEditing(false);
-  };
-
   return (
     <div className="page-container">
       <PageHeader
         title={vendor.vendor_name}
-        subtitle={vendor.is_active ? 'Active Vendor' : 'Inactive Vendor'}
+        subtitle={vendor.is_active ? "Active Vendor" : "Inactive Vendor"}
         backTo="/vendors"
         actions={
           <>
@@ -197,15 +266,15 @@ export default function VendorDetail() {
             <div className="space-y-3 text-sm">
               <div>
                 <span className="text-muted-foreground">Phone:</span>
-                <p className="font-medium">{vendor.phone || '-'}</p>
+                <p className="font-medium">{vendor.phone || "-"}</p>
               </div>
               <div>
                 <span className="text-muted-foreground">Email:</span>
-                <p className="font-medium">{vendor.email || '-'}</p>
+                <p className="font-medium">{vendor.email || "-"}</p>
               </div>
               <div>
                 <span className="text-muted-foreground">Notes:</span>
-                <p className="font-medium">{vendor.notes || '-'}</p>
+                <p className="font-medium">{vendor.notes || "-"}</p>
               </div>
               <div>
                 <span className="text-muted-foreground">Created:</span>
@@ -242,7 +311,7 @@ export default function VendorDetail() {
                       onClick={() => navigate(`/inventory/${part.id}`)}
                     >
                       <TableCell className="font-mono">{part.part_number}</TableCell>
-                      <TableCell>{part.description || '-'}</TableCell>
+                      <TableCell>{part.description || "-"}</TableCell>
                       <TableCell className="text-right">{part.quantity_on_hand}</TableCell>
                     </TableRow>
                   ))
@@ -258,13 +327,15 @@ export default function VendorDetail() {
           <AlertDialogHeader>
             <AlertDialogTitle>Deactivate Vendor?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will deactivate "{vendor.vendor_name}". The vendor will no longer be selectable for new parts.
-              This action can be undone by reactivating the vendor.
+              This will mark the vendor as inactive. You can keep historical records, but the vendor will no longer appear in pickers.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeactivate} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDeactivate}
+            >
               Deactivate
             </AlertDialogAction>
           </AlertDialogFooter>

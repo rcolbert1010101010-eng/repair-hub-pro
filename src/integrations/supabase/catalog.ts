@@ -56,3 +56,45 @@ export async function createVendor(input: {
   if (error) throw error;
   return mapVendor(data as DbVendor);
 }
+
+export async function fetchVendorById(id: string): Promise<Vendor | null> {
+  const { data, error } = await supabase
+    .from("vendors")
+    .select("id,name,phone,email,notes,is_active,created_at,updated_at")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+  return mapVendor(data as DbVendor);
+}
+
+export async function updateVendorById(
+  id: string,
+  input: { vendor_name: string; phone: string | null; email: string | null; notes: string | null }
+): Promise<Vendor> {
+  const { data, error } = await supabase
+    .from("vendors")
+    .update({
+      name: input.vendor_name,
+      phone: input.phone,
+      email: input.email,
+      notes: input.notes,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select("id,name,phone,email,notes,is_active,created_at,updated_at")
+    .single();
+
+  if (error) throw error;
+  return mapVendor(data as DbVendor);
+}
+
+export async function deactivateVendorById(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("vendors")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) throw error;
+}
