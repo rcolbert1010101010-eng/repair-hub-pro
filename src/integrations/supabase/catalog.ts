@@ -2,6 +2,9 @@ import { supabase } from "./client";
 import type { Vendor, PartCategory, Part } from "@/types";
 import { mapVendor, mapCategory, mapPart, type DbVendor, type DbCategory, type DbPart } from "./mappers";
 
+const PART_COLUMNS =
+  "id,part_number,description,vendor_id,category_id,cost,sell_price,quantity_on_hand,core_required,core_charge_amount,is_active,created_at,updated_at";
+
 export async function fetchVendors(): Promise<Vendor[]> {
   const { data, error } = await supabase
     .from("vendors")
@@ -27,12 +30,97 @@ export async function fetchCategories(): Promise<PartCategory[]> {
 export async function fetchParts(): Promise<Part[]> {
   const { data, error } = await supabase
     .from("parts")
-    .select("id,part_number,description,vendor_id,category_id,cost,sell_price,quantity_on_hand,core_required,core_charge_amount,is_active,created_at,updated_at")
+    .select(PART_COLUMNS)
     .eq("is_active", true)
     .order("part_number", { ascending: true });
 
   if (error) throw error;
   return (data as DbPart[]).map(mapPart);
+}
+
+export async function fetchPartById(id: string): Promise<Part | null> {
+  const { data, error } = await supabase.from("parts").select(PART_COLUMNS).eq("id", id).maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+  return mapPart(data as DbPart);
+}
+
+export async function createPart(input: {
+  part_number: string;
+  description: string | null;
+  vendor_id: string;
+  category_id: string;
+  cost: number;
+  selling_price: number;
+  quantity_on_hand: number;
+  core_required: boolean;
+  core_charge: number;
+}): Promise<Part> {
+  const { data, error } = await supabase
+    .from("parts")
+    .insert({
+      part_number: input.part_number,
+      description: input.description,
+      vendor_id: input.vendor_id,
+      category_id: input.category_id,
+      cost: input.cost,
+      sell_price: input.selling_price,
+      quantity_on_hand: input.quantity_on_hand,
+      core_required: input.core_required,
+      core_charge_amount: input.core_charge,
+      is_active: true,
+    })
+    .select(PART_COLUMNS)
+    .single();
+
+  if (error) throw error;
+  return mapPart(data as DbPart);
+}
+
+export async function updatePartById(
+  id: string,
+  input: {
+    part_number: string;
+    description: string | null;
+    vendor_id: string;
+    category_id: string;
+    cost: number;
+    selling_price: number;
+    quantity_on_hand: number;
+    core_required: boolean;
+    core_charge: number;
+  }
+): Promise<Part> {
+  const { data, error } = await supabase
+    .from("parts")
+    .update({
+      part_number: input.part_number,
+      description: input.description,
+      vendor_id: input.vendor_id,
+      category_id: input.category_id,
+      cost: input.cost,
+      sell_price: input.selling_price,
+      quantity_on_hand: input.quantity_on_hand,
+      core_required: input.core_required,
+      core_charge_amount: input.core_charge,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .select(PART_COLUMNS)
+    .single();
+
+  if (error) throw error;
+  return mapPart(data as DbPart);
+}
+
+export async function deactivatePartById(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("parts")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) throw error;
 }
 
 export async function createVendor(input: {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -12,40 +12,46 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useShopStore } from '@/stores/shopStore';
 import { useToast } from '@/hooks/use-toast';
 import { Save, X, Trash2, Edit, Plus } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
+import type { Part, PartCategory, Vendor } from '@/types';
+import {
+  createCategory,
+  createPart,
+  createVendor,
+  deactivatePartById,
+  fetchCategories,
+  fetchPartById,
+  fetchParts,
+  fetchVendors,
+  updatePartById,
+} from '@/integrations/supabase/catalog';
 
 export default function PartForm() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const {
-    parts,
-    vendors,
-    categories,
-    addPart,
-    updatePart,
-    deactivatePart,
-    addVendor,
-    addCategory,
-  } = useShopStore();
   const { toast } = useToast();
 
   const isNew = id === 'new';
-  const part = !isNew ? parts.find((p) => p.id === id) : null;
-
   const [editing, setEditing] = useState(isNew);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [part, setPart] = useState<Part | null>(null);
+  const [parts, setParts] = useState<Part[]>([]);
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [categories, setCategories] = useState<PartCategory[]>([]);
   const [formData, setFormData] = useState({
-    part_number: part?.part_number || '',
-    description: part?.description || '',
-    vendor_id: part?.vendor_id || '',
-    category_id: part?.category_id || '',
-    cost: part?.cost?.toString() || '',
-    selling_price: part?.selling_price?.toString() || '',
-    quantity_on_hand: part?.quantity_on_hand?.toString() || '0',
-    core_required: part?.core_required || false,
-    core_charge: part?.core_charge?.toString() || '0',
+    part_number: '',
+    description: '',
+    vendor_id: '',
+    category_id: '',
+    cost: '',
+    selling_price: '',
+    quantity_on_hand: '0',
+    core_required: false,
+    core_charge: '0',
   });
 
   // Quick add dialogs
@@ -54,8 +60,87 @@ export default function PartForm() {
   const [newVendorName, setNewVendorName] = useState('');
   const [newCategoryName, setNewCategoryName] = useState('');
 
+  useEffect(() => {
+    let isMounted = true;
+
+    (async () => {
+      try {
+        setLoading(true);
+        setLoadError(null);
+
+        const [fetchedVendors, fetchedCategories, fetchedParts] = await Promise.all([
+          fetchVendors(),
+          fetchCategories(),
+          fetchParts(),
+        ]);
+
+        let fetchedPart: Part | null = null;
+        if (!isNew && id) {
+          fetchedPart = await fetchPartById(id);
+        }
+
+        if (!isMounted) return;
+
+        setVendors(fetchedVendors);
+        setCategories(fetchedCategories);
+
+        const mergedParts =
+          fetchedPart && !fetchedParts.some((p) => p.id === fetchedPart?.id)
+            ? [...fetchedParts, fetchedPart]
+            : fetchedParts;
+        setParts(mergedParts);
+        setPart(fetchedPart);
+
+        if (fetchedPart) {
+          setFormData({
+            part_number: fetchedPart.part_number,
+            description: fetchedPart.description || '',
+            vendor_id: fetchedPart.vendor_id,
+            category_id: fetchedPart.category_id,
+            cost: fetchedPart.cost.toString(),
+            selling_price: fetchedPart.selling_price.toString(),
+            quantity_on_hand: fetchedPart.quantity_on_hand.toString(),
+            core_required: fetchedPart.core_required,
+            core_charge: fetchedPart.core_charge.toString(),
+          });
+        }
+      } catch (e: any) {
+        if (!isMounted) return;
+        setLoadError(e?.message ?? 'Failed to load part');
+      } finally {
+        if (!isMounted) return;
+        setLoading(false);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id, isNew]);
+
   const activeVendors = vendors.filter((v) => v.is_active);
   const activeCategories = categories.filter((c) => c.is_active);
+
+  if (loading) {
+    return (
+      <div className="page-container">
+        <PageHeader title="Part" backTo="/inventory" />
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="page-container">
+        <PageHeader title="Part" backTo="/inventory" />
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
+          <div className="font-medium">Failed to load part</div>
+          <div className="opacity-80 mt-1">{loadError}</div>
+        </div>
+      </div>
+    );
+  }
 
   if (!isNew && !part) {
     return (
@@ -101,47 +186,102 @@ export default function PartForm() {
       core_charge: parseFloat(formData.core_charge) || 0,
     };
 
-    if (isNew) {
-      const newPart = addPart(partData);
-      toast({ title: 'Part Created', description: `${formData.part_number} has been added` });
-      navigate(`/inventory/${newPart.id}`);
-    } else {
-      updatePart(id!, partData);
-      toast({ title: 'Part Updated', description: 'Changes have been saved' });
-      setEditing(false);
-    }
+    const save = async () => {
+      try {
+        if (isNew) {
+          const newPart = await createPart(partData);
+          setParts((prev) => [...prev, newPart]);
+          setPart(newPart);
+          toast({ title: 'Part Created', description: `${formData.part_number} has been added` });
+          navigate(`/inventory/${newPart.id}`);
+        } else if (id) {
+          const updated = await updatePartById(id, partData);
+          setPart(updated);
+          setParts((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+          toast({ title: 'Part Updated', description: 'Changes have been saved' });
+          setEditing(false);
+        }
+      } catch (e: any) {
+        toast({
+          title: 'Save failed',
+          description: e?.message ?? 'Unable to save part',
+          variant: 'destructive',
+        });
+      }
+    };
+
+    void save();
   };
 
   const handleDeactivate = () => {
-    deactivatePart(id!);
-    toast({ title: 'Part Deactivated', description: 'Part has been deactivated' });
-    navigate('/inventory');
+    if (!id) return;
+    const deactivate = async () => {
+      try {
+        await deactivatePartById(id);
+        toast({ title: 'Part Deactivated', description: 'Part has been deactivated' });
+        navigate('/inventory');
+      } catch (e: any) {
+        toast({
+          title: 'Deactivate failed',
+          description: e?.message ?? 'Unable to deactivate part',
+          variant: 'destructive',
+        });
+      }
+    };
+
+    void deactivate();
   };
 
   const handleQuickAddVendor = () => {
     if (!newVendorName.trim()) return;
-    const newVendor = addVendor({
-      vendor_name: newVendorName.trim(),
-      phone: null,
-      email: null,
-      notes: null,
-    });
-    setFormData({ ...formData, vendor_id: newVendor.id });
-    setVendorDialogOpen(false);
-    setNewVendorName('');
-    toast({ title: 'Vendor Added', description: `${newVendor.vendor_name} has been created` });
+    const save = async () => {
+      try {
+        const newVendor = await createVendor({
+          vendor_name: newVendorName.trim(),
+          phone: null,
+          email: null,
+          notes: null,
+        });
+        setVendors((prev) => [...prev, newVendor]);
+        setFormData({ ...formData, vendor_id: newVendor.id });
+        setVendorDialogOpen(false);
+        setNewVendorName('');
+        toast({ title: 'Vendor Added', description: `${newVendor.vendor_name} has been created` });
+      } catch (e: any) {
+        toast({
+          title: 'Create failed',
+          description: e?.message ?? 'Unable to add vendor',
+          variant: 'destructive',
+        });
+      }
+    };
+
+    void save();
   };
 
   const handleQuickAddCategory = () => {
     if (!newCategoryName.trim()) return;
-    const newCategory = addCategory({
-      category_name: newCategoryName.trim(),
-      description: null,
-    });
-    setFormData({ ...formData, category_id: newCategory.id });
-    setCategoryDialogOpen(false);
-    setNewCategoryName('');
-    toast({ title: 'Category Added', description: `${newCategory.category_name} has been created` });
+    const save = async () => {
+      try {
+        const newCategory = await createCategory({
+          category_name: newCategoryName.trim(),
+          description: null,
+        });
+        setCategories((prev) => [...prev, newCategory]);
+        setFormData({ ...formData, category_id: newCategory.id });
+        setCategoryDialogOpen(false);
+        setNewCategoryName('');
+        toast({ title: 'Category Added', description: `${newCategory.category_name} has been created` });
+      } catch (e: any) {
+        toast({
+          title: 'Create failed',
+          description: e?.message ?? 'Unable to add category',
+          variant: 'destructive',
+        });
+      }
+    };
+
+    void save();
   };
 
   return (
