@@ -300,6 +300,38 @@ export default function PartForm() {
               />
             </div>
           </div>
+
+          {/* Core Charge Section */}
+          <div className="border border-border rounded-lg p-4 space-y-4">
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="core_required"
+                checked={formData.core_required}
+                onChange={(e) => setFormData({ ...formData, core_required: e.target.checked })}
+                disabled={!editing}
+                className="h-4 w-4 rounded border-input"
+              />
+              <Label htmlFor="core_required" className="font-medium">Core Required</Label>
+            </div>
+            {formData.core_required && (
+              <div>
+                <Label htmlFor="core_charge">Core Charge Amount</Label>
+                <Input
+                  id="core_charge"
+                  type="number"
+                  step="0.01"
+                  value={formData.core_charge}
+                  onChange={(e) => setFormData({ ...formData, core_charge: e.target.value })}
+                  disabled={!editing}
+                  placeholder="0.00"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  This amount will be added to orders and refunded when the core is returned.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

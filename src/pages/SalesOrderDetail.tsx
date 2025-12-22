@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -32,7 +34,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useShopStore } from '@/stores/shopStore';
 import { useToast } from '@/hooks/use-toast';
-import { Save, Plus, Trash2, FileCheck, Printer, Edit, X } from 'lucide-react';
+import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Shield, RotateCcw } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { PrintSalesOrder } from '@/components/print/PrintInvoice';
 
@@ -50,6 +52,8 @@ export default function SalesOrderDetail() {
     soAddPartLine,
     soUpdatePartQty,
     soRemovePartLine,
+    soToggleWarranty,
+    soToggleCoreReturned,
     soInvoice,
     updateSalesOrderNotes,
     addCustomer,
@@ -111,7 +115,7 @@ export default function SalesOrderDetail() {
     const qty = parseInt(partQty) || 1;
     const result = soAddPartLine(currentOrder.id, selectedPartId, qty);
     if (result.success) {
-      toast({ title: 'Part Added', description: 'Part has been added to the order' });
+      toast({ title: 'Part Added' });
       setAddPartDialogOpen(false);
       setSelectedPartId('');
       setPartQty('1');
@@ -133,9 +137,7 @@ export default function SalesOrderDetail() {
 
   const handleRemoveLine = (lineId: string) => {
     const result = soRemovePartLine(lineId);
-    if (result.success) {
-      toast({ title: 'Part Removed', description: 'Part has been removed from the order' });
-    } else {
+    if (!result.success) {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
   };
@@ -144,7 +146,7 @@ export default function SalesOrderDetail() {
     if (!currentOrder) return;
     const result = soInvoice(currentOrder.id);
     if (result.success) {
-      toast({ title: 'Order Invoiced', description: 'Sales order has been invoiced and locked' });
+      toast({ title: 'Order Invoiced' });
       setShowInvoiceDialog(false);
     } else {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
@@ -164,7 +166,7 @@ export default function SalesOrderDetail() {
     setSelectedCustomerId(newCustomer.id);
     setQuickAddCustomerOpen(false);
     setNewCustomerName('');
-    toast({ title: 'Customer Added', description: `${newCustomer.company_name} created` });
+    toast({ title: 'Customer Added' });
   };
 
   const handleEditNotes = () => {
@@ -232,9 +234,7 @@ export default function SalesOrderDetail() {
             )}
 
             {selectedCustomerId === 'walkin' && (
-              <p className="text-sm text-muted-foreground">
-                Walk-in customers cannot have units assigned.
-              </p>
+              <p className="text-sm text-muted-foreground">Walk-in customers cannot have units assigned.</p>
             )}
 
             <Button onClick={handleCreateOrder} className="w-full">
@@ -244,20 +244,10 @@ export default function SalesOrderDetail() {
           </div>
         </div>
 
-        <QuickAddDialog
-          open={quickAddCustomerOpen}
-          onOpenChange={setQuickAddCustomerOpen}
-          title="Quick Add Customer"
-          onSave={handleQuickAddCustomer}
-          onCancel={() => setQuickAddCustomerOpen(false)}
-        >
+        <QuickAddDialog open={quickAddCustomerOpen} onOpenChange={setQuickAddCustomerOpen} title="Quick Add Customer" onSave={handleQuickAddCustomer} onCancel={() => setQuickAddCustomerOpen(false)}>
           <div>
             <Label>Company Name *</Label>
-            <Input
-              value={newCustomerName}
-              onChange={(e) => setNewCustomerName(e.target.value)}
-              placeholder="Enter company name"
-            />
+            <Input value={newCustomerName} onChange={(e) => setNewCustomerName(e.target.value)} placeholder="Enter company name" />
           </div>
         </QuickAddDialog>
       </div>
@@ -332,21 +322,10 @@ export default function SalesOrderDetail() {
             </div>
             {isEditingNotes ? (
               <div className="space-y-2">
-                <Textarea
-                  value={notesValue}
-                  onChange={(e) => setNotesValue(e.target.value)}
-                  rows={3}
-                  placeholder="Add notes..."
-                />
+                <Textarea value={notesValue} onChange={(e) => setNotesValue(e.target.value)} rows={3} placeholder="Add notes..." />
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={handleSaveNotes}>
-                    <Save className="w-3 h-3 mr-1" />
-                    Save
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => setIsEditingNotes(false)}>
-                    <X className="w-3 h-3 mr-1" />
-                    Cancel
-                  </Button>
+                  <Button size="sm" onClick={handleSaveNotes}><Save className="w-3 h-3 mr-1" />Save</Button>
+                  <Button size="sm" variant="outline" onClick={() => setIsEditingNotes(false)}><X className="w-3 h-3 mr-1" />Cancel</Button>
                 </div>
               </div>
             ) : (
@@ -373,6 +352,8 @@ export default function SalesOrderDetail() {
                 <TableRow>
                   <TableHead>Part #</TableHead>
                   <TableHead>Description</TableHead>
+                  <TableHead className="text-center">Warranty</TableHead>
+                  <TableHead className="text-center">Core</TableHead>
                   <TableHead className="text-right">Qty</TableHead>
                   <TableHead className="text-right">Price</TableHead>
                   <TableHead className="text-right">Total</TableHead>
@@ -382,40 +363,47 @@ export default function SalesOrderDetail() {
               <TableBody>
                 {orderLines.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                      No parts added yet
-                    </TableCell>
+                    <TableCell colSpan={8} className="text-center text-muted-foreground py-8">No parts added yet</TableCell>
                   </TableRow>
                 ) : (
                   orderLines.map((line) => {
                     const part = parts.find((p) => p.id === line.part_id);
                     return (
-                      <TableRow key={line.id}>
+                      <TableRow key={line.id} className={line.is_warranty ? 'bg-accent/30' : ''}>
                         <TableCell className="font-mono">{part?.part_number || '-'}</TableCell>
                         <TableCell>{part?.description || '-'}</TableCell>
+                        <TableCell className="text-center">
+                          {!isInvoiced ? (
+                            <Checkbox checked={line.is_warranty} onCheckedChange={() => soToggleWarranty(line.id)} />
+                          ) : line.is_warranty ? (
+                            <Badge variant="secondary"><Shield className="w-3 h-3" /></Badge>
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {line.core_charge > 0 && (
+                            <div className="flex items-center justify-center gap-1">
+                              {!isInvoiced ? (
+                                <Checkbox checked={line.core_returned} onCheckedChange={() => soToggleCoreReturned(line.id)} />
+                              ) : line.core_returned ? (
+                                <Badge variant="outline"><RotateCcw className="w-3 h-3" /></Badge>
+                              ) : (
+                                <Badge variant="destructive">${line.core_charge}</Badge>
+                              )}
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right">
-                          {isInvoiced ? (
-                            line.quantity
-                          ) : (
-                            <Input
-                              type="number"
-                              min="1"
-                              value={line.quantity}
-                              onChange={(e) => handleUpdateQty(line.id, parseInt(e.target.value) || 0)}
-                              className="w-20 text-right"
-                            />
+                          {isInvoiced ? line.quantity : (
+                            <Input type="number" min="1" value={line.quantity} onChange={(e) => handleUpdateQty(line.id, parseInt(e.target.value) || 0)} className="w-16 text-right" />
                           )}
                         </TableCell>
                         <TableCell className="text-right">${line.unit_price.toFixed(2)}</TableCell>
-                        <TableCell className="text-right font-medium">${line.line_total.toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-medium">
+                          {line.is_warranty ? <span className="text-muted-foreground">$0.00</span> : `$${line.line_total.toFixed(2)}`}
+                        </TableCell>
                         {!isInvoiced && (
                           <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleRemoveLine(line.id)}
-                              className="text-destructive hover:text-destructive"
-                            >
+                            <Button variant="ghost" size="icon" onClick={() => handleRemoveLine(line.id)} className="text-destructive hover:text-destructive">
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           </TableCell>
@@ -435,6 +423,12 @@ export default function SalesOrderDetail() {
                 <span className="text-muted-foreground">Subtotal:</span>
                 <span>${currentOrder?.subtotal.toFixed(2)}</span>
               </div>
+              {(currentOrder?.core_charges_total ?? 0) > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Core Charges:</span>
+                  <span>${currentOrder?.core_charges_total.toFixed(2)}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Tax ({currentOrder?.tax_rate}%):</span>
                 <span>${currentOrder?.tax_amount.toFixed(2)}</span>
@@ -450,48 +444,26 @@ export default function SalesOrderDetail() {
 
       {/* Print Invoice */}
       {currentOrder && (
-        <PrintSalesOrder
-          order={currentOrder}
-          lines={orderLines}
-          customer={customer}
-          unit={unit}
-          parts={parts}
-          shopName={settings.shop_name}
-        />
+        <PrintSalesOrder order={currentOrder} lines={orderLines} customer={customer} unit={unit} parts={parts} shopName={settings.shop_name} />
       )}
 
       {/* Add Part Dialog */}
-      <QuickAddDialog
-        open={addPartDialogOpen}
-        onOpenChange={setAddPartDialogOpen}
-        title="Add Part"
-        onSave={handleAddPart}
-        onCancel={() => setAddPartDialogOpen(false)}
-      >
+      <QuickAddDialog open={addPartDialogOpen} onOpenChange={setAddPartDialogOpen} title="Add Part" onSave={handleAddPart} onCancel={() => setAddPartDialogOpen(false)}>
         <div className="space-y-4">
           <div>
             <Label>Part *</Label>
             <Select value={selectedPartId} onValueChange={setSelectedPartId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select part" />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Select part" /></SelectTrigger>
               <SelectContent>
                 {activeParts.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.part_number} - {p.description} (${p.selling_price.toFixed(2)})
-                  </SelectItem>
+                  <SelectItem key={p.id} value={p.id}>{p.part_number} - {p.description} (${p.selling_price.toFixed(2)})</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div>
             <Label>Quantity</Label>
-            <Input
-              type="number"
-              min="1"
-              value={partQty}
-              onChange={(e) => setPartQty(e.target.value)}
-            />
+            <Input type="number" min="1" value={partQty} onChange={(e) => setPartQty(e.target.value)} />
           </div>
         </div>
       </QuickAddDialog>
@@ -501,16 +473,11 @@ export default function SalesOrderDetail() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Invoice this Order?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently lock the order. No further changes can be made after invoicing.
-              Make sure all parts and quantities are correct.
-            </AlertDialogDescription>
+            <AlertDialogDescription>This will permanently lock the order. No further changes can be made after invoicing.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleInvoice}>
-              Invoice Order
-            </AlertDialogAction>
+            <AlertDialogAction onClick={handleInvoice}>Invoice Order</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
