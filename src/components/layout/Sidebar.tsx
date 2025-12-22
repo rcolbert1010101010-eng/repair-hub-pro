@@ -13,6 +13,8 @@ import {
   Menu,
   HardHat,
   ClipboardList,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -36,6 +38,25 @@ const navItems = [
 export function Sidebar() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+  const [darkSidebar, setDarkSidebar] = useState(true);
+
+  const sidebarColors = darkSidebar
+    ? {
+        bg: 'bg-[hsl(222,22%,8%)]',
+        border: 'border-[hsl(222,15%,20%)]',
+        text: 'text-[hsl(0,0%,85%)]',
+        textMuted: 'text-[hsl(0,0%,60%)]',
+        hover: 'hover:bg-[hsl(222,20%,18%)] hover:text-[hsl(0,0%,95%)]',
+        active: 'bg-primary text-primary-foreground',
+      }
+    : {
+        bg: 'bg-card',
+        border: 'border-border',
+        text: 'text-foreground',
+        textMuted: 'text-muted-foreground',
+        hover: 'hover:bg-accent hover:text-accent-foreground',
+        active: 'bg-primary text-primary-foreground',
+      };
 
   return (
     <>
@@ -53,21 +74,24 @@ export function Sidebar() {
 
       <aside
         className={cn(
-          'h-screen bg-sidebar border-r border-sidebar-border flex flex-col transition-all duration-300',
+          'h-screen flex flex-col transition-all duration-300',
+          sidebarColors.bg,
+          sidebarColors.border,
+          'border-r',
           collapsed ? 'w-0 overflow-hidden' : 'w-64'
         )}
       >
         {/* Logo */}
-        <div className="h-16 flex items-center justify-between px-4 border-b border-sidebar-border">
+        <div className={cn('h-16 flex items-center justify-between px-4 border-b', sidebarColors.border)}>
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
               <Wrench className="w-5 h-5 text-primary-foreground" />
             </div>
-            <span className="font-semibold text-sidebar-foreground">ShopPro</span>
+            <span className={cn('font-semibold', sidebarColors.text)}>ShopPro</span>
           </div>
           <button
             onClick={() => setCollapsed(true)}
-            className="p-1.5 rounded-md hover:bg-sidebar-accent transition-colors text-sidebar-foreground"
+            className={cn('p-1.5 rounded-md transition-colors', sidebarColors.text, sidebarColors.hover)}
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
@@ -85,9 +109,7 @@ export function Sidebar() {
                 to={item.path}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200',
-                  isActive
-                    ? 'bg-sidebar-primary text-sidebar-primary-foreground'
-                    : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+                  isActive ? sidebarColors.active : cn(sidebarColors.text, sidebarColors.hover)
                 )}
               >
                 <item.icon className="w-5 h-5 flex-shrink-0" />
@@ -97,12 +119,25 @@ export function Sidebar() {
           })}
         </nav>
 
-        {/* Footer with Theme Toggle */}
-        <div className="p-4 border-t border-sidebar-border flex items-center justify-between">
-          <p className="text-xs text-sidebar-foreground/60">
+        {/* Footer with Toggles */}
+        <div className={cn('p-4 border-t flex items-center justify-between', sidebarColors.border)}>
+          <p className={cn('text-xs', sidebarColors.textMuted)}>
             Heavy-Duty Repair
           </p>
-          <ThemeToggle />
+          <div className="flex items-center gap-1">
+            {/* Sidebar theme toggle */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setDarkSidebar(!darkSidebar)}
+              className={cn('h-8 w-8', sidebarColors.text, sidebarColors.hover)}
+              title={darkSidebar ? 'Switch to light sidebar' : 'Switch to dark sidebar'}
+            >
+              {darkSidebar ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </Button>
+            {/* App theme toggle */}
+            <ThemeToggle />
+          </div>
         </div>
       </aside>
     </>
