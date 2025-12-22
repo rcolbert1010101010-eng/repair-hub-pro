@@ -10,7 +10,9 @@ import CustomerDetail from "@/pages/CustomerDetail";
 import Units from "@/pages/Units";
 import UnitForm from "@/pages/UnitForm";
 import Vendors from "@/pages/Vendors";
+import VendorDetail from "@/pages/VendorDetail";
 import Categories from "@/pages/Categories";
+import CategoryDetail from "@/pages/CategoryDetail";
 import Inventory from "@/pages/Inventory";
 import PartForm from "@/pages/PartForm";
 import SalesOrders from "@/pages/SalesOrders";
@@ -36,7 +38,9 @@ const App = () => (
             <Route path="/units" element={<Units />} />
             <Route path="/units/:id" element={<UnitForm />} />
             <Route path="/vendors" element={<Vendors />} />
+            <Route path="/vendors/:id" element={<VendorDetail />} />
             <Route path="/categories" element={<Categories />} />
+            <Route path="/categories/:id" element={<CategoryDetail />} />
             <Route path="/inventory" element={<Inventory />} />
             <Route path="/inventory/:id" element={<PartForm />} />
             <Route path="/sales-orders" element={<SalesOrders />} />

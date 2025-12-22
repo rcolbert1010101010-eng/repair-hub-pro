@@ -69,6 +69,7 @@ export default function Categories() {
         columns={columns}
         searchKeys={['category_name', 'description']}
         searchPlaceholder="Search categories..."
+        onRowClick={(category) => navigate(`/categories/${category.id}`)}
         emptyMessage="No categories found. Add your first category to get started."
       />
 
