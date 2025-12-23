@@ -358,7 +358,7 @@ export const useShopStore = create<ShopState>()(
         })),
 
       // Parts
-      parts: [],
+      parts: [...SAMPLE_PARTS],
 
       addPart: (part) => {
         const newPart: Part = {
@@ -1299,7 +1299,7 @@ export const useShopStore = create<ShopState>()(
         get().receivingRecords.filter((r) => r.purchase_order_line_id === lineId),
     }),
     {
-      name: 'shop-storage',
+      name: 'shop-storage-v2',
     }
   )
 );
