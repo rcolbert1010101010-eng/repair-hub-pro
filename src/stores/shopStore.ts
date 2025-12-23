@@ -358,7 +358,7 @@ export const useShopStore = create<ShopState>()(
         })),
 
       // Parts
-      parts: [...SAMPLE_PARTS],
+      parts: [],
 
       addPart: (part) => {
         const newPart: Part = {
