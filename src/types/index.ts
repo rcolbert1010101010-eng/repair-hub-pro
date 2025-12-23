@@ -118,7 +118,7 @@ export interface SalesOrder {
   notes: string | null;
   tax_rate: number;
   subtotal: number;
-  core_charges_total: number;
+  core_charges_total?: number;
   tax_amount: number;
   total: number;
   invoiced_at: string | null;

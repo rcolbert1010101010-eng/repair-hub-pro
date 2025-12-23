@@ -1,15 +1,34 @@
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { useShopStore } from '@/stores/shopStore';
-import type { SalesOrder } from '@/types';
+import type { SalesOrder, Customer } from '@/types';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { fetchCustomers } from '@/integrations/supabase/customers';
 
 export default function SalesOrders() {
   const navigate = useNavigate();
-  const { salesOrders, customers } = useShopStore();
+  const { salesOrders } = useShopStore();
+  const [customers, setCustomers] = useState<Customer[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const fetched = await fetchCustomers();
+        if (!isMounted) return;
+        setCustomers(fetched);
+      } catch (e) {
+        console.error('Failed to load customers', e);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const columns: Column<SalesOrder>[] = [
     { key: 'order_number', header: 'Order #', sortable: true, className: 'font-mono' },

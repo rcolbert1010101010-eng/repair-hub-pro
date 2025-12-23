@@ -18,6 +18,13 @@ import type {
   PurchaseOrderLine,
   ReceivingRecord,
 } from '@/types';
+import {
+  createSalesOrder as createSalesOrderDb,
+  createSalesOrderLine as createSalesOrderLineDb,
+  deleteSalesOrderLine as deleteSalesOrderLineDb,
+  fetchSalesOrdersWithLines,
+  updateSalesOrderLine as updateSalesOrderLineDb,
+} from '@/integrations/supabase/salesOrders';
 
 // Generate unique IDs
 const generateId = () => crypto.randomUUID();
@@ -78,10 +85,10 @@ interface ShopState {
   // Sales Orders
   salesOrders: SalesOrder[];
   salesOrderLines: SalesOrderLine[];
-  createSalesOrder: (customerId: string, unitId: string | null) => SalesOrder;
-  soAddPartLine: (orderId: string, partId: string, qty: number) => { success: boolean; error?: string };
-  soUpdatePartQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
-  soRemovePartLine: (lineId: string) => { success: boolean; error?: string };
+  createSalesOrder: (customerId: string, unitId: string | null) => Promise<SalesOrder>;
+  soAddPartLine: (orderId: string, partId: string, qty: number) => Promise<{ success: boolean; error?: string }>;
+  soUpdatePartQty: (lineId: string, newQty: number) => Promise<{ success: boolean; error?: string }>;
+  soRemovePartLine: (lineId: string) => Promise<{ success: boolean; error?: string }>;
   soToggleWarranty: (lineId: string) => { success: boolean; error?: string };
   soToggleCoreReturned: (lineId: string) => { success: boolean; error?: string };
   soInvoice: (orderId: string) => { success: boolean; error?: string };
@@ -109,6 +116,7 @@ interface ShopState {
   getWorkOrderLaborLines: (orderId: string) => WorkOrderLaborLine[];
   recalculateSalesOrderTotals: (orderId: string) => void;
   recalculateWorkOrderTotals: (orderId: string) => void;
+  loadSalesOrdersFromSupabase: () => Promise<void>;
 
   // Purchase Orders
   purchaseOrders: PurchaseOrder[];
@@ -358,7 +366,7 @@ export const useShopStore = create<ShopState>()(
         })),
 
       // Parts
-      parts: [...SAMPLE_PARTS],
+      parts: [],
 
       addPart: (part) => {
         const newPart: Part = {
@@ -515,31 +523,20 @@ export const useShopStore = create<ShopState>()(
       salesOrders: [],
       salesOrderLines: [],
 
-      createSalesOrder: (customerId, unitId) => {
+      createSalesOrder: async (customerId, unitId) => {
         const state = get();
-        const newOrder: SalesOrder = {
-          id: generateId(),
-          order_number: generateOrderNumber('SO', state.salesOrders.length),
+        const newOrder = await createSalesOrderDb({
           customer_id: customerId,
           unit_id: unitId,
-          status: 'OPEN',
-          notes: null,
           tax_rate: state.settings.default_tax_rate,
-          subtotal: 0,
-          core_charges_total: 0,
-          tax_amount: 0,
-          total: 0,
-          invoiced_at: null,
-          created_at: now(),
-          updated_at: now(),
-        };
+        });
         set((state) => ({
-          salesOrders: [...state.salesOrders, newOrder],
+          salesOrders: [newOrder, ...state.salesOrders],
         }));
         return newOrder;
       },
 
-      soAddPartLine: (orderId, partId, qty) => {
+      soAddPartLine: async (orderId, partId, qty) => {
         const state = get();
         const order = state.salesOrders.find((o) => o.id === orderId);
         
@@ -549,56 +546,49 @@ export const useShopStore = create<ShopState>()(
         const part = state.parts.find((p) => p.id === partId);
         if (!part) return { success: false, error: 'Part not found' };
 
-        const existingLine = state.salesOrderLines.find(
-          (l) => l.sales_order_id === orderId && l.part_id === partId
-        );
+        try {
+          const existingLine = state.salesOrderLines.find(
+            (l) => l.sales_order_id === orderId && l.part_id === partId
+          );
 
-        if (existingLine) {
-          const newQty = existingLine.quantity + qty;
-          const lineTotal = newQty * existingLine.unit_price;
-          
-          set((state) => ({
-            salesOrderLines: state.salesOrderLines.map((l) =>
-              l.id === existingLine.id
-                ? { ...l, quantity: newQty, line_total: lineTotal, updated_at: now() }
-                : l
-            ),
-            parts: state.parts.map((p) =>
-              p.id === partId
-                ? { ...p, quantity_on_hand: p.quantity_on_hand - qty, updated_at: now() }
-                : p
-            ),
-          }));
-        } else {
-          const newLine: SalesOrderLine = {
-            id: generateId(),
-            sales_order_id: orderId,
-            part_id: partId,
-            quantity: qty,
-            unit_price: part.selling_price,
-            line_total: qty * part.selling_price,
-            is_warranty: false,
-            core_charge: part.core_required ? part.core_charge : 0,
-            core_returned: false,
-            created_at: now(),
-            updated_at: now(),
-          };
+          if (existingLine) {
+            const newQty = existingLine.quantity + qty;
+            const lineTotal = newQty * existingLine.unit_price;
+            const updatedLine = await updateSalesOrderLineDb({
+              id: existingLine.id,
+              quantity: newQty,
+              line_total: lineTotal,
+            });
 
-          set((state) => ({
-            salesOrderLines: [...state.salesOrderLines, newLine],
-            parts: state.parts.map((p) =>
-              p.id === partId
-                ? { ...p, quantity_on_hand: p.quantity_on_hand - qty, updated_at: now() }
-                : p
-            ),
-          }));
+            set((state) => ({
+              salesOrderLines: state.salesOrderLines.map((l) =>
+                l.id === existingLine.id ? updatedLine : l
+              ),
+            }));
+          } else {
+            const newLine = await createSalesOrderLineDb({
+              sales_order_id: orderId,
+              part_id: partId,
+              quantity: qty,
+              unit_price: part.selling_price,
+              line_total: qty * part.selling_price,
+              is_warranty: false,
+              core_charge: part.core_required ? part.core_charge : 0,
+            });
+
+            set((state) => ({
+              salesOrderLines: [...state.salesOrderLines, newLine],
+            }));
+          }
+
+          get().recalculateSalesOrderTotals(orderId);
+          return { success: true };
+        } catch (e: any) {
+          return { success: false, error: e?.message ?? 'Failed to add part' };
         }
-
-        get().recalculateSalesOrderTotals(orderId);
-        return { success: true };
       },
 
-      soUpdatePartQty: (lineId, newQty) => {
+      soUpdatePartQty: async (lineId, newQty) => {
         const state = get();
         const line = state.salesOrderLines.find((l) => l.id === lineId);
         if (!line) return { success: false, error: 'Line not found' };
@@ -607,27 +597,29 @@ export const useShopStore = create<ShopState>()(
         if (!order) return { success: false, error: 'Order not found' };
         if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
 
-        const delta = line.quantity - newQty;
         const lineTotal = newQty * line.unit_price;
 
-        set((state) => ({
-          salesOrderLines: state.salesOrderLines.map((l) =>
-            l.id === lineId
-              ? { ...l, quantity: newQty, line_total: lineTotal, updated_at: now() }
-              : l
-          ),
-          parts: state.parts.map((p) =>
-            p.id === line.part_id
-              ? { ...p, quantity_on_hand: p.quantity_on_hand + delta, updated_at: now() }
-              : p
-          ),
-        }));
+        try {
+          const updatedLine = await updateSalesOrderLineDb({
+            id: lineId,
+            quantity: newQty,
+            line_total: lineTotal,
+          });
 
-        get().recalculateSalesOrderTotals(line.sales_order_id);
-        return { success: true };
+          set((state) => ({
+            salesOrderLines: state.salesOrderLines.map((l) =>
+              l.id === lineId ? updatedLine : l
+            ),
+          }));
+
+          get().recalculateSalesOrderTotals(line.sales_order_id);
+          return { success: true };
+        } catch (e: any) {
+          return { success: false, error: e?.message ?? 'Failed to update quantity' };
+        }
       },
 
-      soRemovePartLine: (lineId) => {
+      soRemovePartLine: async (lineId) => {
         const state = get();
         const line = state.salesOrderLines.find((l) => l.id === lineId);
         if (!line) return { success: false, error: 'Line not found' };
@@ -636,17 +628,18 @@ export const useShopStore = create<ShopState>()(
         if (!order) return { success: false, error: 'Order not found' };
         if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
 
-        set((state) => ({
-          salesOrderLines: state.salesOrderLines.filter((l) => l.id !== lineId),
-          parts: state.parts.map((p) =>
-            p.id === line.part_id
-              ? { ...p, quantity_on_hand: p.quantity_on_hand + line.quantity, updated_at: now() }
-              : p
-          ),
-        }));
+        try {
+          await deleteSalesOrderLineDb(lineId);
 
-        get().recalculateSalesOrderTotals(line.sales_order_id);
-        return { success: true };
+          set((state) => ({
+            salesOrderLines: state.salesOrderLines.filter((l) => l.id !== lineId),
+          }));
+
+          get().recalculateSalesOrderTotals(line.sales_order_id);
+          return { success: true };
+        } catch (e: any) {
+          return { success: false, error: e?.message ?? 'Failed to remove line' };
+        }
       },
 
       soToggleWarranty: (lineId) => {
@@ -739,6 +732,19 @@ export const useShopStore = create<ShopState>()(
               : o
           ),
         }));
+      },
+
+      loadSalesOrdersFromSupabase: async () => {
+        try {
+          const { orders, lines } = await fetchSalesOrdersWithLines();
+          set((state) => ({
+            ...state,
+            salesOrders: orders,
+            salesOrderLines: lines,
+          }));
+        } catch (e) {
+          console.error('Failed to load sales orders', e);
+        }
       },
 
       // Work Orders
@@ -1303,3 +1309,5 @@ export const useShopStore = create<ShopState>()(
     }
   )
 );
+
+void useShopStore.getState().loadSalesOrdersFromSupabase();

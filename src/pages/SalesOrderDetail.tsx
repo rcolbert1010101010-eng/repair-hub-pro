@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -37,15 +37,17 @@ import { useToast } from '@/hooks/use-toast';
 import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Shield, RotateCcw } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { PrintSalesOrder } from '@/components/print/PrintInvoice';
+import { supabase } from '@/integrations/supabase/client';
+import { fetchParts } from '@/integrations/supabase/catalog';
+import { fetchCustomers, createCustomer as createCustomerDb } from '@/integrations/supabase/customers';
+import { fetchUnits } from '@/integrations/supabase/units';
+import type { Part, Customer, Unit } from '@/types';
 
 export default function SalesOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const {
     salesOrders,
-    customers,
-    units,
-    parts,
     settings,
     getSalesOrderLines,
     createSalesOrder,
@@ -54,15 +56,13 @@ export default function SalesOrderDetail() {
     soRemovePartLine,
     soToggleWarranty,
     soToggleCoreReturned,
-    soInvoice,
     updateSalesOrderNotes,
-    addCustomer,
   } = useShopStore();
   const { toast } = useToast();
 
   const isNew = id === 'new';
-  const [selectedCustomerId, setSelectedCustomerId] = useState('');
-  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
+  const [selectedUnitId, setSelectedUnitId] = useState<string>('');
   const [order, setOrder] = useState(() => {
     if (!isNew) return salesOrders.find((o) => o.id === id);
     return null;
@@ -78,6 +78,15 @@ export default function SalesOrderDetail() {
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState('');
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
+  const [parts, setParts] = useState<Part[]>([]);
+  const [loadingParts, setLoadingParts] = useState(true);
+  const [partsError, setPartsError] = useState<string | null>(null);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(true);
+  const [customersError, setCustomersError] = useState<string | null>(null);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [loadingUnits, setLoadingUnits] = useState(true);
+  const [unitsError, setUnitsError] = useState<string | null>(null);
 
   const currentOrder = order || salesOrders.find((o) => o.id === id);
 
@@ -87,6 +96,9 @@ export default function SalesOrderDetail() {
     return units.filter((u) => u.customer_id === selectedCustomerId && u.is_active);
   }, [selectedCustomerId, units]);
   const activeParts = parts.filter((p) => p.is_active);
+  const customerSelectPlaceholder = customersError ? 'Failed to load customers' : loadingCustomers ? 'Loading customers...' : 'Select customer';
+  const unitSelectPlaceholder = unitsError ? 'Failed to load units' : loadingUnits ? 'Loading units...' : 'Select unit (optional)';
+  const partSelectPlaceholder = partsError ? 'Failed to load parts' : loadingParts ? 'Loading parts...' : 'Select part';
 
   const isInvoiced = currentOrder?.status === 'INVOICED';
 
@@ -99,21 +111,25 @@ export default function SalesOrderDetail() {
     );
   }
 
-  const handleCreateOrder = () => {
+  const handleCreateOrder = async () => {
     if (!selectedCustomerId) {
       toast({ title: 'Error', description: 'Please select a customer', variant: 'destructive' });
       return;
     }
-    const newOrder = createSalesOrder(selectedCustomerId, selectedUnitId);
-    navigate(`/sales-orders/${newOrder.id}`, { replace: true });
-    setOrder(newOrder);
-    toast({ title: 'Order Created', description: `Sales Order ${newOrder.order_number} created` });
+    try {
+      const newOrder = await createSalesOrder(selectedCustomerId, selectedUnitId);
+      navigate(`/sales-orders/${newOrder.id}`, { replace: true });
+      setOrder(newOrder);
+      toast({ title: 'Order Created', description: `Sales Order ${newOrder.order_number} created` });
+    } catch (e: any) {
+      toast({ title: 'Error', description: e?.message ?? 'Failed to create order', variant: 'destructive' });
+    }
   };
 
-  const handleAddPart = () => {
+  const handleAddPart = async () => {
     if (!selectedPartId || !currentOrder) return;
     const qty = parseInt(partQty) || 1;
-    const result = soAddPartLine(currentOrder.id, selectedPartId, qty);
+    const result = await soAddPartLine(currentOrder.id, selectedPartId, qty);
     if (result.success) {
       toast({ title: 'Part Added' });
       setAddPartDialogOpen(false);
@@ -124,49 +140,154 @@ export default function SalesOrderDetail() {
     }
   };
 
-  const handleUpdateQty = (lineId: string, newQty: number) => {
+  const handleUpdateQty = async (lineId: string, newQty: number) => {
     if (newQty <= 0) {
-      handleRemoveLine(lineId);
+      await handleRemoveLine(lineId);
       return;
     }
-    const result = soUpdatePartQty(lineId, newQty);
+    const result = await soUpdatePartQty(lineId, newQty);
     if (!result.success) {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
   };
 
-  const handleRemoveLine = (lineId: string) => {
-    const result = soRemovePartLine(lineId);
+  const handleRemoveLine = async (lineId: string) => {
+    const result = await soRemovePartLine(lineId);
     if (!result.success) {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
   };
 
-  const handleInvoice = () => {
+  useEffect(() => {
+    let isMounted = true;
+
+    (async () => {
+      try {
+        setLoadingParts(true);
+        setPartsError(null);
+        const fetchedParts = await fetchParts();
+        if (!isMounted) return;
+        setParts(fetchedParts);
+        useShopStore.setState((state) => ({
+          ...state,
+          parts: fetchedParts,
+        }));
+      } catch (e: any) {
+        if (!isMounted) return;
+        console.error('Failed to load parts', e);
+        setPartsError(e?.message ?? 'Failed to load parts');
+      } finally {
+        if (!isMounted) return;
+        setLoadingParts(false);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    (async () => {
+      try {
+        setLoadingUnits(true);
+        setUnitsError(null);
+        const fetchedUnits = await fetchUnits();
+        if (!isMounted) return;
+        setUnits(fetchedUnits);
+      } catch (e: any) {
+        if (!isMounted) return;
+        console.error('Failed to load units', e);
+        setUnitsError(e?.message ?? 'Failed to load units');
+      } finally {
+        if (!isMounted) return;
+        setLoadingUnits(false);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    (async () => {
+      try {
+        setLoadingCustomers(true);
+        setCustomersError(null);
+        const fetchedCustomers = await fetchCustomers();
+        if (!isMounted) return;
+        setCustomers(fetchedCustomers);
+      } catch (e: any) {
+        if (!isMounted) return;
+        console.error('Failed to load customers', e);
+        setCustomersError(e?.message ?? 'Failed to load customers');
+      } finally {
+        if (!isMounted) return;
+        setLoadingCustomers(false);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleInvoice = async () => {
     if (!currentOrder) return;
-    const result = soInvoice(currentOrder.id);
-    if (result.success) {
-      toast({ title: 'Order Invoiced' });
-      setShowInvoiceDialog(false);
-    } else {
-      toast({ title: 'Error', description: result.error, variant: 'destructive' });
+
+    try {
+      const { data, error } = await supabase.rpc('invoice_sales_order', { p_order_id: currentOrder.id });
+      if (error) throw error;
+
+      if (data?.success === true || data?.already_invoiced === true) {
+        toast({ title: 'Order Invoiced' });
+        setShowInvoiceDialog(false);
+        window.location.reload();
+        return;
+      }
+
+      toast({
+        title: 'Error',
+        description: data?.error ?? 'Unable to invoice order',
+        variant: 'destructive',
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Error',
+        description: e?.message ?? 'Unable to invoice order',
+        variant: 'destructive',
+      });
     }
   };
 
-  const handleQuickAddCustomer = () => {
+  const handleQuickAddCustomer = async () => {
     if (!newCustomerName.trim()) return;
-    const newCustomer = addCustomer({
-      company_name: newCustomerName.trim(),
-      contact_name: null,
-      phone: null,
-      email: null,
-      address: null,
-      notes: null,
-    });
+    try {
+      const newCustomer = await createCustomerDb({
+        company_name: newCustomerName.trim(),
+        contact_name: null,
+        phone: null,
+        email: null,
+        address: null,
+        notes: null,
+      });
+      setCustomers((prev) => [...prev, newCustomer]);
     setSelectedCustomerId(newCustomer.id);
-    setQuickAddCustomerOpen(false);
-    setNewCustomerName('');
-    toast({ title: 'Customer Added' });
+      setQuickAddCustomerOpen(false);
+      setNewCustomerName('');
+      toast({ title: 'Customer Added' });
+    } catch (e: any) {
+      toast({
+        title: 'Error',
+        description: e?.message ?? 'Unable to add customer',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleEditNotes = () => {
@@ -201,12 +322,14 @@ export default function SalesOrderDetail() {
                   setSelectedUnitId(null);
                 }}>
                   <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Select customer" />
+                    <SelectValue placeholder={customerSelectPlaceholder} />
                   </SelectTrigger>
                   <SelectContent>
-                    {activeCustomers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>
-                    ))}
+                    {activeCustomers
+                      .filter((c) => c.id)
+                      .map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
                 <Button variant="outline" size="icon" onClick={() => setQuickAddCustomerOpen(true)}>
@@ -215,19 +338,26 @@ export default function SalesOrderDetail() {
               </div>
             </div>
 
-            {selectedCustomerId && selectedCustomerId !== 'walkin' && customerUnits.length > 0 && (
+            {selectedCustomerId && selectedCustomerId !== 'walkin' && (
               <div>
                 <Label>Unit (optional)</Label>
-                <Select value={selectedUnitId || ''} onValueChange={setSelectedUnitId}>
+                <Select
+                  value={selectedUnitId || ''}
+                  onValueChange={(value) => setSelectedUnitId(value)}
+                  disabled={loadingUnits || !!unitsError}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select unit (optional)" />
+                    <SelectValue placeholder={unitSelectPlaceholder} />
                   </SelectTrigger>
                   <SelectContent>
-                    {customerUnits.map((u) => (
-                      <SelectItem key={u.id} value={u.id}>
-                        {u.unit_name} {u.vin && `(${u.vin})`}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="">No unit</SelectItem>
+                    {customerUnits
+                      .filter((u) => u.id)
+                      .map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {u.unit_name} {u.vin && `(${u.vin})`}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -453,11 +583,15 @@ export default function SalesOrderDetail() {
           <div>
             <Label>Part *</Label>
             <Select value={selectedPartId} onValueChange={setSelectedPartId}>
-              <SelectTrigger><SelectValue placeholder="Select part" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder={partSelectPlaceholder} /></SelectTrigger>
               <SelectContent>
-                {activeParts.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.part_number} - {p.description} (${p.selling_price.toFixed(2)})</SelectItem>
-                ))}
+                {partsError ? (
+                  <SelectItem value="error" disabled>{partsError}</SelectItem>
+                ) : (
+                  activeParts.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.part_number} - {p.description} (${p.selling_price.toFixed(2)})</SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
           </div>
