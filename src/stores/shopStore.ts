@@ -1299,7 +1299,7 @@ export const useShopStore = create<ShopState>()(
         get().receivingRecords.filter((r) => r.purchase_order_line_id === lineId),
     }),
     {
-      name: 'shop-storage-v2',
+      name: 'shop-storage-v3',
     }
   )
 );
