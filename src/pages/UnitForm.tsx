@@ -12,15 +12,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/data';
 import { useToast } from '@/hooks/use-toast';
 import { Save, X, Trash2, Edit } from 'lucide-react';
+import { validateUnitSave } from '@/services/units/unitService';
 
 export default function UnitForm() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { units, customers, addUnit, updateUnit, deactivateUnit } = useShopStore();
+  const { units } = useRepos().units;
+  const { customers } = useRepos().customers;
+  const { addUnit, updateUnit, deactivateUnit } = useRepos().units;
   const { toast } = useToast();
 
   const isNew = id === 'new';
@@ -52,50 +55,17 @@ export default function UnitForm() {
   }
 
   const handleSave = () => {
-    if (!formData.customer_id) {
+    const validation = validateUnitSave(units, {
+      currentId: isNew ? null : id!,
+      customerId: formData.customer_id,
+      unitName: formData.unit_name,
+      vin: formData.vin || null,
+    });
+
+    if (!validation.ok) {
       toast({
         title: 'Validation Error',
-        description: 'Customer is required',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    if (!formData.unit_name.trim()) {
-      toast({
-        title: 'Validation Error',
-        description: 'Unit name is required',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    // Check for duplicate VIN
-    if (formData.vin) {
-      const vinExists = units.some(
-        (u) => u.id !== id && u.vin?.toLowerCase() === formData.vin.toLowerCase()
-      );
-      if (vinExists) {
-        toast({
-          title: 'Validation Error',
-          description: 'A unit with this VIN already exists',
-          variant: 'destructive',
-        });
-        return;
-      }
-    }
-
-    // Check for duplicate unit name per customer
-    const nameExists = units.some(
-      (u) =>
-        u.id !== id &&
-        u.customer_id === formData.customer_id &&
-        u.unit_name.toLowerCase() === formData.unit_name.toLowerCase()
-    );
-    if (nameExists) {
-      toast({
-        title: 'Validation Error',
-        description: 'This customer already has a unit with this name',
+        description: validation.error,
         variant: 'destructive',
       });
       return;
