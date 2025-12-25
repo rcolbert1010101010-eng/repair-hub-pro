@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { DataTable, type Column } from "@/components/ui/data-table";
@@ -10,15 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { createCategory, fetchCategories } from "@/integrations/supabase/catalog";
+import { useRepos } from "@/data";
 
 export default function Categories() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [categories, setCategories] = useState<PartCategory[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const { categories, addCategory } = useRepos().categories;
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -26,41 +24,12 @@ export default function Categories() {
     description: "",
   });
 
-  async function refreshCategories() {
-    const c = await fetchCategories();
-    setCategories(c);
-  }
-
-  useEffect(() => {
-    let isMounted = true;
-
-    (async () => {
-      try {
-        setLoading(true);
-        setLoadError(null);
-        const c = await fetchCategories();
-        if (!isMounted) return;
-        setCategories(c);
-      } catch (e: any) {
-        if (!isMounted) return;
-        setLoadError(e?.message ?? "Failed to load categories from Supabase");
-      } finally {
-        if (!isMounted) return;
-        setLoading(false);
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
   const columns: Column<PartCategory>[] = [
     { key: "category_name", header: "Category Name", sortable: true },
     { key: "description", header: "Description", sortable: true },
   ];
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!formData.category_name.trim()) {
       toast({
         title: "Validation Error",
@@ -70,28 +39,18 @@ export default function Categories() {
       return;
     }
 
-    try {
-      await createCategory({
-        category_name: formData.category_name.trim(),
-        description: formData.description.trim() || null,
-      });
+    addCategory({
+      category_name: formData.category_name.trim(),
+      description: formData.description.trim() || null,
+    });
 
-      toast({
-        title: "Category Created",
-        description: `${formData.category_name.trim()} has been added`,
-      });
+    toast({
+      title: "Category Created",
+      description: `${formData.category_name.trim()} has been added`,
+    });
 
-      setDialogOpen(false);
-      setFormData({ category_name: "", description: "" });
-
-      await refreshCategories();
-    } catch (e: any) {
-      toast({
-        title: "Create failed",
-        description: e?.message ?? "Unable to create category",
-        variant: "destructive",
-      });
-    }
+    setDialogOpen(false);
+    setFormData({ category_name: "", description: "" });
   };
 
   return (
@@ -107,21 +66,14 @@ export default function Categories() {
         }
       />
 
-      {loadError ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
-          <div className="font-medium">Failed to load categories</div>
-          <div className="opacity-80 mt-1">{loadError}</div>
-        </div>
-      ) : (
-        <DataTable
-          data={categories}
-          columns={columns}
-          searchKeys={["category_name", "description"]}
-          searchPlaceholder={loading ? "Loading categories..." : "Search categories..."}
-          onRowClick={(category) => navigate(`/categories/${category.id}`)}
-          emptyMessage={loading ? "Loading..." : "No categories found. Add your first category to get started."}
-        />
-      )}
+      <DataTable
+        data={categories}
+        columns={columns}
+        searchKeys={["category_name", "description"]}
+        searchPlaceholder={"Search categories..."}
+        onRowClick={(category) => navigate(`/categories/${category.id}`)}
+        emptyMessage={"No categories found. Add your first category to get started."}
+      />
 
       <QuickAddDialog
         open={dialogOpen}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { DataTable, type Column } from "@/components/ui/data-table";
@@ -10,15 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { createVendor, fetchVendors } from "@/integrations/supabase/catalog";
+import { useRepos } from "@/data";
 
 export default function Vendors() {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const { vendors, addVendor } = useRepos().vendors;
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -28,42 +26,13 @@ export default function Vendors() {
     notes: "",
   });
 
-  async function refreshVendors() {
-    const v = await fetchVendors();
-    setVendors(v);
-  }
-
-  useEffect(() => {
-    let isMounted = true;
-
-    (async () => {
-      try {
-        setLoading(true);
-        setLoadError(null);
-        const v = await fetchVendors();
-        if (!isMounted) return;
-        setVendors(v);
-      } catch (e: any) {
-        if (!isMounted) return;
-        setLoadError(e?.message ?? "Failed to load vendors from Supabase");
-      } finally {
-        if (!isMounted) return;
-        setLoading(false);
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
   const columns: Column<Vendor>[] = [
     { key: "vendor_name", header: "Vendor Name", sortable: true },
     { key: "phone", header: "Phone", sortable: true },
     { key: "email", header: "Email", sortable: true },
   ];
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!formData.vendor_name.trim()) {
       toast({
         title: "Validation Error",
@@ -73,30 +42,20 @@ export default function Vendors() {
       return;
     }
 
-    try {
-      await createVendor({
-        vendor_name: formData.vendor_name.trim(),
-        phone: formData.phone.trim() || null,
-        email: formData.email.trim() || null,
-        notes: formData.notes.trim() || null,
-      });
+    addVendor({
+      vendor_name: formData.vendor_name.trim(),
+      phone: formData.phone.trim() || null,
+      email: formData.email.trim() || null,
+      notes: formData.notes.trim() || null,
+    });
 
-      toast({
-        title: "Vendor Created",
-        description: `${formData.vendor_name.trim()} has been added`,
-      });
+    toast({
+      title: "Vendor Created",
+      description: `${formData.vendor_name.trim()} has been added`,
+    });
 
-      setDialogOpen(false);
-      setFormData({ vendor_name: "", phone: "", email: "", notes: "" });
-
-      await refreshVendors();
-    } catch (e: any) {
-      toast({
-        title: "Create failed",
-        description: e?.message ?? "Unable to create vendor",
-        variant: "destructive",
-      });
-    }
+    setDialogOpen(false);
+    setFormData({ vendor_name: "", phone: "", email: "", notes: "" });
   };
 
   return (
@@ -112,21 +71,14 @@ export default function Vendors() {
         }
       />
 
-      {loadError ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
-          <div className="font-medium">Failed to load vendors</div>
-          <div className="opacity-80 mt-1">{loadError}</div>
-        </div>
-      ) : (
-        <DataTable
-          data={vendors}
-          columns={columns}
-          searchKeys={["vendor_name", "phone", "email"]}
-          searchPlaceholder={loading ? "Loading vendors..." : "Search vendors..."}
-          onRowClick={(vendor) => navigate(`/vendors/${vendor.id}`)}
-          emptyMessage={loading ? "Loading..." : "No vendors found. Add your first vendor to get started."}
-        />
-      )}
+      <DataTable
+        data={vendors}
+        columns={columns}
+        searchKeys={["vendor_name", "phone", "email"]}
+        searchPlaceholder={"Search vendors..."}
+        onRowClick={(vendor) => navigate(`/vendors/${vendor.id}`)}
+        emptyMessage={"No vendors found. Add your first vendor to get started."}
+      />
 
       <QuickAddDialog
         open={dialogOpen}

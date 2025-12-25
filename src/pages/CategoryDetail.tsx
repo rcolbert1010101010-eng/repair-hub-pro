@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -19,17 +19,18 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import type { PartCategory, Part } from "@/types";
-import { fetchCategoryById, updateCategoryById, deactivateCategoryById, fetchParts } from "@/integrations/supabase/catalog";
+import { useRepos } from "@/data";
 
 export default function CategoryDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [category, setCategory] = useState<PartCategory | null>(null);
-  const [parts, setParts] = useState<Part[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const { categories } = useRepos().categories;
+  const { parts } = useRepos().parts;
+  const { updateCategory, deactivateCategory } = useRepos().categories;
+
+  const category = categories.find((c) => c.id === id) || null;
 
   const [isEditing, setIsEditing] = useState(false);
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
@@ -38,46 +39,17 @@ export default function CategoryDetail() {
     description: "",
   });
 
-  useEffect(() => {
-    let isMounted = true;
-
-    (async () => {
-      try {
-        setLoading(true);
-        setLoadError(null);
-
-        if (!id) throw new Error("Missing category id");
-
-        const [c, p] = await Promise.all([fetchCategoryById(id), fetchParts()]);
-        if (!isMounted) return;
-
-        setCategory(c);
-        setParts(p);
-
-        if (c) {
-          setFormData({
-            category_name: c.category_name,
-            description: c.description || "",
-          });
-        }
-      } catch (e: any) {
-        if (!isMounted) return;
-        setLoadError(e?.message ?? "Failed to load category");
-      } finally {
-        if (!isMounted) return;
-        setLoading(false);
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [id]);
+  if (category && formData.category_name === "" && formData.description === "") {
+    setFormData({
+      category_name: category.category_name,
+      description: category.description || "",
+    });
+  }
 
   const categoryParts = useMemo(() => parts.filter((p) => p.category_id === id), [parts, id]);
   const activeParts = useMemo(() => categoryParts.filter((p) => p.is_active), [categoryParts]);
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!id) return;
 
     if (!formData.category_name.trim()) {
@@ -89,46 +61,28 @@ export default function CategoryDetail() {
       return;
     }
 
-    try {
-      const updated = await updateCategoryById(id, {
-        category_name: formData.category_name.trim(),
-        description: formData.description.trim() || null,
-      });
+    updateCategory(id, {
+      category_name: formData.category_name.trim(),
+      description: formData.description.trim() || null,
+    });
 
-      setCategory(updated);
+    toast({
+      title: "Category Updated",
+      description: `${formData.category_name.trim()} has been updated`,
+    });
 
-      toast({
-        title: "Category Updated",
-        description: `${formData.category_name.trim()} has been updated`,
-      });
-
-      setIsEditing(false);
-    } catch (e: any) {
-      toast({
-        title: "Update failed",
-        description: e?.message ?? "Unable to update category",
-        variant: "destructive",
-      });
-    }
+    setIsEditing(false);
   };
 
-  const handleDeactivate = async () => {
+  const handleDeactivate = () => {
     if (!id || !category) return;
 
-    try {
-      await deactivateCategoryById(id);
-      toast({
-        title: "Category Deactivated",
-        description: `${category.category_name} has been deactivated`,
-      });
-      navigate("/categories");
-    } catch (e: any) {
-      toast({
-        title: "Deactivate failed",
-        description: e?.message ?? "Unable to deactivate category",
-        variant: "destructive",
-      });
-    }
+    deactivateCategory(id);
+    toast({
+      title: "Category Deactivated",
+      description: `${category.category_name} has been deactivated`,
+    });
+    navigate("/categories");
   };
 
   const handleCancel = () => {
@@ -139,27 +93,6 @@ export default function CategoryDetail() {
     });
     setIsEditing(false);
   };
-
-  if (loading) {
-    return (
-      <div className="page-container">
-        <PageHeader title="Category" backTo="/categories" />
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <div className="page-container">
-        <PageHeader title="Category" backTo="/categories" />
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
-          <div className="font-medium">Failed to load category</div>
-          <div className="opacity-80 mt-1">{loadError}</div>
-        </div>
-      </div>
-    );
-  }
 
   if (!category) {
     return (

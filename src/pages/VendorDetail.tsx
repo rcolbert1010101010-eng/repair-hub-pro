@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -19,17 +19,18 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import type { Vendor, Part } from "@/types";
-import { fetchVendorById, updateVendorById, deactivateVendorById, fetchParts } from "@/integrations/supabase/catalog";
+import { useRepos } from "@/data";
 
 export default function VendorDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [vendor, setVendor] = useState<Vendor | null>(null);
-  const [parts, setParts] = useState<Part[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const { vendors } = useRepos().vendors;
+  const { parts } = useRepos().parts;
+  const { updateVendor, deactivateVendor } = useRepos().vendors;
+
+  const vendor = vendors.find((v) => v.id === id) || null;
 
   const [isEditing, setIsEditing] = useState(false);
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
@@ -40,48 +41,19 @@ export default function VendorDetail() {
     notes: "",
   });
 
-  useEffect(() => {
-    let isMounted = true;
-
-    (async () => {
-      try {
-        setLoading(true);
-        setLoadError(null);
-
-        if (!id) throw new Error("Missing vendor id");
-
-        const [v, p] = await Promise.all([fetchVendorById(id), fetchParts()]);
-        if (!isMounted) return;
-
-        setVendor(v);
-        setParts(p);
-
-        if (v) {
-          setFormData({
-            vendor_name: v.vendor_name,
-            phone: v.phone || "",
-            email: v.email || "",
-            notes: v.notes || "",
-          });
-        }
-      } catch (e: any) {
-        if (!isMounted) return;
-        setLoadError(e?.message ?? "Failed to load vendor");
-      } finally {
-        if (!isMounted) return;
-        setLoading(false);
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [id]);
+  if (vendor && formData.vendor_name === "" && formData.phone === "" && formData.email === "" && formData.notes === "") {
+    setFormData({
+      vendor_name: vendor.vendor_name,
+      phone: vendor.phone || "",
+      email: vendor.email || "",
+      notes: vendor.notes || "",
+    });
+  }
 
   const vendorParts = useMemo(() => parts.filter((p) => p.vendor_id === id), [parts, id]);
   const activeParts = useMemo(() => vendorParts.filter((p) => p.is_active), [vendorParts]);
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!id) return;
 
     if (!formData.vendor_name.trim()) {
@@ -93,48 +65,30 @@ export default function VendorDetail() {
       return;
     }
 
-    try {
-      const updated = await updateVendorById(id, {
-        vendor_name: formData.vendor_name.trim(),
-        phone: formData.phone.trim() || null,
-        email: formData.email.trim() || null,
-        notes: formData.notes.trim() || null,
-      });
+    updateVendor(id, {
+      vendor_name: formData.vendor_name.trim(),
+      phone: formData.phone.trim() || null,
+      email: formData.email.trim() || null,
+      notes: formData.notes.trim() || null,
+    });
 
-      setVendor(updated);
+    toast({
+      title: "Vendor Updated",
+      description: `${formData.vendor_name.trim()} has been updated`,
+    });
 
-      toast({
-        title: "Vendor Updated",
-        description: `${formData.vendor_name.trim()} has been updated`,
-      });
-
-      setIsEditing(false);
-    } catch (e: any) {
-      toast({
-        title: "Update failed",
-        description: e?.message ?? "Unable to update vendor",
-        variant: "destructive",
-      });
-    }
+    setIsEditing(false);
   };
 
-  const handleDeactivate = async () => {
+  const handleDeactivate = () => {
     if (!id || !vendor) return;
 
-    try {
-      await deactivateVendorById(id);
-      toast({
-        title: "Vendor Deactivated",
-        description: `${vendor.vendor_name} has been deactivated`,
-      });
-      navigate("/vendors");
-    } catch (e: any) {
-      toast({
-        title: "Deactivate failed",
-        description: e?.message ?? "Unable to deactivate vendor",
-        variant: "destructive",
-      });
-    }
+    deactivateVendor(id);
+    toast({
+      title: "Vendor Deactivated",
+      description: `${vendor.vendor_name} has been deactivated`,
+    });
+    navigate("/vendors");
   };
 
   const handleCancel = () => {
@@ -147,27 +101,6 @@ export default function VendorDetail() {
     });
     setIsEditing(false);
   };
-
-  if (loading) {
-    return (
-      <div className="page-container">
-        <PageHeader title="Vendor" backTo="/vendors" />
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <div className="page-container">
-        <PageHeader title="Vendor" backTo="/vendors" />
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
-          <div className="font-medium">Failed to load vendor</div>
-          <div className="opacity-80 mt-1">{loadError}</div>
-        </div>
-      </div>
-    );
-  }
 
   if (!vendor) {
     return (

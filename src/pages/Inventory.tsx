@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { DataTable, type Column } from "@/components/ui/data-table";
@@ -6,44 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import type { Part, Vendor, PartCategory } from "@/types";
 import { cn } from "@/lib/utils";
-import { fetchParts, fetchVendors, fetchCategories } from "@/integrations/supabase/catalog";
+import { useRepos } from "@/data";
 
 export default function Inventory() {
   const navigate = useNavigate();
 
-  const [parts, setParts] = useState<Part[]>([]);
-  const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [categories, setCategories] = useState<PartCategory[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    (async () => {
-      try {
-        setLoading(true);
-        setLoadError(null);
-
-        const [v, c, p] = await Promise.all([fetchVendors(), fetchCategories(), fetchParts()]);
-        if (!isMounted) return;
-
-        setVendors(v);
-        setCategories(c);
-        setParts(p);
-      } catch (e: any) {
-        if (!isMounted) return;
-        setLoadError(e?.message ?? "Failed to load inventory from Supabase");
-      } finally {
-        if (!isMounted) return;
-        setLoading(false);
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const parts = useRepos().parts.parts as Part[];
+  const vendors = useRepos().vendors.vendors as Vendor[];
+  const categories = useRepos().categories.categories as PartCategory[];
 
   const vendorById = useMemo(() => new Map(vendors.map((x) => [x.id, x])), [vendors]);
   const categoryById = useMemo(() => new Map(categories.map((x) => [x.id, x])), [categories]);
@@ -109,21 +79,14 @@ export default function Inventory() {
         }
       />
 
-      {loadError ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
-          <div className="font-medium">Failed to load inventory</div>
-          <div className="opacity-80 mt-1">{loadError}</div>
-        </div>
-      ) : (
-        <DataTable
-          data={parts}
-          columns={columns}
-          searchKeys={["part_number", "description"]}
-          searchPlaceholder={loading ? "Loading parts..." : "Search parts..."}
-          onRowClick={(part) => navigate(`/inventory/${part.id}`)}
-          emptyMessage={loading ? "Loading..." : "No parts found. Add your first part to get started."}
-        />
-      )}
+      <DataTable
+        data={parts}
+        columns={columns}
+        searchKeys={["part_number", "description"]}
+        searchPlaceholder={"Search parts..."}
+        onRowClick={(part) => navigate(`/inventory/${part.id}`)}
+        emptyMessage={"No parts found. Add your first part to get started."}
+      />
     </div>
   );
 }
