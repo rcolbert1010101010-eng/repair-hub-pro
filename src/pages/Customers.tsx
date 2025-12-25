@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/data';
 import type { Customer } from '@/types';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 
 export default function Customers() {
   const navigate = useNavigate();
-  const { customers, addCustomer } = useShopStore();
+  const { customers, addCustomer } = useRepos().customers;
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({

@@ -10,12 +10,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/data';
 import { useToast } from '@/hooks/use-toast';
 import { Save, Edit, X } from 'lucide-react';
 
 export default function Settings() {
-  const { settings, updateSettings } = useShopStore();
+  const {
+    settings,
+    updateSettings,
+  } = useRepos().settings;
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState({
