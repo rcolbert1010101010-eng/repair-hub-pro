@@ -1,68 +1,68 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { DataTable, Column } from '@/components/ui/data-table';
-import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
-import { useShopStore } from '@/stores/shopStore';
-import type { Part } from '@/types';
-import { cn } from '@/lib/utils';
+import { useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { DataTable, type Column } from "@/components/ui/data-table";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
+import type { Part, Vendor, PartCategory } from "@/types";
+import { cn } from "@/lib/utils";
+import { useRepos } from "@/data";
 
 export default function Inventory() {
   const navigate = useNavigate();
-  const { parts, vendors, categories } = useShopStore();
+
+  const parts = useRepos().parts.parts as Part[];
+  const vendors = useRepos().vendors.vendors as Vendor[];
+  const categories = useRepos().categories.categories as PartCategory[];
+
+  const vendorById = useMemo(() => new Map(vendors.map((x) => [x.id, x])), [vendors]);
+  const categoryById = useMemo(() => new Map(categories.map((x) => [x.id, x])), [categories]);
 
   const columns: Column<Part>[] = [
-    { key: 'part_number', header: 'Part #', sortable: true, className: 'font-mono' },
-    { key: 'description', header: 'Description', sortable: true },
+    { key: "part_number", header: "Part #", sortable: true, className: "font-mono" },
+    { key: "description", header: "Description", sortable: true },
     {
-      key: 'category_id',
-      header: 'Category',
+      key: "category_id",
+      header: "Category",
       sortable: true,
-      render: (item) => {
-        const category = categories.find((c) => c.id === item.category_id);
-        return category?.category_name || '-';
-      },
+      render: (item) => categoryById.get(item.category_id)?.category_name || "-",
     },
     {
-      key: 'vendor_id',
-      header: 'Vendor',
+      key: "vendor_id",
+      header: "Vendor",
       sortable: true,
-      render: (item) => {
-        const vendor = vendors.find((v) => v.id === item.vendor_id);
-        return vendor?.vendor_name || '-';
-      },
+      render: (item) => vendorById.get(item.vendor_id)?.vendor_name || "-",
     },
     {
-      key: 'cost',
-      header: 'Cost',
+      key: "cost",
+      header: "Cost",
       sortable: true,
       render: (item) => `$${item.cost.toFixed(2)}`,
-      className: 'text-right',
+      className: "text-right",
     },
     {
-      key: 'selling_price',
-      header: 'Price',
+      key: "selling_price",
+      header: "Price",
       sortable: true,
       render: (item) => `$${item.selling_price.toFixed(2)}`,
-      className: 'text-right',
+      className: "text-right",
     },
     {
-      key: 'quantity_on_hand',
-      header: 'QOH',
+      key: "quantity_on_hand",
+      header: "QOH",
       sortable: true,
       render: (item) => (
         <span
           className={cn(
-            'font-medium',
-            item.quantity_on_hand < 0 && 'text-destructive',
-            item.quantity_on_hand === 0 && 'text-warning'
+            "font-medium",
+            item.quantity_on_hand < 0 && "text-destructive",
+            item.quantity_on_hand === 0 && "text-warning"
           )}
         >
           {item.quantity_on_hand}
         </span>
       ),
-      className: 'text-right',
+      className: "text-right",
     },
   ];
 
@@ -72,7 +72,7 @@ export default function Inventory() {
         title="Inventory"
         subtitle="Manage parts and stock levels"
         actions={
-          <Button onClick={() => navigate('/inventory/new')}>
+          <Button onClick={() => navigate("/inventory/new")}>
             <Plus className="w-4 h-4 mr-2" />
             Add Part
           </Button>
@@ -82,10 +82,10 @@ export default function Inventory() {
       <DataTable
         data={parts}
         columns={columns}
-        searchKeys={['part_number', 'description']}
-        searchPlaceholder="Search parts..."
+        searchKeys={["part_number", "description"]}
+        searchPlaceholder={"Search parts..."}
         onRowClick={(part) => navigate(`/inventory/${part.id}`)}
-        emptyMessage="No parts found. Add your first part to get started."
+        emptyMessage={"No parts found. Add your first part to get started."}
       />
     </div>
   );

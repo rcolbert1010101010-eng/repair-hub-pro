@@ -4,17 +4,18 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/data';
 import type { Customer } from '@/types';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import { validateNewCustomer } from '@/services/customers/customerService';
 
 export default function Customers() {
   const navigate = useNavigate();
-  const { customers, addCustomer } = useShopStore();
+  const { customers, addCustomer } = useRepos().customers;
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -34,39 +35,18 @@ export default function Customers() {
   ];
 
   const handleSave = () => {
-    if (!formData.company_name.trim()) {
+    const validation = validateNewCustomer(customers, {
+      company_name: formData.company_name,
+      phone: formData.phone || null,
+    });
+
+    if (!validation.ok) {
       toast({
         title: 'Validation Error',
-        description: 'Company name is required',
+        description: validation.error,
         variant: 'destructive',
       });
       return;
-    }
-
-    // Check for duplicate company name
-    const exists = customers.some(
-      (c) => c.company_name.toLowerCase() === formData.company_name.toLowerCase()
-    );
-    if (exists) {
-      toast({
-        title: 'Validation Error',
-        description: 'A customer with this company name already exists',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    // Check for duplicate phone
-    if (formData.phone) {
-      const phoneExists = customers.some((c) => c.phone === formData.phone);
-      if (phoneExists) {
-        toast({
-          title: 'Validation Error',
-          description: 'A customer with this phone number already exists',
-          variant: 'destructive',
-        });
-        return;
-      }
     }
 
     addCustomer({

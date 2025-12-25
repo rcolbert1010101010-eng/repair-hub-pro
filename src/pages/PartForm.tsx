@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -12,40 +12,37 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useShopStore } from '@/stores/shopStore';
 import { useToast } from '@/hooks/use-toast';
 import { Save, X, Trash2, Edit, Plus } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
+import type { Part } from '@/types';
+import { useRepos } from '@/data';
+import { validatePartSave } from '@/services/parts/partService';
 
 export default function PartForm() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const {
-    parts,
-    vendors,
-    categories,
-    addPart,
-    updatePart,
-    deactivatePart,
-    addVendor,
-    addCategory,
-  } = useShopStore();
   const { toast } = useToast();
+  const { parts } = useRepos().parts;
+  const { vendors } = useRepos().vendors;
+  const { categories } = useRepos().categories;
+  const { addPart, updatePart, deactivatePart } = useRepos().parts;
+  const { addVendor } = useRepos().vendors;
+  const { addCategory } = useRepos().categories;
 
   const isNew = id === 'new';
-  const part = !isNew ? parts.find((p) => p.id === id) : null;
-
   const [editing, setEditing] = useState(isNew);
+  const part = !isNew ? parts.find((p) => p.id === id) || null : null;
   const [formData, setFormData] = useState({
-    part_number: part?.part_number || '',
-    description: part?.description || '',
-    vendor_id: part?.vendor_id || '',
-    category_id: part?.category_id || '',
-    cost: part?.cost?.toString() || '',
-    selling_price: part?.selling_price?.toString() || '',
-    quantity_on_hand: part?.quantity_on_hand?.toString() || '0',
-    core_required: part?.core_required || false,
-    core_charge: part?.core_charge?.toString() || '0',
+    part_number: '',
+    description: '',
+    vendor_id: '',
+    category_id: '',
+    cost: '',
+    selling_price: '',
+    quantity_on_hand: '0',
+    core_required: false,
+    core_charge: '0',
   });
 
   // Quick add dialogs
@@ -53,6 +50,22 @@ export default function PartForm() {
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [newVendorName, setNewVendorName] = useState('');
   const [newCategoryName, setNewCategoryName] = useState('');
+
+  useEffect(() => {
+    if (part) {
+      setFormData({
+        part_number: part.part_number,
+        description: part.description || '',
+        vendor_id: part.vendor_id,
+        category_id: part.category_id,
+        cost: part.cost.toString(),
+        selling_price: part.selling_price.toString(),
+        quantity_on_hand: part.quantity_on_hand.toString(),
+        core_required: part.core_required,
+        core_charge: part.core_charge.toString(),
+      });
+    }
+  }, [part]);
 
   const activeVendors = vendors.filter((v) => v.is_active);
   const activeCategories = categories.filter((c) => c.is_active);
@@ -67,25 +80,15 @@ export default function PartForm() {
   }
 
   const handleSave = () => {
-    if (!formData.part_number.trim()) {
-      toast({ title: 'Validation Error', description: 'Part number is required', variant: 'destructive' });
-      return;
-    }
-    if (!formData.vendor_id) {
-      toast({ title: 'Validation Error', description: 'Vendor is required', variant: 'destructive' });
-      return;
-    }
-    if (!formData.category_id) {
-      toast({ title: 'Validation Error', description: 'Category is required', variant: 'destructive' });
-      return;
-    }
+    const validation = validatePartSave(parts, {
+      currentId: isNew ? null : id!,
+      partNumber: formData.part_number,
+      vendorId: formData.vendor_id,
+      categoryId: formData.category_id,
+    });
 
-    // Check for duplicate part number
-    const exists = parts.some(
-      (p) => p.id !== id && p.part_number.toLowerCase() === formData.part_number.toLowerCase()
-    );
-    if (exists) {
-      toast({ title: 'Validation Error', description: 'A part with this number already exists', variant: 'destructive' });
+    if (!validation.ok) {
+      toast({ title: 'Validation Error', description: validation.error, variant: 'destructive' });
       return;
     }
 
@@ -105,15 +108,16 @@ export default function PartForm() {
       const newPart = addPart(partData);
       toast({ title: 'Part Created', description: `${formData.part_number} has been added` });
       navigate(`/inventory/${newPart.id}`);
-    } else {
-      updatePart(id!, partData);
+    } else if (id) {
+      updatePart(id, partData);
       toast({ title: 'Part Updated', description: 'Changes have been saved' });
       setEditing(false);
     }
   };
 
   const handleDeactivate = () => {
-    deactivatePart(id!);
+    if (!id) return;
+    deactivatePart(id);
     toast({ title: 'Part Deactivated', description: 'Part has been deactivated' });
     navigate('/inventory');
   };

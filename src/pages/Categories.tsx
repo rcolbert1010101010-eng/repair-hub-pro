@@ -1,38 +1,40 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { DataTable, Column } from '@/components/ui/data-table';
-import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
-import { useShopStore } from '@/stores/shopStore';
-import type { PartCategory } from '@/types';
-import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { useToast } from '@/hooks/use-toast';
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { DataTable, type Column } from "@/components/ui/data-table";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
+import type { PartCategory } from "@/types";
+import { QuickAddDialog } from "@/components/ui/quick-add-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { useRepos } from "@/data";
 
 export default function Categories() {
   const navigate = useNavigate();
-  const { categories, addCategory, updateCategory, deactivateCategory } = useShopStore();
   const { toast } = useToast();
+
+  const { categories, addCategory } = useRepos().categories;
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
-    category_name: '',
-    description: '',
+    category_name: "",
+    description: "",
   });
 
   const columns: Column<PartCategory>[] = [
-    { key: 'category_name', header: 'Category Name', sortable: true },
-    { key: 'description', header: 'Description', sortable: true },
+    { key: "category_name", header: "Category Name", sortable: true },
+    { key: "description", header: "Description", sortable: true },
   ];
 
   const handleSave = () => {
     if (!formData.category_name.trim()) {
       toast({
-        title: 'Validation Error',
-        description: 'Category name is required',
-        variant: 'destructive',
+        title: "Validation Error",
+        description: "Category name is required",
+        variant: "destructive",
       });
       return;
     }
@@ -43,12 +45,12 @@ export default function Categories() {
     });
 
     toast({
-      title: 'Category Created',
-      description: `${formData.category_name} has been added`,
+      title: "Category Created",
+      description: `${formData.category_name.trim()} has been added`,
     });
 
     setDialogOpen(false);
-    setFormData({ category_name: '', description: '' });
+    setFormData({ category_name: "", description: "" });
   };
 
   return (
@@ -67,10 +69,10 @@ export default function Categories() {
       <DataTable
         data={categories}
         columns={columns}
-        searchKeys={['category_name', 'description']}
-        searchPlaceholder="Search categories..."
+        searchKeys={["category_name", "description"]}
+        searchPlaceholder={"Search categories..."}
         onRowClick={(category) => navigate(`/categories/${category.id}`)}
-        emptyMessage="No categories found. Add your first category to get started."
+        emptyMessage={"No categories found. Add your first category to get started."}
       />
 
       <QuickAddDialog

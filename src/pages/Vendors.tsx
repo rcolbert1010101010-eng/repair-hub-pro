@@ -1,41 +1,43 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { DataTable, Column } from '@/components/ui/data-table';
-import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
-import { useShopStore } from '@/stores/shopStore';
-import type { Vendor } from '@/types';
-import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { useToast } from '@/hooks/use-toast';
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { DataTable, type Column } from "@/components/ui/data-table";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
+import type { Vendor } from "@/types";
+import { QuickAddDialog } from "@/components/ui/quick-add-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { useRepos } from "@/data";
 
 export default function Vendors() {
   const navigate = useNavigate();
-  const { vendors, addVendor } = useShopStore();
   const { toast } = useToast();
+
+  const { vendors, addVendor } = useRepos().vendors;
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
-    vendor_name: '',
-    phone: '',
-    email: '',
-    notes: '',
+    vendor_name: "",
+    phone: "",
+    email: "",
+    notes: "",
   });
 
   const columns: Column<Vendor>[] = [
-    { key: 'vendor_name', header: 'Vendor Name', sortable: true },
-    { key: 'phone', header: 'Phone', sortable: true },
-    { key: 'email', header: 'Email', sortable: true },
+    { key: "vendor_name", header: "Vendor Name", sortable: true },
+    { key: "phone", header: "Phone", sortable: true },
+    { key: "email", header: "Email", sortable: true },
   ];
 
   const handleSave = () => {
     if (!formData.vendor_name.trim()) {
       toast({
-        title: 'Validation Error',
-        description: 'Vendor name is required',
-        variant: 'destructive',
+        title: "Validation Error",
+        description: "Vendor name is required",
+        variant: "destructive",
       });
       return;
     }
@@ -48,12 +50,12 @@ export default function Vendors() {
     });
 
     toast({
-      title: 'Vendor Created',
-      description: `${formData.vendor_name} has been added`,
+      title: "Vendor Created",
+      description: `${formData.vendor_name.trim()} has been added`,
     });
 
     setDialogOpen(false);
-    setFormData({ vendor_name: '', phone: '', email: '', notes: '' });
+    setFormData({ vendor_name: "", phone: "", email: "", notes: "" });
   };
 
   return (
@@ -72,10 +74,10 @@ export default function Vendors() {
       <DataTable
         data={vendors}
         columns={columns}
-        searchKeys={['vendor_name', 'phone', 'email']}
-        searchPlaceholder="Search vendors..."
+        searchKeys={["vendor_name", "phone", "email"]}
+        searchPlaceholder={"Search vendors..."}
         onRowClick={(vendor) => navigate(`/vendors/${vendor.id}`)}
-        emptyMessage="No vendors found. Add your first vendor to get started."
+        emptyMessage={"No vendors found. Add your first vendor to get started."}
       />
 
       <QuickAddDialog

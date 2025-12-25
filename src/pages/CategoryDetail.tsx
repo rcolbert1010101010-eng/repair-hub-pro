@@ -1,21 +1,13 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { useShopStore } from '@/stores/shopStore';
-import { useToast } from '@/hooks/use-toast';
-import { Save, Edit, X, Trash2 } from 'lucide-react';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { useMemo, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { Save, Edit, X, Trash2 } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,33 +17,82 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+} from "@/components/ui/alert-dialog";
+import type { PartCategory, Part } from "@/types";
+import { useRepos } from "@/data";
 
 export default function CategoryDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { categories, parts, updateCategory, deactivateCategory } = useShopStore();
   const { toast } = useToast();
 
-  const category = categories.find((c) => c.id === id);
-  const categoryParts = parts.filter((p) => p.category_id === id);
-  const activeParts = categoryParts.filter((p) => p.is_active);
+  const { categories } = useRepos().categories;
+  const { parts } = useRepos().parts;
+  const { updateCategory, deactivateCategory } = useRepos().categories;
+
+  const category = categories.find((c) => c.id === id) || null;
 
   const [isEditing, setIsEditing] = useState(false);
   const [showDeactivateDialog, setShowDeactivateDialog] = useState(false);
   const [formData, setFormData] = useState({
-    category_name: '',
-    description: '',
+    category_name: "",
+    description: "",
   });
 
-  useEffect(() => {
-    if (category) {
-      setFormData({
-        category_name: category.category_name,
-        description: category.description || '',
+  if (category && formData.category_name === "" && formData.description === "") {
+    setFormData({
+      category_name: category.category_name,
+      description: category.description || "",
+    });
+  }
+
+  const categoryParts = useMemo(() => parts.filter((p) => p.category_id === id), [parts, id]);
+  const activeParts = useMemo(() => categoryParts.filter((p) => p.is_active), [categoryParts]);
+
+  const handleSave = () => {
+    if (!id) return;
+
+    if (!formData.category_name.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Category name is required",
+        variant: "destructive",
       });
+      return;
     }
-  }, [category]);
+
+    updateCategory(id, {
+      category_name: formData.category_name.trim(),
+      description: formData.description.trim() || null,
+    });
+
+    toast({
+      title: "Category Updated",
+      description: `${formData.category_name.trim()} has been updated`,
+    });
+
+    setIsEditing(false);
+  };
+
+  const handleDeactivate = () => {
+    if (!id || !category) return;
+
+    deactivateCategory(id);
+    toast({
+      title: "Category Deactivated",
+      description: `${category.category_name} has been deactivated`,
+    });
+    navigate("/categories");
+  };
+
+  const handleCancel = () => {
+    if (!category) return;
+    setFormData({
+      category_name: category.category_name,
+      description: category.description || "",
+    });
+    setIsEditing(false);
+  };
 
   if (!category) {
     return (
@@ -62,50 +103,11 @@ export default function CategoryDetail() {
     );
   }
 
-  const handleSave = () => {
-    if (!formData.category_name.trim()) {
-      toast({
-        title: 'Validation Error',
-        description: 'Category name is required',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    updateCategory(id!, {
-      category_name: formData.category_name.trim(),
-      description: formData.description.trim() || null,
-    });
-
-    toast({
-      title: 'Category Updated',
-      description: `${formData.category_name} has been updated`,
-    });
-    setIsEditing(false);
-  };
-
-  const handleDeactivate = () => {
-    deactivateCategory(id!);
-    toast({
-      title: 'Category Deactivated',
-      description: `${category.category_name} has been deactivated`,
-    });
-    navigate('/categories');
-  };
-
-  const handleCancel = () => {
-    setFormData({
-      category_name: category.category_name,
-      description: category.description || '',
-    });
-    setIsEditing(false);
-  };
-
   return (
     <div className="page-container">
       <PageHeader
         title={category.category_name}
-        subtitle={category.is_active ? 'Active Category' : 'Inactive Category'}
+        subtitle={category.is_active ? "Active Category" : "Inactive Category"}
         backTo="/categories"
         actions={
           <>
@@ -170,7 +172,7 @@ export default function CategoryDetail() {
             <div className="space-y-3 text-sm">
               <div>
                 <span className="text-muted-foreground">Description:</span>
-                <p className="font-medium">{category.description || '-'}</p>
+                <p className="font-medium">{category.description || "-"}</p>
               </div>
               <div>
                 <span className="text-muted-foreground">Created:</span>
@@ -207,7 +209,7 @@ export default function CategoryDetail() {
                       onClick={() => navigate(`/inventory/${part.id}`)}
                     >
                       <TableCell className="font-mono">{part.part_number}</TableCell>
-                      <TableCell>{part.description || '-'}</TableCell>
+                      <TableCell>{part.description || "-"}</TableCell>
                       <TableCell className="text-right">{part.quantity_on_hand}</TableCell>
                     </TableRow>
                   ))
@@ -223,13 +225,16 @@ export default function CategoryDetail() {
           <AlertDialogHeader>
             <AlertDialogTitle>Deactivate Category?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will deactivate "{category.category_name}". The category will no longer be selectable for new parts.
-              This action can be undone by reactivating the category.
+              This will deactivate "{category.category_name}". The category will no longer be selectable for new parts. This action can
+              be undone by reactivating the category.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeactivate} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={handleDeactivate}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Deactivate
             </AlertDialogAction>
           </AlertDialogFooter>
