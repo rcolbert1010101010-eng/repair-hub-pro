@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, Edit, X, Trash2 } from 'lucide-react';
 import {
@@ -30,7 +30,9 @@ import {
 export default function CategoryDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { categories, parts, updateCategory, deactivateCategory } = useShopStore();
+  const repos = useRepos();
+  const { categories, updateCategory, deactivateCategory } = repos.categories;
+  const { parts } = repos.parts;
   const { toast } = useToast();
 
   const category = categories.find((c) => c.id === id);
