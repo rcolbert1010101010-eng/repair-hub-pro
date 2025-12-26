@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, Edit, X, Trash2 } from 'lucide-react';
 import {
@@ -30,7 +30,9 @@ import {
 export default function VendorDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { vendors, parts, updateVendor, deactivateVendor } = useShopStore();
+  const repos = useRepos();
+  const { vendors, updateVendor, deactivateVendor } = repos.vendors;
+  const { parts } = repos.parts;
   const { toast } = useToast();
 
   const vendor = vendors.find((v) => v.id === id);

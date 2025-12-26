@@ -5,6 +5,7 @@ import { authStubMiddleware } from "./middleware/authStub";
 import { settingsRouter } from "./routes/settings";
 import { customersRouter } from "./routes/customers";
 import { unitsRouter } from "./routes/units";
+import { vendorsRouter } from "./routes/vendors";
 
 const express = require("express") as typeof import("express");
 const cors = require("cors") as typeof import("cors");
@@ -23,6 +24,7 @@ const API_PREFIX = "/api/v1";
 app.use(API_PREFIX, settingsRouter);
 app.use(API_PREFIX, customersRouter);
 app.use(API_PREFIX, unitsRouter);
+app.use(API_PREFIX, vendorsRouter);
 
 app.get(`${API_PREFIX}/health`, (req: Request, res: Response) => {
   res.json({
