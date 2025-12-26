@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Edit, Save, X, Trash2 } from 'lucide-react';
 import { DataTable, Column } from '@/components/ui/data-table';
@@ -14,7 +14,9 @@ import type { Unit } from '@/types';
 export default function CustomerDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { customers, units, updateCustomer, deactivateCustomer } = useShopStore();
+  const repos = useRepos();
+  const { customers, updateCustomer, deactivateCustomer } = repos.customers;
+  const { units } = repos.units;
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
 

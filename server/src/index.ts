@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import { tenantMiddleware } from "./middleware/tenant";
 import { authStubMiddleware } from "./middleware/authStub";
 import { settingsRouter } from "./routes/settings";
+import { customersRouter } from "./routes/customers";
 
 const express = require("express") as typeof import("express");
 const cors = require("cors") as typeof import("cors");
@@ -19,6 +20,7 @@ const API_PREFIX = "/api/v1";
 
 // Mount settings router under the API prefix
 app.use(API_PREFIX, settingsRouter);
+app.use(API_PREFIX, customersRouter);
 
 app.get(`${API_PREFIX}/health`, (req: Request, res: Response) => {
   res.json({
