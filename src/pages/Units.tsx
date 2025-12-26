@@ -4,12 +4,14 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import type { Unit } from '@/types';
 
 export default function Units() {
   const navigate = useNavigate();
-  const { units, customers } = useShopStore();
+  const repos = useRepos();
+  const { units } = repos.units;
+  const { customers } = repos.customers;
 
   const columns: Column<Unit>[] = [
     { key: 'unit_name', header: 'Unit Name', sortable: true },

@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, X, Trash2, Edit } from 'lucide-react';
 
@@ -20,7 +20,9 @@ export default function UnitForm() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { units, customers, addUnit, updateUnit, deactivateUnit } = useShopStore();
+  const repos = useRepos();
+  const { units, addUnit, updateUnit, deactivateUnit } = repos.units;
+  const { customers } = repos.customers;
   const { toast } = useToast();
 
   const isNew = id === 'new';

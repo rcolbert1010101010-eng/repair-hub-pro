@@ -6,11 +6,13 @@ import type { Repos } from './repos';
 import { zustandRepos } from './zustandRepos';
 import { settingsRepoApi } from './api/settingsRepoApi';
 import { customersRepoApi } from './api/customersRepoApi';
+import { unitsRepoApi } from './api/unitsRepoApi';
 
 const apiBackedRepos: Repos = {
   ...zustandRepos,
   settings: settingsRepoApi,
   customers: customersRepoApi,
+  units: unitsRepoApi,
 };
 
 const repos: Repos = apiBackedRepos;
