@@ -4,13 +4,16 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import type { Part } from '@/types';
 import { cn } from '@/lib/utils';
 
 export default function Inventory() {
   const navigate = useNavigate();
-  const { parts, vendors, categories } = useShopStore();
+  const repos = useRepos();
+  const { parts } = repos.parts;
+  const { vendors } = repos.vendors;
+  const { categories } = repos.categories;
 
   const columns: Column<Part>[] = [
     { key: 'part_number', header: 'Part #', sortable: true, className: 'font-mono' },

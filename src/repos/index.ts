@@ -9,6 +9,7 @@ import { customersRepoApi } from './api/customersRepoApi';
 import { unitsRepoApi } from './api/unitsRepoApi';
 import { vendorsRepoApi } from './api/vendorsRepoApi';
 import { categoriesRepoApi } from './api/categoriesRepoApi';
+import { partsRepoApi } from './api/partsRepoApi';
 
 const apiBackedRepos: Repos = {
   ...zustandRepos,
@@ -17,6 +18,7 @@ const apiBackedRepos: Repos = {
   units: unitsRepoApi,
   vendors: vendorsRepoApi,
   categories: categoriesRepoApi,
+  parts: partsRepoApi,
 };
 
 const repos: Repos = apiBackedRepos;

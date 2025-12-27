@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, X, Trash2, Edit, Plus } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
@@ -20,16 +20,17 @@ import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 export default function PartForm() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const repos = useRepos();
   const {
     parts,
-    vendors,
-    categories,
     addPart,
     updatePart,
     deactivatePart,
-    addVendor,
-    addCategory,
-  } = useShopStore();
+  } = repos.parts;
+  const { vendors } = repos.vendors;
+  const { categories } = repos.categories;
+  const { addVendor } = repos.vendors;
+  const { addCategory } = repos.categories;
   const { toast } = useToast();
 
   const isNew = id === 'new';
