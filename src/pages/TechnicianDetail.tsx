@@ -4,14 +4,14 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, X, Trash2, Edit } from 'lucide-react';
 
 export default function TechnicianDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { technicians, addTechnician, updateTechnician, deactivateTechnician } = useShopStore();
+  const { technicians, addTechnician, updateTechnician, deactivateTechnician } = useRepos().technicians;
   const { toast } = useToast();
 
   const isNew = id === 'new';

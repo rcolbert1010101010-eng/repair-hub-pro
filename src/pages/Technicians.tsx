@@ -3,13 +3,16 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import type { Technician } from '@/types';
 import { Badge } from '@/components/ui/badge';
 
 export default function Technicians() {
   const navigate = useNavigate();
-  const { technicians, getActiveTimeEntry, workOrders } = useShopStore();
+  const repos = useRepos();
+  const { technicians } = repos.technicians;
+  const { getActiveTimeEntry } = repos.timeEntries;
+  const { workOrders } = repos.workOrders;
 
   const columns: Column<Technician>[] = [
     { key: 'name', header: 'Name', sortable: true },

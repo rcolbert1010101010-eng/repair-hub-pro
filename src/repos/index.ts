@@ -10,6 +10,7 @@ import { unitsRepoApi } from './api/unitsRepoApi';
 import { vendorsRepoApi } from './api/vendorsRepoApi';
 import { categoriesRepoApi } from './api/categoriesRepoApi';
 import { partsRepoApi } from './api/partsRepoApi';
+import { techniciansRepoApi } from './api/techniciansRepoApi';
 
 const apiBackedRepos: Repos = {
   ...zustandRepos,
@@ -19,6 +20,7 @@ const apiBackedRepos: Repos = {
   vendors: vendorsRepoApi,
   categories: categoriesRepoApi,
   parts: partsRepoApi,
+  technicians: techniciansRepoApi,
 };
 
 const repos: Repos = apiBackedRepos;
