@@ -32,7 +32,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Shield, RotateCcw } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
@@ -41,12 +41,9 @@ import { PrintSalesOrder } from '@/components/print/PrintInvoice';
 export default function SalesOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const repos = useRepos();
   const {
     salesOrders,
-    customers,
-    units,
-    parts,
-    settings,
     getSalesOrderLines,
     createSalesOrder,
     soAddPartLine,
@@ -56,8 +53,11 @@ export default function SalesOrderDetail() {
     soToggleCoreReturned,
     soInvoice,
     updateSalesOrderNotes,
-    addCustomer,
-  } = useShopStore();
+  } = repos.salesOrders;
+  const { customers, addCustomer } = repos.customers;
+  const { units } = repos.units;
+  const { parts } = repos.parts;
+  const { settings } = repos.settings;
   const { toast } = useToast();
 
   const isNew = id === 'new';

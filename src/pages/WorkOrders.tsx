@@ -3,13 +3,16 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import type { WorkOrder } from '@/types';
 import { StatusBadge } from '@/components/ui/status-badge';
 
 export default function WorkOrders() {
   const navigate = useNavigate();
-  const { workOrders, customers, units } = useShopStore();
+  const repos = useRepos();
+  const { workOrders } = repos.workOrders;
+  const { customers } = repos.customers;
+  const { units } = repos.units;
 
   const columns: Column<WorkOrder>[] = [
     { key: 'order_number', header: 'Order #', sortable: true, className: 'font-mono' },

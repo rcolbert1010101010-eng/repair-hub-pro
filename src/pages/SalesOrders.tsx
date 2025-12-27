@@ -3,13 +3,15 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import type { SalesOrder } from '@/types';
 import { StatusBadge } from '@/components/ui/status-badge';
 
 export default function SalesOrders() {
   const navigate = useNavigate();
-  const { salesOrders, customers } = useShopStore();
+  const repos = useRepos();
+  const { salesOrders } = repos.salesOrders;
+  const { customers } = repos.customers;
 
   const columns: Column<SalesOrder>[] = [
     { key: 'order_number', header: 'Order #', sortable: true, className: 'font-mono' },
