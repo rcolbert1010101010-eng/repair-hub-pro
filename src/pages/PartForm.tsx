@@ -47,6 +47,8 @@ export default function PartForm() {
     quantity_on_hand: part?.quantity_on_hand?.toString() || '0',
     core_required: part?.core_required || false,
     core_charge: part?.core_charge?.toString() || '0',
+    min_qty: part?.min_qty?.toString() || '',
+    max_qty: part?.max_qty?.toString() || '',
   });
 
   // Quick add dialogs
@@ -100,6 +102,8 @@ export default function PartForm() {
       quantity_on_hand: parseInt(formData.quantity_on_hand) || 0,
       core_required: formData.core_required,
       core_charge: parseFloat(formData.core_charge) || 0,
+      min_qty: formData.min_qty === '' ? null : (Number.isFinite(parseInt(formData.min_qty)) ? parseInt(formData.min_qty) : null),
+      max_qty: formData.max_qty === '' ? null : (Number.isFinite(parseInt(formData.max_qty)) ? parseInt(formData.max_qty) : null),
     };
 
     if (isNew) {
@@ -203,6 +207,28 @@ export default function PartForm() {
                 type="number"
                 value={formData.quantity_on_hand}
                 onChange={(e) => setFormData({ ...formData, quantity_on_hand: e.target.value })}
+                disabled={!editing}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="min_qty">Min Qty</Label>
+              <Input
+                id="min_qty"
+                type="number"
+                value={formData.min_qty}
+                onChange={(e) => setFormData({ ...formData, min_qty: e.target.value })}
+                disabled={!editing}
+              />
+            </div>
+            <div>
+              <Label htmlFor="max_qty">Max Qty</Label>
+              <Input
+                id="max_qty"
+                type="number"
+                value={formData.max_qty}
+                onChange={(e) => setFormData({ ...formData, max_qty: e.target.value })}
                 disabled={!editing}
               />
             </div>
