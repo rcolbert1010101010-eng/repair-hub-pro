@@ -17,7 +17,10 @@ import type {
   PurchaseOrder,
   PurchaseOrderLine,
   ReceivingRecord,
+  UnitPMSchedule,
+  UnitPMHistory,
 } from '@/types';
+
 
 // Generate unique IDs
 const generateId = () => crypto.randomUUID();
@@ -84,6 +87,7 @@ interface ShopState {
   soRemovePartLine: (lineId: string) => { success: boolean; error?: string };
   soToggleWarranty: (lineId: string) => { success: boolean; error?: string };
   soToggleCoreReturned: (lineId: string) => { success: boolean; error?: string };
+  soMarkCoreReturned: (lineId: string) => { success: boolean; error?: string };
   soInvoice: (orderId: string) => { success: boolean; error?: string };
   updateSalesOrderNotes: (orderId: string, notes: string | null) => void;
   getSalesOrderLines: (orderId: string) => SalesOrderLine[];
@@ -98,6 +102,7 @@ interface ShopState {
   woRemovePartLine: (lineId: string) => { success: boolean; error?: string };
   woTogglePartWarranty: (lineId: string) => { success: boolean; error?: string };
   woToggleCoreReturned: (lineId: string) => { success: boolean; error?: string };
+  woMarkCoreReturned: (lineId: string) => { success: boolean; error?: string };
   woAddLaborLine: (orderId: string, description: string, hours: number, technicianId?: string) => { success: boolean; error?: string };
   woUpdateLaborLine: (lineId: string, description: string, hours: number) => { success: boolean; error?: string };
   woRemoveLaborLine: (lineId: string) => { success: boolean; error?: string };
@@ -123,6 +128,17 @@ interface ShopState {
   updatePurchaseOrderNotes: (orderId: string, notes: string | null) => void;
   getPurchaseOrderLines: (orderId: string) => PurchaseOrderLine[];
   getReceivingRecords: (lineId: string) => ReceivingRecord[];
+
+  // PM Schedules
+  pmSchedules: UnitPMSchedule[];
+  pmHistory: UnitPMHistory[];
+  addPMSchedule: (schedule: Omit<UnitPMSchedule, 'id' | 'is_active' | 'created_at' | 'updated_at'>) => UnitPMSchedule;
+  updatePMSchedule: (id: string, schedule: Partial<UnitPMSchedule>) => void;
+  deactivatePMSchedule: (id: string) => void;
+  getPMSchedulesByUnit: (unitId: string) => UnitPMSchedule[];
+  addPMHistory: (history: Omit<UnitPMHistory, 'id' | 'is_active' | 'created_at'>) => UnitPMHistory;
+  getPMHistoryByUnit: (unitId: string) => UnitPMHistory[];
+  markPMCompleted: (scheduleId: string, completedDate: string, completedMeter: number | null, notes: string | null) => { success: boolean; error?: string };
 }
 
 const now = () => new Date().toISOString();
@@ -604,6 +620,12 @@ export const useShopStore = create<ShopState>()(
             is_warranty: false,
             core_charge: part.core_required ? part.core_charge : 0,
             core_returned: false,
+            core_status: part.core_required && part.core_charge > 0 ? 'CORE_OWED' : 'NOT_APPLICABLE',
+            core_returned_at: null,
+            core_refunded_at: null,
+            is_core_refund_line: false,
+            core_refund_for_line_id: null,
+            description: null,
             created_at: now(),
             updated_at: now(),
           };
@@ -711,6 +733,64 @@ export const useShopStore = create<ShopState>()(
         return { success: true };
       },
 
+      soMarkCoreReturned: (lineId) => {
+        const state = get();
+        const line = state.salesOrderLines.find((l) => l.id === lineId);
+        if (!line) return { success: false, error: 'Line not found' };
+        if (line.core_status !== 'CORE_OWED') return { success: false, error: 'Core has already been processed' };
+        if (line.is_core_refund_line) return { success: false, error: 'Cannot mark refund line as returned' };
+
+        const order = state.salesOrders.find((o) => o.id === line.sales_order_id);
+        if (!order) return { success: false, error: 'Order not found' };
+
+        const part = state.parts.find((p) => p.id === line.part_id);
+        const partDesc = part?.description || part?.part_number || 'Part';
+        const timestamp = now();
+
+        // Create refund line
+        const refundLine: SalesOrderLine = {
+          id: generateId(),
+          sales_order_id: line.sales_order_id,
+          part_id: line.part_id,
+          quantity: line.quantity,
+          unit_price: -line.core_charge,
+          line_total: -(line.core_charge * line.quantity),
+          is_warranty: false,
+          core_charge: 0,
+          core_returned: true,
+          core_status: 'NOT_APPLICABLE',
+          core_returned_at: null,
+          core_refunded_at: null,
+          is_core_refund_line: true,
+          core_refund_for_line_id: lineId,
+          description: `Core Refund (${partDesc})`,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+
+        // Update original line status and add refund line
+        set((state) => ({
+          salesOrderLines: [
+            ...state.salesOrderLines.map((l) =>
+              l.id === lineId
+                ? {
+                    ...l,
+                    core_returned: true,
+                    core_status: 'CORE_CREDITED' as const,
+                    core_returned_at: timestamp,
+                    core_refunded_at: timestamp,
+                    updated_at: timestamp,
+                  }
+                : l
+            ),
+            refundLine,
+          ],
+        }));
+
+        get().recalculateSalesOrderTotals(line.sales_order_id);
+        return { success: true };
+      },
+
       soInvoice: (orderId) => {
         const state = get();
         const order = state.salesOrders.find((o) => o.id === orderId);
@@ -741,13 +821,21 @@ export const useShopStore = create<ShopState>()(
         const state = get();
         const lines = state.salesOrderLines.filter((l) => l.sales_order_id === orderId);
         
-        // Calculate subtotal (warranty items are $0 to customer)
-        const subtotal = lines.reduce((sum, l) => sum + (l.is_warranty ? 0 : l.line_total), 0);
+        // Calculate subtotal (warranty items are $0 to customer, include refund lines)
+        const subtotal = lines.reduce((sum, l) => {
+          if (l.is_warranty) return sum;
+          // Refund lines have negative line_total and should be included
+          return sum + l.line_total;
+        }, 0);
         
-        // Calculate core charges (only for non-returned cores)
-        const core_charges_total = lines.reduce((sum, l) => 
-          sum + (l.core_charge > 0 && !l.core_returned ? l.core_charge * l.quantity : 0), 0
-        );
+        // Calculate core charges (only for non-returned cores, exclude refund lines which are already in subtotal)
+        const core_charges_total = lines.reduce((sum, l) => {
+          if (l.is_core_refund_line) return sum; // Refund lines already included in subtotal
+          if (l.core_charge > 0 && !l.core_returned) {
+            return sum + (l.core_charge * l.quantity);
+          }
+          return sum;
+        }, 0);
         
         const order = state.salesOrders.find((o) => o.id === orderId);
         if (!order) return;
@@ -838,6 +926,12 @@ export const useShopStore = create<ShopState>()(
             is_warranty: false,
             core_charge: part.core_required ? part.core_charge : 0,
             core_returned: false,
+            core_status: part.core_required && part.core_charge > 0 ? 'CORE_OWED' : 'NOT_APPLICABLE',
+            core_returned_at: null,
+            core_refunded_at: null,
+            is_core_refund_line: false,
+            core_refund_for_line_id: null,
+            description: null,
             created_at: now(),
             updated_at: now(),
           };
@@ -939,6 +1033,64 @@ export const useShopStore = create<ShopState>()(
           workOrderPartLines: state.workOrderPartLines.map((l) =>
             l.id === lineId ? { ...l, core_returned: !l.core_returned, updated_at: now() } : l
           ),
+        }));
+
+        get().recalculateWorkOrderTotals(line.work_order_id);
+        return { success: true };
+      },
+
+      woMarkCoreReturned: (lineId) => {
+        const state = get();
+        const line = state.workOrderPartLines.find((l) => l.id === lineId);
+        if (!line) return { success: false, error: 'Line not found' };
+        if (line.core_status !== 'CORE_OWED') return { success: false, error: 'Core has already been processed' };
+        if (line.is_core_refund_line) return { success: false, error: 'Cannot mark refund line as returned' };
+
+        const order = state.workOrders.find((o) => o.id === line.work_order_id);
+        if (!order) return { success: false, error: 'Order not found' };
+
+        const part = state.parts.find((p) => p.id === line.part_id);
+        const partDesc = part?.description || part?.part_number || 'Part';
+        const timestamp = now();
+
+        // Create refund line
+        const refundLine: WorkOrderPartLine = {
+          id: generateId(),
+          work_order_id: line.work_order_id,
+          part_id: line.part_id,
+          quantity: line.quantity,
+          unit_price: -line.core_charge,
+          line_total: -(line.core_charge * line.quantity),
+          is_warranty: false,
+          core_charge: 0,
+          core_returned: true,
+          core_status: 'NOT_APPLICABLE',
+          core_returned_at: null,
+          core_refunded_at: null,
+          is_core_refund_line: true,
+          core_refund_for_line_id: lineId,
+          description: `Core Refund (${partDesc})`,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+
+        // Update original line status and add refund line
+        set((state) => ({
+          workOrderPartLines: [
+            ...state.workOrderPartLines.map((l) =>
+              l.id === lineId
+                ? {
+                    ...l,
+                    core_returned: true,
+                    core_status: 'CORE_CREDITED' as const,
+                    core_returned_at: timestamp,
+                    core_refunded_at: timestamp,
+                    updated_at: timestamp,
+                  }
+                : l
+            ),
+            refundLine,
+          ],
         }));
 
         get().recalculateWorkOrderTotals(line.work_order_id);
@@ -1092,13 +1244,20 @@ export const useShopStore = create<ShopState>()(
         const laborLines = state.workOrderLaborLines.filter((l) => l.work_order_id === orderId);
         const timeEntries = state.timeEntries.filter((te) => te.work_order_id === orderId);
         
-        // Parts: warranty items are $0 to customer
-        const parts_subtotal = partLines.reduce((sum, l) => sum + (l.is_warranty ? 0 : l.line_total), 0);
+        // Parts: warranty items are $0 to customer, include refund lines (they have negative line_total)
+        const parts_subtotal = partLines.reduce((sum, l) => {
+          if (l.is_warranty) return sum;
+          return sum + l.line_total;
+        }, 0);
         
-        // Core charges (only for non-returned cores)
-        const core_charges_total = partLines.reduce((sum, l) => 
-          sum + (l.core_charge > 0 && !l.core_returned ? l.core_charge * l.quantity : 0), 0
-        );
+        // Core charges (only for non-returned cores, exclude refund lines)
+        const core_charges_total = partLines.reduce((sum, l) => {
+          if (l.is_core_refund_line) return sum;
+          if (l.core_charge > 0 && !l.core_returned) {
+            return sum + (l.core_charge * l.quantity);
+          }
+          return sum;
+        }, 0);
         
         // Labor: warranty items are $0 to customer
         const labor_subtotal = laborLines.reduce((sum, l) => sum + (l.is_warranty ? 0 : l.line_total), 0);
@@ -1321,6 +1480,93 @@ export const useShopStore = create<ShopState>()(
 
       getReceivingRecords: (lineId) =>
         get().receivingRecords.filter((r) => r.purchase_order_line_id === lineId),
+
+      // PM Schedules
+      pmSchedules: [],
+      pmHistory: [],
+
+      addPMSchedule: (schedule) => {
+        const newSchedule: UnitPMSchedule = {
+          ...schedule,
+          id: generateId(),
+          is_active: true,
+          created_at: now(),
+          updated_at: now(),
+        };
+        set((state) => ({
+          pmSchedules: [...state.pmSchedules, newSchedule],
+        }));
+        return newSchedule;
+      },
+
+      updatePMSchedule: (id, schedule) =>
+        set((state) => ({
+          pmSchedules: state.pmSchedules.map((s) =>
+            s.id === id ? { ...s, ...schedule, updated_at: now() } : s
+          ),
+        })),
+
+      deactivatePMSchedule: (id) =>
+        set((state) => ({
+          pmSchedules: state.pmSchedules.map((s) =>
+            s.id === id ? { ...s, is_active: false, updated_at: now() } : s
+          ),
+        })),
+
+      getPMSchedulesByUnit: (unitId) =>
+        get().pmSchedules.filter((s) => s.unit_id === unitId && s.is_active),
+
+      addPMHistory: (history) => {
+        const newHistory: UnitPMHistory = {
+          ...history,
+          id: generateId(),
+          is_active: true,
+          created_at: now(),
+        };
+        set((state) => ({
+          pmHistory: [...state.pmHistory, newHistory],
+        }));
+        return newHistory;
+      },
+
+      getPMHistoryByUnit: (unitId) =>
+        get().pmHistory.filter((h) => h.unit_id === unitId && h.is_active),
+
+      markPMCompleted: (scheduleId, completedDate, completedMeter, notes) => {
+        const state = get();
+        const schedule = state.pmSchedules.find((s) => s.id === scheduleId);
+        if (!schedule) return { success: false, error: 'Schedule not found' };
+
+        // Add history record
+        const historyRecord: UnitPMHistory = {
+          id: generateId(),
+          unit_id: schedule.unit_id,
+          schedule_id: scheduleId,
+          completed_date: completedDate,
+          completed_meter: completedMeter,
+          notes: notes,
+          related_work_order_id: null,
+          is_active: true,
+          created_at: now(),
+        };
+
+        // Update schedule with last completed info
+        set((state) => ({
+          pmSchedules: state.pmSchedules.map((s) =>
+            s.id === scheduleId
+              ? {
+                  ...s,
+                  last_completed_date: completedDate,
+                  last_completed_meter: completedMeter,
+                  updated_at: now(),
+                }
+              : s
+          ),
+          pmHistory: [...state.pmHistory, historyRecord],
+        }));
+
+        return { success: true };
+      },
     }),
     {
       name: 'shop-storage',

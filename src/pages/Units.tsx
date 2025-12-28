@@ -1,8 +1,8 @@
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Plus } from 'lucide-react';
 import { useRepos } from '@/repos';
 import type { Unit } from '@/types';
@@ -36,6 +36,17 @@ export default function Units() {
         if (item.hours) return `${item.hours.toLocaleString()} hrs`;
         return '-';
       },
+    },
+    {
+      key: 'is_active',
+      header: 'Status',
+      render: (item) => (
+        item.is_active === false ? (
+          <Badge variant="destructive">Inactive</Badge>
+        ) : (
+          <Badge variant="secondary">Active</Badge>
+        )
+      ),
     },
   ];
 

@@ -50,14 +50,19 @@ export function DataTable<T extends { id: string; is_active?: boolean }>({
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
-  const [showInactive, setShowInactive] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<'active' | 'inactive' | 'all'>('active');
 
   const filteredData = useMemo(() => {
     let result = [...data];
 
     // Filter by active status
-    if (showActiveFilter && !showInactive) {
-      result = result.filter((item) => item.is_active !== false);
+    if (showActiveFilter) {
+      if (activeFilter === 'active') {
+        result = result.filter((item) => item.is_active !== false);
+      } else if (activeFilter === 'inactive') {
+        result = result.filter((item) => item.is_active === false);
+      }
+      // 'all' shows everything
     }
 
     // Filter by search
@@ -95,7 +100,7 @@ export function DataTable<T extends { id: string; is_active?: boolean }>({
     }
 
     return result;
-  }, [data, search, searchKeys, sortKey, sortDir, showInactive, showActiveFilter]);
+  }, [data, search, searchKeys, sortKey, sortDir, activeFilter, showActiveFilter]);
 
   const handleSort = (key: string) => {
     if (sortKey === key) {
@@ -126,15 +131,18 @@ export function DataTable<T extends { id: string; is_active?: boolean }>({
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="gap-2">
                   <Filter className="w-4 h-4" />
-                  {showInactive ? 'All Records' : 'Active Only'}
+                  {activeFilter === 'active' ? 'Active' : activeFilter === 'inactive' ? 'Inactive' : 'All'}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setShowInactive(false)}>
-                  Active Only
+                <DropdownMenuItem onClick={() => setActiveFilter('active')}>
+                  Active
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setShowInactive(true)}>
-                  All Records
+                <DropdownMenuItem onClick={() => setActiveFilter('inactive')}>
+                  Inactive
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setActiveFilter('all')}>
+                  All
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

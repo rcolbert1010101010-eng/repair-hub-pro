@@ -51,6 +51,7 @@ export default function SalesOrderDetail() {
     soRemovePartLine,
     soToggleWarranty,
     soToggleCoreReturned,
+    soMarkCoreReturned,
     soInvoice,
     updateSalesOrderNotes,
   } = repos.salesOrders;
@@ -78,6 +79,8 @@ export default function SalesOrderDetail() {
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState('');
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
+  const [showCoreReturnDialog, setShowCoreReturnDialog] = useState(false);
+  const [coreReturnLineId, setCoreReturnLineId] = useState<string | null>(null);
 
   const currentOrder = order || salesOrders.find((o) => o.id === id);
 
@@ -181,9 +184,30 @@ export default function SalesOrderDetail() {
     toast({ title: 'Notes Updated' });
   };
 
+  const handleMarkCoreReturned = (lineId: string) => {
+    setCoreReturnLineId(lineId);
+    setShowCoreReturnDialog(true);
+  };
+
+  const confirmMarkCoreReturned = () => {
+    if (!coreReturnLineId) return;
+    const result = soMarkCoreReturned(coreReturnLineId);
+    if (result.success) {
+      toast({ title: 'Core Returned', description: 'Refund line has been created' });
+    } else {
+      toast({ title: 'Error', description: result.error, variant: 'destructive' });
+    }
+    setShowCoreReturnDialog(false);
+    setCoreReturnLineId(null);
+  };
+
   const customer = customers.find((c) => c.id === (currentOrder?.customer_id || selectedCustomerId));
   const unit = units.find((u) => u.id === (currentOrder?.unit_id || selectedUnitId));
   const orderLines = currentOrder ? getSalesOrderLines(currentOrder.id) : [];
+  
+  // Separate part lines and refund lines for display
+  const partLines = orderLines.filter((l) => !l.is_core_refund_line);
+  const refundLines = orderLines.filter((l) => l.is_core_refund_line);
 
   // New order form
   if (isNew && !order) {
@@ -382,13 +406,13 @@ export default function SalesOrderDetail() {
                         <TableCell className="text-center">
                           {line.core_charge > 0 && (
                             <div className="flex items-center justify-center gap-1">
-                              {!isInvoiced ? (
-                                <Checkbox checked={line.core_returned} onCheckedChange={() => soToggleCoreReturned(line.id)} />
-                              ) : line.core_returned ? (
-                                <Badge variant="outline"><RotateCcw className="w-3 h-3" /></Badge>
-                              ) : (
-                                <Badge variant="destructive">${line.core_charge}</Badge>
-                              )}
+                              {line.core_status === 'CORE_OWED' ? (
+                                <Button size="sm" variant="outline" onClick={() => handleMarkCoreReturned(line.id)} className="h-6 text-xs">
+                                  Core Owed (${line.core_charge})
+                                </Button>
+                              ) : line.core_status === 'CORE_CREDITED' ? (
+                                <Badge variant="secondary"><RotateCcw className="w-3 h-3 mr-1" />Credited</Badge>
+                              ) : null}
                             </div>
                           )}
                         </TableCell>
@@ -478,6 +502,20 @@ export default function SalesOrderDetail() {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleInvoice}>Invoice Order</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Core Return Confirmation Dialog */}
+      <AlertDialog open={showCoreReturnDialog} onOpenChange={setShowCoreReturnDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark Core Returned?</AlertDialogTitle>
+            <AlertDialogDescription>This will create a refund/credit line for the core deposit.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmMarkCoreReturned}>Mark Returned</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

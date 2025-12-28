@@ -132,6 +132,9 @@ export interface TimeEntry {
   technician?: Technician;
 }
 
+// Core Status
+export type CoreStatus = 'CORE_OWED' | 'CORE_RETURNED' | 'CORE_CREDITED' | 'NOT_APPLICABLE';
+
 // Sales Order Status
 export type SalesOrderStatus = 'OPEN' | 'INVOICED';
 
@@ -167,6 +170,12 @@ export interface SalesOrderLine {
   is_warranty: boolean;
   core_charge: number;
   core_returned: boolean;
+  core_status: CoreStatus;
+  core_returned_at: string | null;
+  core_refunded_at: string | null;
+  is_core_refund_line: boolean;
+  core_refund_for_line_id: string | null;
+  description: string | null;
   created_at: string;
   updated_at: string;
   part?: Part;
@@ -211,6 +220,12 @@ export interface WorkOrderPartLine {
   is_warranty: boolean;
   core_charge: number;
   core_returned: boolean;
+  core_status: CoreStatus;
+  core_returned_at: string | null;
+  core_refunded_at: string | null;
+  is_core_refund_line: boolean;
+  core_refund_for_line_id: string | null;
+  description: string | null;
   created_at: string;
   updated_at: string;
   part?: Part;
@@ -280,3 +295,38 @@ export interface DashboardStats {
     laborCost: number;
   };
 }
+
+// PM Interval Types
+export type PMIntervalType = 'MILES' | 'HOURS' | 'DAYS';
+
+// PM Schedule Status
+export type PMScheduleStatus = 'OVERDUE' | 'DUE_SOON' | 'OK' | 'NOT_CONFIGURED';
+
+// Unit PM Schedule
+export interface UnitPMSchedule {
+  id: string;
+  unit_id: string;
+  name: string;
+  interval_type: PMIntervalType;
+  interval_value: number;
+  last_completed_date: string | null;
+  last_completed_meter: number | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// Unit PM History
+export interface UnitPMHistory {
+  id: string;
+  unit_id: string;
+  schedule_id: string;
+  completed_date: string;
+  completed_meter: number | null;
+  notes: string | null;
+  related_work_order_id: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
