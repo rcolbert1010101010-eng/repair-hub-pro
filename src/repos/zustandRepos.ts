@@ -80,6 +80,9 @@ export const zustandRepos: Repos = {
     updatePart(id, part) {
       return useShopStore.getState().updatePart(id, part);
     },
+    updatePartWithQohAdjustment(id, part, meta) {
+      return useShopStore.getState().updatePartWithQohAdjustment(id, part, meta);
+    },
     deactivatePart(id) {
       return useShopStore.getState().deactivatePart(id);
     },

@@ -83,6 +83,17 @@ export interface Part {
   category?: PartCategory;
 }
 
+export interface InventoryAdjustment {
+  id: string;
+  part_id: string;
+  old_qty: number;
+  new_qty: number;
+  delta: number;
+  reason: string;
+  adjusted_by: string;
+  adjusted_at: string;
+}
+
 export interface TechnicianWorkSchedule {
   days: {
     mon: boolean;

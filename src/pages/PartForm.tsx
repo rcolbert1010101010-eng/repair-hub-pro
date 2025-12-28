@@ -25,6 +25,7 @@ export default function PartForm() {
     parts,
     addPart,
     updatePart,
+    updatePartWithQohAdjustment,
     deactivatePart,
   } = repos.parts;
   const { vendors } = repos.vendors;
@@ -56,6 +57,9 @@ export default function PartForm() {
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [newVendorName, setNewVendorName] = useState('');
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [adjustReason, setAdjustReason] = useState('');
+  const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
+  const [pendingPartData, setPendingPartData] = useState<null | typeof formData>(null);
 
   const activeVendors = vendors.filter((v) => v.is_active);
   const activeCategories = categories.filter((c) => c.is_active);
@@ -111,6 +115,12 @@ export default function PartForm() {
       toast({ title: 'Part Created', description: `${formData.part_number} has been added` });
       navigate(`/inventory/${newPart.id}`);
     } else {
+      const qohChanged = part && part.quantity_on_hand !== partData.quantity_on_hand;
+      if (qohChanged) {
+        setPendingPartData(formData);
+        setAdjustDialogOpen(true);
+        return;
+      }
       updatePart(id!, partData);
       toast({ title: 'Part Updated', description: 'Changes have been saved' });
       setEditing(false);
@@ -147,6 +157,33 @@ export default function PartForm() {
     setCategoryDialogOpen(false);
     setNewCategoryName('');
     toast({ title: 'Category Added', description: `${newCategory.category_name} has been created` });
+  };
+
+  const handleConfirmAdjustment = () => {
+    if (!pendingPartData || !part) return;
+    if (!adjustReason.trim()) {
+      toast({ title: 'Validation Error', description: 'Reason is required', variant: 'destructive' });
+      return;
+    }
+    const partData = {
+      part_number: pendingPartData.part_number.trim().toUpperCase(),
+      description: pendingPartData.description.trim() || null,
+      vendor_id: pendingPartData.vendor_id,
+      category_id: pendingPartData.category_id,
+      cost: parseFloat(pendingPartData.cost) || 0,
+      selling_price: parseFloat(pendingPartData.selling_price) || 0,
+      quantity_on_hand: parseInt(pendingPartData.quantity_on_hand) || 0,
+      core_required: pendingPartData.core_required,
+      core_charge: parseFloat(pendingPartData.core_charge) || 0,
+      min_qty: pendingPartData.min_qty === '' ? null : (Number.isFinite(parseInt(pendingPartData.min_qty)) ? parseInt(pendingPartData.min_qty) : null),
+      max_qty: pendingPartData.max_qty === '' ? null : (Number.isFinite(parseInt(pendingPartData.max_qty)) ? parseInt(pendingPartData.max_qty) : null),
+    };
+    updatePartWithQohAdjustment(id!, partData, { reason: adjustReason.trim(), adjusted_by: 'system' });
+    toast({ title: 'Part Updated', description: 'Changes have been saved' });
+    setAdjustDialogOpen(false);
+    setAdjustReason('');
+    setPendingPartData(null);
+    setEditing(false);
   };
 
   return (
@@ -396,6 +433,36 @@ export default function PartForm() {
             value={newCategoryName}
             onChange={(e) => setNewCategoryName(e.target.value)}
             placeholder="Enter category name"
+          />
+        </div>
+      </QuickAddDialog>
+
+      {/* Inventory Adjustment Reason Dialog */}
+      <QuickAddDialog
+        open={adjustDialogOpen}
+        onOpenChange={(open) => {
+          setAdjustDialogOpen(open);
+          if (!open) {
+            setAdjustReason('');
+            setPendingPartData(null);
+          }
+        }}
+        title="Inventory Adjustment"
+        onSave={handleConfirmAdjustment}
+        onCancel={() => {
+          setAdjustDialogOpen(false);
+          setAdjustReason('');
+          setPendingPartData(null);
+        }}
+      >
+        <div>
+          <Label htmlFor="adjust_reason">Reason *</Label>
+          <Textarea
+            id="adjust_reason"
+            value={adjustReason}
+            onChange={(e) => setAdjustReason(e.target.value)}
+            placeholder="Provide a reason for the quantity change"
+            rows={3}
           />
         </div>
       </QuickAddDialog>

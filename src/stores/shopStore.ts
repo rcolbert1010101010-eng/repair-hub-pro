@@ -63,6 +63,7 @@ interface ShopState {
   parts: Part[];
   addPart: (part: Omit<Part, 'id' | 'is_active' | 'created_at' | 'updated_at'>) => Part;
   updatePart: (id: string, part: Partial<Part>) => void;
+  updatePartWithQohAdjustment: (id: string, part: Partial<Part>, meta: { reason: string; adjusted_by: string }) => void;
   deactivatePart: (id: string) => void;
 
   // Technicians
@@ -120,6 +121,7 @@ interface ShopState {
   purchaseOrders: PurchaseOrder[];
   purchaseOrderLines: PurchaseOrderLine[];
   receivingRecords: ReceivingRecord[];
+  inventoryAdjustments: InventoryAdjustment[];
   createPurchaseOrder: (vendorId: string) => PurchaseOrder;
   poAddLine: (orderId: string, partId: string, quantity: number) => { success: boolean; error?: string };
   poUpdateLineQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
@@ -478,6 +480,32 @@ export const useShopStore = create<ShopState>()(
             p.id === id ? { ...p, ...part, updated_at: now() } : p
           ),
         })),
+
+      updatePartWithQohAdjustment: (id, part, meta) => {
+        const state = get();
+        const existing = state.parts.find((p) => p.id === id);
+        if (!existing) return;
+
+        const old_qty = existing.quantity_on_hand;
+        const new_qty = part.quantity_on_hand ?? old_qty;
+        const adjustment: InventoryAdjustment = {
+          id: generateId(),
+          part_id: id,
+          old_qty,
+          new_qty,
+          delta: new_qty - old_qty,
+          reason: meta.reason,
+          adjusted_by: meta.adjusted_by,
+          adjusted_at: now(),
+        };
+
+        set((state) => ({
+          parts: state.parts.map((p) =>
+            p.id === id ? { ...p, ...part, updated_at: now() } : p
+          ),
+          inventoryAdjustments: [...state.inventoryAdjustments, adjustment],
+        }));
+      },
 
       deactivatePart: (id) =>
         set((state) => ({
@@ -1388,6 +1416,7 @@ export const useShopStore = create<ShopState>()(
       purchaseOrders: [],
       purchaseOrderLines: [],
       receivingRecords: [],
+      inventoryAdjustments: [],
 
       createPurchaseOrder: (vendorId) => {
         const state = get();

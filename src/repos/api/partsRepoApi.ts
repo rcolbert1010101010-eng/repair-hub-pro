@@ -17,6 +17,10 @@ export const partsRepoApi: PartsRepo = {
     useShopStore.getState().updatePart(id, part);
     void apiClient.put<Part>(`/parts/${id}`, part);
   },
+  updatePartWithQohAdjustment(id, part, meta) {
+    useShopStore.getState().updatePartWithQohAdjustment(id, part, meta);
+    void apiClient.put<Part>(`/parts/${id}`, part);
+  },
   deactivatePart(id) {
     useShopStore.getState().deactivatePart(id);
     const state = useShopStore.getState();

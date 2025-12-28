@@ -55,6 +55,7 @@ export interface PartsRepo {
   parts: Part[];
   addPart: (part: Omit<Part, 'id' | 'is_active' | 'created_at' | 'updated_at'>) => Part;
   updatePart: (id: string, part: Partial<Part>) => void;
+  updatePartWithQohAdjustment: (id: string, part: Partial<Part>, meta: { reason: string; adjusted_by: string }) => void;
   deactivatePart: (id: string) => void;
 }
 
