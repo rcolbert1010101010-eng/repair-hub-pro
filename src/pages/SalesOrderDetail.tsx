@@ -52,6 +52,7 @@ export default function SalesOrderDetail() {
     soToggleWarranty,
     soToggleCoreReturned,
     soMarkCoreReturned,
+    soConvertToOpen,
     soInvoice,
     updateSalesOrderNotes,
   } = repos.salesOrders;
@@ -105,6 +106,7 @@ export default function SalesOrderDetail() {
   const activeCategories = categories.filter((c) => c.is_active);
 
   const isInvoiced = currentOrder?.status === 'INVOICED';
+  const isEstimate = currentOrder?.status === 'ESTIMATE';
 
   if (!isNew && !currentOrder) {
     return (
@@ -269,6 +271,20 @@ export default function SalesOrderDetail() {
     setShowCoreReturnDialog(true);
   };
 
+  const handleConvertToOpen = () => {
+    if (!currentOrder) return;
+    const result = soConvertToOpen(currentOrder.id);
+    if (result.success) {
+      setOrder(null);
+      toast({
+        title: 'Order Converted',
+        description: 'Estimate converted to sales order',
+      });
+    } else {
+      toast({ title: 'Error', description: result.error, variant: 'destructive' });
+    }
+  };
+
   const confirmMarkCoreReturned = () => {
     if (!coreReturnLineId) return;
     const result = soMarkCoreReturned(coreReturnLineId);
@@ -363,7 +379,13 @@ export default function SalesOrderDetail() {
     <div className="page-container">
       <PageHeader
         title={currentOrder?.order_number || 'Sales Order'}
-        subtitle={currentOrder?.status === 'INVOICED' ? 'Invoiced' : 'Open'}
+        subtitle={
+          currentOrder?.status === 'INVOICED'
+            ? 'Invoiced'
+            : currentOrder?.status === 'ESTIMATE'
+            ? 'Estimate'
+            : 'Open'
+        }
         backTo="/sales-orders"
         actions={
           !isInvoiced ? (
@@ -372,10 +394,17 @@ export default function SalesOrderDetail() {
                 <Printer className="w-4 h-4 mr-2" />
                 Print
               </Button>
-              <Button onClick={() => setShowInvoiceDialog(true)}>
-                <FileCheck className="w-4 h-4 mr-2" />
-                Invoice
-              </Button>
+              {isEstimate ? (
+                <Button onClick={handleConvertToOpen}>
+                  <Save className="w-4 h-4 mr-2" />
+                  Convert to Sales Order
+                </Button>
+              ) : (
+                <Button onClick={() => setShowInvoiceDialog(true)}>
+                  <FileCheck className="w-4 h-4 mr-2" />
+                  Invoice
+                </Button>
+              )}
             </>
           ) : (
             <Button variant="outline" onClick={() => window.print()}>

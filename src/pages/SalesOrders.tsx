@@ -13,7 +13,7 @@ export default function SalesOrders() {
   const repos = useRepos();
   const { salesOrders } = repos.salesOrders;
   const { customers } = repos.customers;
-  const [statusFilter, setStatusFilter] = useState<'open' | 'invoiced' | 'deleted'>('open');
+  const [statusFilter, setStatusFilter] = useState<'open' | 'estimate' | 'invoiced' | 'deleted'>('open');
 
   const columns: Column<SalesOrder>[] = [
     { key: 'order_number', header: 'Order #', sortable: true, className: 'font-mono' },
@@ -51,7 +51,9 @@ export default function SalesOrders() {
     return salesOrders.filter((order) => {
       switch (statusFilter) {
         case 'open':
-          return order.is_active !== false && order.status !== 'INVOICED';
+          return order.is_active !== false && order.status === 'OPEN';
+        case 'estimate':
+          return order.is_active !== false && order.status === 'ESTIMATE';
         case 'invoiced':
           return order.is_active !== false && order.status === 'INVOICED';
         case 'deleted':
@@ -83,7 +85,7 @@ export default function SalesOrders() {
       />
 
       <div className="flex justify-end gap-2 mb-4">
-        {(['open', 'invoiced', 'deleted'] as const).map((filter) => (
+        {(['open', 'estimate', 'invoiced', 'deleted'] as const).map((filter) => (
           <Button
             key={filter}
             variant={statusFilter === filter ? 'default' : 'outline'}
@@ -91,6 +93,7 @@ export default function SalesOrders() {
             onClick={() => setStatusFilter(filter)}
           >
             {filter === 'open' && 'Open'}
+            {filter === 'estimate' && 'Estimates'}
             {filter === 'invoiced' && 'Invoiced'}
             {filter === 'deleted' && 'Deleted'}
           </Button>

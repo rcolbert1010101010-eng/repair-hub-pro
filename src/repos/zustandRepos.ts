@@ -140,6 +140,9 @@ export const zustandRepos: Repos = {
     soToggleCoreReturned(lineId) {
       return useShopStore.getState().soToggleCoreReturned(lineId);
     },
+    soConvertToOpen(orderId) {
+      return useShopStore.getState().soConvertToOpen(orderId);
+    },
     soInvoice(orderId) {
       return useShopStore.getState().soInvoice(orderId);
     },

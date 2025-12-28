@@ -82,6 +82,7 @@ export interface SalesOrdersRepo {
   soRemovePartLine: (lineId: string) => { success: boolean; error?: string };
   soToggleWarranty: (lineId: string) => { success: boolean; error?: string };
   soToggleCoreReturned: (lineId: string) => { success: boolean; error?: string };
+  soConvertToOpen: (orderId: string) => { success: boolean; error?: string };
   soInvoice: (orderId: string) => { success: boolean; error?: string };
   updateSalesOrderNotes: (orderId: string, notes: string | null) => void;
   getSalesOrderLines: (orderId: string) => SalesOrderLine[];

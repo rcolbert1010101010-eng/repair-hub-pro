@@ -88,6 +88,7 @@ interface ShopState {
   soToggleWarranty: (lineId: string) => { success: boolean; error?: string };
   soToggleCoreReturned: (lineId: string) => { success: boolean; error?: string };
   soMarkCoreReturned: (lineId: string) => { success: boolean; error?: string };
+  soConvertToOpen: (orderId: string) => { success: boolean; error?: string };
   soInvoice: (orderId: string) => { success: boolean; error?: string };
   updateSalesOrderNotes: (orderId: string, notes: string | null) => void;
   getSalesOrderLines: (orderId: string) => SalesOrderLine[];
@@ -562,7 +563,7 @@ export const useShopStore = create<ShopState>()(
           order_number: generateOrderNumber('SO', state.salesOrders.length),
           customer_id: customerId,
           unit_id: unitId,
-          status: 'OPEN',
+          status: 'ESTIMATE',
           notes: null,
           tax_rate: state.settings.default_tax_rate,
           subtotal: 0,
@@ -796,6 +797,7 @@ export const useShopStore = create<ShopState>()(
         const order = state.salesOrders.find((o) => o.id === orderId);
         if (!order) return { success: false, error: 'Order not found' };
         if (order.status === 'INVOICED') return { success: false, error: 'Order already invoiced' };
+        if (order.status !== 'OPEN') return { success: false, error: 'Order must be open before invoicing' };
 
         set((state) => ({
           salesOrders: state.salesOrders.map((o) =>
@@ -804,6 +806,22 @@ export const useShopStore = create<ShopState>()(
               : o
           ),
         }));
+        return { success: true };
+      },
+
+      soConvertToOpen: (orderId) => {
+        const state = get();
+        const order = state.salesOrders.find((o) => o.id === orderId);
+        if (!order) return { success: false, error: 'Order not found' };
+        if (order.status === 'INVOICED') return { success: false, error: 'Cannot convert invoiced order' };
+        if (order.status === 'OPEN') return { success: true };
+
+        set((state) => ({
+          salesOrders: state.salesOrders.map((o) =>
+            o.id === orderId ? { ...o, status: 'OPEN', invoiced_at: null, updated_at: now() } : o
+          ),
+        }));
+
         return { success: true };
       },
 
