@@ -58,6 +58,7 @@ export function PrintSalesOrder({ order, lines, customer, unit, parts, shopName 
           <tr className="border-b-2 border-gray-300">
             <th className="text-left py-2 text-sm font-semibold text-gray-700">Part #</th>
             <th className="text-left py-2 text-sm font-semibold text-gray-700">Description</th>
+            <th className="text-left py-2 text-sm font-semibold text-gray-700">Bin</th>
             <th className="text-right py-2 text-sm font-semibold text-gray-700">Qty</th>
             <th className="text-right py-2 text-sm font-semibold text-gray-700">Unit Price</th>
             <th className="text-right py-2 text-sm font-semibold text-gray-700">Total</th>
@@ -70,6 +71,7 @@ export function PrintSalesOrder({ order, lines, customer, unit, parts, shopName 
               <tr key={line.id} className="border-b border-gray-200">
                 <td className="py-2 font-mono text-sm">{part?.part_number || '-'}</td>
                 <td className="py-2 text-sm">{part?.description || '-'}</td>
+                <td className="py-2 text-sm">{part?.bin_location || '—'}</td>
                 <td className="py-2 text-right text-sm">{line.quantity}</td>
                 <td className="py-2 text-right text-sm">${line.unit_price.toFixed(2)}</td>
                 <td className="py-2 text-right text-sm font-medium">${line.line_total.toFixed(2)}</td>
@@ -202,6 +204,7 @@ export function PrintWorkOrder({ order, partLines, laborLines, customer, unit, p
               <tr className="border-b-2 border-gray-300">
                 <th className="text-left py-2 text-sm font-semibold text-gray-700">Part #</th>
                 <th className="text-left py-2 text-sm font-semibold text-gray-700">Description</th>
+                <th className="text-left py-2 text-sm font-semibold text-gray-700">Bin</th>
                 <th className="text-right py-2 text-sm font-semibold text-gray-700">Qty</th>
                 <th className="text-right py-2 text-sm font-semibold text-gray-700">Unit Price</th>
                 <th className="text-right py-2 text-sm font-semibold text-gray-700">Total</th>
@@ -214,6 +217,7 @@ export function PrintWorkOrder({ order, partLines, laborLines, customer, unit, p
                   <tr key={line.id} className="border-b border-gray-200">
                     <td className="py-2 font-mono text-sm">{part?.part_number || '-'}</td>
                     <td className="py-2 text-sm">{part?.description || '-'}</td>
+                    <td className="py-2 text-sm">{part?.bin_location || '—'}</td>
                     <td className="py-2 text-right text-sm">{line.quantity}</td>
                     <td className="py-2 text-right text-sm">${line.unit_price.toFixed(2)}</td>
                     <td className="py-2 text-right text-sm font-medium">${line.line_total.toFixed(2)}</td>
