@@ -604,11 +604,6 @@ export const useShopStore = create<ShopState>()(
                 ? { ...l, quantity: newQty, line_total: lineTotal, updated_at: now() }
                 : l
             ),
-            parts: state.parts.map((p) =>
-              p.id === partId
-                ? { ...p, quantity_on_hand: p.quantity_on_hand - qty, updated_at: now() }
-                : p
-            ),
           }));
         } else {
           const newLine: SalesOrderLine = {
@@ -633,11 +628,6 @@ export const useShopStore = create<ShopState>()(
 
           set((state) => ({
             salesOrderLines: [...state.salesOrderLines, newLine],
-            parts: state.parts.map((p) =>
-              p.id === partId
-                ? { ...p, quantity_on_hand: p.quantity_on_hand - qty, updated_at: now() }
-                : p
-            ),
           }));
         }
 
@@ -663,11 +653,6 @@ export const useShopStore = create<ShopState>()(
               ? { ...l, quantity: newQty, line_total: lineTotal, updated_at: now() }
               : l
           ),
-          parts: state.parts.map((p) =>
-            p.id === line.part_id
-              ? { ...p, quantity_on_hand: p.quantity_on_hand + delta, updated_at: now() }
-              : p
-          ),
         }));
 
         get().recalculateSalesOrderTotals(line.sales_order_id);
@@ -685,11 +670,6 @@ export const useShopStore = create<ShopState>()(
 
         set((state) => ({
           salesOrderLines: state.salesOrderLines.filter((l) => l.id !== lineId),
-          parts: state.parts.map((p) =>
-            p.id === line.part_id
-              ? { ...p, quantity_on_hand: p.quantity_on_hand + line.quantity, updated_at: now() }
-              : p
-          ),
         }));
 
         get().recalculateSalesOrderTotals(line.sales_order_id);
@@ -799,12 +779,27 @@ export const useShopStore = create<ShopState>()(
         if (order.status === 'INVOICED') return { success: false, error: 'Order already invoiced' };
         if (order.status !== 'OPEN') return { success: false, error: 'Order must be open before invoicing' };
 
+        const linesForOrder = state.salesOrderLines.filter(
+          (l) => l.sales_order_id === orderId && !l.is_core_refund_line
+        );
+        const quantityByPart = linesForOrder.reduce<Record<string, number>>((acc, line) => {
+          if (!line.part_id) return acc;
+          acc[line.part_id] = (acc[line.part_id] || 0) + line.quantity;
+          return acc;
+        }, {});
+        const timestamp = now();
+
         set((state) => ({
           salesOrders: state.salesOrders.map((o) =>
             o.id === orderId
-              ? { ...o, status: 'INVOICED', invoiced_at: now(), updated_at: now() }
+              ? { ...o, status: 'INVOICED', invoiced_at: timestamp, updated_at: timestamp }
               : o
           ),
+          parts: state.parts.map((p) => {
+            const qty = quantityByPart[p.id];
+            if (!qty) return p;
+            return { ...p, quantity_on_hand: p.quantity_on_hand - qty, updated_at: timestamp };
+          }),
         }));
         return { success: true };
       },
