@@ -311,6 +311,8 @@ export interface UnitPMSchedule {
   interval_value: number;
   last_completed_date: string | null;
   last_completed_meter: number | null;
+  default_labor_description: string | null;
+  default_labor_hours: number | null;
   notes: string | null;
   is_active: boolean;
   created_at: string;
@@ -329,4 +331,3 @@ export interface UnitPMHistory {
   is_active: boolean;
   created_at: string;
 }
-

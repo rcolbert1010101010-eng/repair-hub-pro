@@ -170,7 +170,7 @@ function formatLastCompleted(schedule: UnitPMSchedule): string {
 
 export function PMSection({ unit }: PMSectionProps) {
   const navigate = useNavigate();
-  const { getPMSchedulesByUnit, getPMHistoryByUnit, deactivatePMSchedule, pmSchedules, createWorkOrder, updateWorkOrderNotes } = useShopStore();
+  const { getPMSchedulesByUnit, getPMHistoryByUnit, deactivatePMSchedule, pmSchedules, createWorkOrder, updateWorkOrderNotes, woAddLaborLine } = useShopStore();
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<UnitPMSchedule | null>(null);
   const [completingSchedule, setCompletingSchedule] = useState<UnitPMSchedule | null>(null);
@@ -257,6 +257,10 @@ export function PMSection({ unit }: PMSectionProps) {
     const notes = `PM: ${computed.schedule.name} — Status: ${computed.status} — Due: ${dueText}`;
 
     updateWorkOrderNotes(wo.id, notes);
+
+    const laborDesc = computed.schedule.default_labor_description ?? `Preventive Maintenance - ${computed.schedule.name}`;
+    const laborHours = computed.schedule.default_labor_hours ?? 1;
+    woAddLaborLine(wo.id, laborDesc, laborHours);
 
     navigate(`/work-orders/${wo.id}`);
   };
