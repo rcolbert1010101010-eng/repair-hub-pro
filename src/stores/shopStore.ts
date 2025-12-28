@@ -233,7 +233,12 @@ const SAMPLE_TECHNICIANS: Technician[] = [
 export const useShopStore = create<ShopState>()(
   persist(
     (set, get) => {
-      const createPOsForNegativeInventory = (projectedQuantities?: Record<string, number>) => {
+      const createPOsForNegativeInventory = (
+        projectedQuantities?: Record<string, number>,
+        sourceNote?: string
+      ) => {
+        const baseNote = 'Auto-generated from invoicing to replenish negative inventory';
+        const noteText = sourceNote ? `${baseNote} (${sourceNote})` : baseNote;
         const state = get();
         const shortages = state.parts
           .map((part) => {
@@ -263,7 +268,28 @@ export const useShopStore = create<ShopState>()(
           const existingPo = stateSnapshot.purchaseOrders.find(
             (po) => po.vendor_id === vendorId && po.status === 'OPEN'
           );
-          const poId = existingPo ? existingPo.id : get().createPurchaseOrder(vendorId).id;
+          let poId = existingPo?.id;
+          if (!poId) {
+            const newPo = get().createPurchaseOrder(vendorId);
+            poId = newPo.id;
+            set((state) => ({
+              purchaseOrders: state.purchaseOrders.map((po) =>
+                po.id === poId ? { ...po, notes: noteText } : po
+              ),
+            }));
+          } else if (noteText) {
+            const needsNote =
+              !existingPo.notes || !existingPo.notes.includes(baseNote);
+            if (needsNote) {
+              set((state) => ({
+                purchaseOrders: state.purchaseOrders.map((po) =>
+                  po.id === poId
+                    ? { ...po, notes: po.notes ? `${po.notes}\n${noteText}` : noteText }
+                    : po
+                ),
+              }));
+            }
+          }
 
           items.forEach(({ part, qoh }) => {
             const orderQty = (part.max_qty ?? 0) - qoh;
@@ -849,7 +875,10 @@ export const useShopStore = create<ShopState>()(
             return { ...p, quantity_on_hand: p.quantity_on_hand - qty, updated_at: timestamp };
           }),
         }));
-        createPOsForNegativeInventory(projectedQuantities);
+        createPOsForNegativeInventory(
+          projectedQuantities,
+          order.order_number ? `SO ${order.order_number}` : `SO ${order.id}`
+        );
         return { success: true };
       },
 
@@ -1284,7 +1313,10 @@ export const useShopStore = create<ShopState>()(
               : o
           ),
         }));
-        createPOsForNegativeInventory();
+        createPOsForNegativeInventory(
+          undefined,
+          order.order_number ? `WO ${order.order_number}` : `WO ${order.id}`
+        );
         return { success: true };
       },
 
