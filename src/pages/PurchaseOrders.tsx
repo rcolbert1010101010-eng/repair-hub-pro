@@ -3,6 +3,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { Badge } from '@/components/ui/badge';
 import { Plus } from 'lucide-react';
 import { useRepos } from '@/repos';
 import type { PurchaseOrder } from '@/types';
@@ -26,7 +27,14 @@ export default function PurchaseOrders() {
       header: 'Status',
       sortable: true,
       render: (item) => (
-        <StatusBadge status={item.status} variant={item.status === 'CLOSED' ? 'success' : 'warning'} />
+        <div className="flex items-center gap-2">
+          <StatusBadge status={item.status} variant={item.status === 'CLOSED' ? 'success' : 'warning'} />
+          {item.notes?.includes('Auto-generated') && (
+            <Badge variant="secondary" className="text-[10px] uppercase tracking-wide">
+              AUTO
+            </Badge>
+          )}
+        </div>
       ),
     },
     {
