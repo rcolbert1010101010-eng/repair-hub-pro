@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
@@ -12,6 +13,7 @@ export default function SalesOrders() {
   const repos = useRepos();
   const { salesOrders } = repos.salesOrders;
   const { customers } = repos.customers;
+  const [statusFilter, setStatusFilter] = useState<'open' | 'invoiced' | 'deleted'>('open');
 
   const columns: Column<SalesOrder>[] = [
     { key: 'order_number', header: 'Order #', sortable: true, className: 'font-mono' },
@@ -45,6 +47,28 @@ export default function SalesOrders() {
     },
   ];
 
+  const filteredSalesOrders = useMemo(() => {
+    return salesOrders.filter((order) => {
+      switch (statusFilter) {
+        case 'open':
+          return order.is_active !== false && order.status !== 'INVOICED';
+        case 'invoiced':
+          return order.is_active !== false && order.status === 'INVOICED';
+        case 'deleted':
+          return order.is_active === false;
+        default:
+          return true;
+      }
+    });
+  }, [salesOrders, statusFilter]);
+
+  const tableData = useMemo(() => {
+    if (statusFilter === 'deleted') {
+      return filteredSalesOrders.map((order) => ({ ...order, is_active: true }));
+    }
+    return filteredSalesOrders;
+  }, [filteredSalesOrders, statusFilter]);
+
   return (
     <div className="page-container">
       <PageHeader
@@ -58,13 +82,27 @@ export default function SalesOrders() {
         }
       />
 
+      <div className="flex justify-end gap-2 mb-4">
+        {(['open', 'invoiced', 'deleted'] as const).map((filter) => (
+          <Button
+            key={filter}
+            variant={statusFilter === filter ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setStatusFilter(filter)}
+          >
+            {filter === 'open' && 'Open'}
+            {filter === 'invoiced' && 'Invoiced'}
+            {filter === 'deleted' && 'Deleted'}
+          </Button>
+        ))}
+      </div>
+
       <DataTable
-        data={salesOrders}
+        data={tableData}
         columns={columns}
         searchKeys={['order_number']}
         searchPlaceholder="Search orders..."
         onRowClick={(order) => navigate(`/sales-orders/${order.id}`)}
-        showActiveFilter={false}
         emptyMessage="No sales orders found. Create your first sales order to get started."
       />
     </div>
