@@ -6,8 +6,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { useShopStore } from '@/stores/shopStore';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, Plus, Trash2, PackageCheck, Lock } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
@@ -15,9 +24,18 @@ import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 export default function PurchaseOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const repos = useRepos();
   const {
-    purchaseOrders, vendors, parts, createPurchaseOrder, poAddLine, poRemoveLine, poReceive, poClose, getPurchaseOrderLines,
-  } = useShopStore();
+    purchaseOrders,
+    createPurchaseOrder,
+    poAddLine,
+    poRemoveLine,
+    poReceive,
+    poClose,
+    getPurchaseOrderLines,
+  } = repos.purchaseOrders;
+  const { vendors } = repos.vendors;
+  const { parts } = repos.parts;
   const { toast } = useToast();
 
   const isNew = id === 'new';
@@ -106,10 +124,14 @@ export default function PurchaseOrderDetail() {
             <div>
               <Label>Vendor *</Label>
               <Select value={selectedVendorId} onValueChange={setSelectedVendorId}>
-                <SelectTrigger><SelectValue placeholder="Select vendor" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select vendor" />
+                </SelectTrigger>
                 <SelectContent>
                   {activeVendors.map((v) => (
-                    <SelectItem key={v.id} value={v.id}>{v.vendor_name}</SelectItem>
+                    <SelectItem key={v.id} value={v.id}>
+                      {v.vendor_name}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -149,7 +171,12 @@ export default function PurchaseOrderDetail() {
       />
 
       <div className="form-section mb-6">
-        <p className="text-sm text-muted-foreground">Vendor: <span className="font-medium text-foreground">{vendor?.vendor_name}</span></p>
+        <p className="text-sm text-muted-foreground">
+          Vendor:{' '}
+          <span className="font-medium text-foreground">
+            {vendor?.vendor_name}
+          </span>
+        </p>
       </div>
 
       <div className="table-container">
@@ -167,7 +194,9 @@ export default function PurchaseOrderDetail() {
           <TableBody>
             {lines.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No parts added</TableCell>
+                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  No parts added
+                </TableCell>
               </TableRow>
             ) : (
               lines.map((line) => {
@@ -184,13 +213,25 @@ export default function PurchaseOrderDetail() {
                       <TableCell>
                         <div className="flex gap-2">
                           {remaining > 0 && (
-                            <Button size="sm" variant="outline" onClick={() => { setReceiveLineId(line.id); setReceiveQty(String(remaining)); }}>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setReceiveLineId(line.id);
+                                setReceiveQty(String(remaining));
+                              }}
+                            >
                               <PackageCheck className="w-3 h-3 mr-1" />
                               Receive
                             </Button>
                           )}
                           {line.received_quantity === 0 && (
-                            <Button size="icon" variant="ghost" className="text-destructive" onClick={() => poRemoveLine(line.id)}>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="text-destructive"
+                              onClick={() => poRemoveLine(line.id)}
+                            >
                               <Trash2 className="w-4 h-4" />
                             </Button>
                           )}
@@ -206,31 +247,57 @@ export default function PurchaseOrderDetail() {
       </div>
 
       {/* Add Part Dialog */}
-      <QuickAddDialog open={addPartOpen} onOpenChange={setAddPartOpen} title="Add Part to PO" onSave={handleAddPart} onCancel={() => setAddPartOpen(false)}>
+      <QuickAddDialog
+        open={addPartOpen}
+        onOpenChange={setAddPartOpen}
+        title="Add Part to PO"
+        onSave={handleAddPart}
+        onCancel={() => setAddPartOpen(false)}
+      >
         <div className="space-y-4">
           <div>
             <Label>Part *</Label>
             <Select value={selectedPartId} onValueChange={setSelectedPartId}>
-              <SelectTrigger><SelectValue placeholder="Select part" /></SelectTrigger>
+              <SelectTrigger>
+                <SelectValue placeholder="Select part" />
+              </SelectTrigger>
               <SelectContent>
                 {activeParts.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.part_number} - {p.description}</SelectItem>
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.part_number} - {p.description}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div>
             <Label>Quantity</Label>
-            <Input type="number" min="1" value={partQty} onChange={(e) => setPartQty(e.target.value)} />
+            <Input
+              type="number"
+              min="1"
+              value={partQty}
+              onChange={(e) => setPartQty(e.target.value)}
+            />
           </div>
         </div>
       </QuickAddDialog>
 
       {/* Receive Dialog */}
-      <QuickAddDialog open={!!receiveLineId} onOpenChange={(o) => !o && setReceiveLineId(null)} title="Receive Items" onSave={handleReceive} onCancel={() => setReceiveLineId(null)}>
+      <QuickAddDialog
+        open={!!receiveLineId}
+        onOpenChange={(o) => !o && setReceiveLineId(null)}
+        title="Receive Items"
+        onSave={handleReceive}
+        onCancel={() => setReceiveLineId(null)}
+      >
         <div>
           <Label>Quantity to Receive</Label>
-          <Input type="number" min="1" value={receiveQty} onChange={(e) => setReceiveQty(e.target.value)} />
+          <Input
+            type="number"
+            min="1"
+            value={receiveQty}
+            onChange={(e) => setReceiveQty(e.target.value)}
+          />
         </div>
       </QuickAddDialog>
 
@@ -239,7 +306,9 @@ export default function PurchaseOrderDetail() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Close Purchase Order?</AlertDialogTitle>
-            <AlertDialogDescription>This will permanently lock the PO. This action cannot be undone.</AlertDialogDescription>
+            <AlertDialogDescription>
+              This will permanently lock the PO. This action cannot be undone.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>

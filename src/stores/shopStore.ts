@@ -64,7 +64,7 @@ interface ShopState {
 
   // Technicians
   technicians: Technician[];
-  addTechnician: (technician: Omit<Technician, 'id' | 'is_active' | 'created_at' | 'updated_at'>) => Technician;
+  addTechnician: (technician: Omit<Technician, 'id' | 'created_at' | 'updated_at'> & Partial<Pick<Technician, 'is_active' | 'employment_type' | 'skill_tags' | 'work_schedule' | 'certifications'>>) => Technician;
   updateTechnician: (id: string, technician: Partial<Technician>) => void;
   deactivateTechnician: (id: string) => void;
 
@@ -193,12 +193,24 @@ const SAMPLE_UNITS: Unit[] = [
   { id: 'unit-7', customer_id: 'cust-4', unit_name: 'Sprinter 1', vin: 'WDAPF4CC5E9876543', year: 2021, make: 'Mercedes', model: 'Sprinter 2500', mileage: 67000, hours: null, notes: null, is_active: true, created_at: staticDate, updated_at: staticDate },
 ];
 
+const DEFAULT_TECH_SCHEDULE = {
+  days: { mon: true, tue: true, wed: true, thu: true, fri: true, sat: false, sun: false },
+  start_time: '07:00',
+  end_time: '15:30',
+};
+
+const buildDefaultSchedule = () => ({
+  days: { ...DEFAULT_TECH_SCHEDULE.days },
+  start_time: DEFAULT_TECH_SCHEDULE.start_time,
+  end_time: DEFAULT_TECH_SCHEDULE.end_time,
+});
+
 // Sample Technicians
 const SAMPLE_TECHNICIANS: Technician[] = [
-  { id: 'tech-1', name: 'Carlos Rodriguez', hourly_cost_rate: 35.00, default_billable_rate: 125.00, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'tech-2', name: 'James Mitchell', hourly_cost_rate: 40.00, default_billable_rate: 125.00, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'tech-3', name: 'Tony Williams', hourly_cost_rate: 32.00, default_billable_rate: 125.00, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'tech-4', name: 'David Chen', hourly_cost_rate: 45.00, default_billable_rate: 150.00, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'tech-1', name: 'Carlos Rodriguez', hourly_cost_rate: 35.00, default_billable_rate: 125.00, employment_type: 'HOURLY', skill_tags: ['Diagnostics', 'Electrical'], work_schedule: buildDefaultSchedule(), certifications: [], is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'tech-2', name: 'James Mitchell', hourly_cost_rate: 40.00, default_billable_rate: 125.00, employment_type: 'SALARY', skill_tags: ['Engine', 'Transmission'], work_schedule: buildDefaultSchedule(), certifications: [], is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'tech-3', name: 'Tony Williams', hourly_cost_rate: 32.00, default_billable_rate: 125.00, employment_type: 'CONTRACTOR', skill_tags: ['Hydraulics', 'Brakes'], work_schedule: buildDefaultSchedule(), certifications: [], is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'tech-4', name: 'David Chen', hourly_cost_rate: 45.00, default_billable_rate: 150.00, employment_type: 'HOURLY', skill_tags: ['Diagnostics', 'HVAC', 'PM/Service'], work_schedule: buildDefaultSchedule(), certifications: [], is_active: true, created_at: staticDate, updated_at: staticDate },
 ];
 
 export const useShopStore = create<ShopState>()(
@@ -392,10 +404,22 @@ export const useShopStore = create<ShopState>()(
       technicians: [...SAMPLE_TECHNICIANS],
 
       addTechnician: (technician) => {
+        const defaultSchedule = buildDefaultSchedule();
         const newTechnician: Technician = {
           ...technician,
+          employment_type: technician.employment_type ?? 'HOURLY',
+          skill_tags: technician.skill_tags ?? [],
+          work_schedule: {
+            ...defaultSchedule,
+            ...(technician.work_schedule || {}),
+            days: {
+              ...defaultSchedule.days,
+              ...(technician.work_schedule?.days || {}),
+            },
+          },
+          certifications: technician.certifications ?? [],
           id: generateId(),
-          is_active: true,
+          is_active: technician.is_active ?? true,
           created_at: now(),
           updated_at: now(),
         };

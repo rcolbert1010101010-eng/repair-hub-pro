@@ -34,6 +34,9 @@ export default function Technicians() {
       key: 'id',
       header: 'Status',
       render: (item) => {
+        if (!item.is_active) {
+          return <Badge variant="outline">Inactive</Badge>;
+        }
         const activeEntry = getActiveTimeEntry(item.id);
         if (activeEntry) {
           const wo = workOrders.find((w) => w.id === activeEntry.work_order_id);

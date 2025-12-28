@@ -81,12 +81,39 @@ export interface Part {
   category?: PartCategory;
 }
 
+export interface TechnicianWorkSchedule {
+  days: {
+    mon: boolean;
+    tue: boolean;
+    wed: boolean;
+    thu: boolean;
+    fri: boolean;
+    sat: boolean;
+    sun: boolean;
+  };
+  start_time: string;
+  end_time: string;
+}
+
+export interface TechnicianCertification {
+  id: string;
+  name: string;
+  expires_on: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // Technician
 export interface Technician {
   id: string;
   name: string;
   hourly_cost_rate: number;
   default_billable_rate: number | null;
+  employment_type: 'HOURLY' | 'SALARY' | 'CONTRACTOR';
+  skill_tags: string[];
+  work_schedule: TechnicianWorkSchedule;
+  certifications: TechnicianCertification[];
   is_active: boolean;
   created_at: string;
   updated_at: string;

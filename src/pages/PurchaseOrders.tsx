@@ -4,12 +4,14 @@ import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { Plus } from 'lucide-react';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import type { PurchaseOrder } from '@/types';
 
 export default function PurchaseOrders() {
   const navigate = useNavigate();
-  const { purchaseOrders, vendors } = useShopStore();
+  const repos = useRepos();
+  const { purchaseOrders } = repos.purchaseOrders;
+  const { vendors } = repos.vendors;
 
   const columns: Column<PurchaseOrder>[] = [
     { key: 'po_number', header: 'PO #', sortable: true, className: 'font-mono' },
