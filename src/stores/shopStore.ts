@@ -177,18 +177,18 @@ const SAMPLE_CATEGORIES: PartCategory[] = [
 
 // Sample Parts
 const SAMPLE_PARTS: Part[] = [
-  { id: 'part-1', part_number: 'BRK-001', description: 'Heavy Duty Brake Pad Set (Front)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 45.00, selling_price: 89.99, quantity_on_hand: 24, core_required: false, core_charge: 0, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-2', part_number: 'BRK-002', description: 'Heavy Duty Brake Pad Set (Rear)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 42.00, selling_price: 84.99, quantity_on_hand: 18, core_required: false, core_charge: 0, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-3', part_number: 'BRK-010', description: 'Brake Rotor - 15" HD', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 120.00, selling_price: 189.99, quantity_on_hand: 8, core_required: true, core_charge: 35.00, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-4', part_number: 'ENG-001', description: 'Oil Filter - Heavy Duty', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 8.50, selling_price: 18.99, quantity_on_hand: 50, core_required: false, core_charge: 0, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-5', part_number: 'ENG-002', description: 'Air Filter - Commercial Truck', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 25.00, selling_price: 49.99, quantity_on_hand: 30, core_required: false, core_charge: 0, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-6', part_number: 'ENG-015', description: 'Fuel Injector - Diesel', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 180.00, selling_price: 299.99, quantity_on_hand: 6, core_required: true, core_charge: 75.00, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-7', part_number: 'ELC-001', description: 'Heavy Duty Battery - Group 31', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 145.00, selling_price: 229.99, quantity_on_hand: 12, core_required: true, core_charge: 25.00, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-8', part_number: 'ELC-010', description: 'Starter Motor - Diesel HD', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 280.00, selling_price: 449.99, quantity_on_hand: 4, core_required: true, core_charge: 85.00, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-9', part_number: 'ELC-015', description: 'Alternator - 200A HD', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 195.00, selling_price: 329.99, quantity_on_hand: 5, core_required: true, core_charge: 65.00, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-10', part_number: 'SUS-001', description: 'Shock Absorber - Front HD', vendor_id: 'vendor-1', category_id: 'cat-4', cost: 85.00, selling_price: 149.99, quantity_on_hand: 16, core_required: false, core_charge: 0, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-11', part_number: 'FLT-001', description: 'Engine Oil 15W-40 (1 Gal)', vendor_id: 'vendor-2', category_id: 'cat-5', cost: 18.00, selling_price: 32.99, quantity_on_hand: 48, core_required: false, core_charge: 0, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-12', part_number: 'FLT-005', description: 'Coolant - HD Extended Life (1 Gal)', vendor_id: 'vendor-2', category_id: 'cat-5', cost: 22.00, selling_price: 39.99, quantity_on_hand: 36, core_required: false, core_charge: 0, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-1', part_number: 'BRK-001', description: 'Heavy Duty Brake Pad Set (Front)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 45.00, selling_price: 89.99, quantity_on_hand: 24, core_required: false, core_charge: 0, min_qty: null, max_qty: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-2', part_number: 'BRK-002', description: 'Heavy Duty Brake Pad Set (Rear)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 42.00, selling_price: 84.99, quantity_on_hand: 18, core_required: false, core_charge: 0, min_qty: null, max_qty: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-3', part_number: 'BRK-010', description: 'Brake Rotor - 15\" HD', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 120.00, selling_price: 189.99, quantity_on_hand: 8, core_required: true, core_charge: 35.00, min_qty: null, max_qty: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-4', part_number: 'ENG-001', description: 'Oil Filter - Heavy Duty', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 8.50, selling_price: 18.99, quantity_on_hand: 50, core_required: false, core_charge: 0, min_qty: null, max_qty: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-5', part_number: 'ENG-002', description: 'Air Filter - Commercial Truck', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 25.00, selling_price: 49.99, quantity_on_hand: 30, core_required: false, core_charge: 0, min_qty: null, max_qty: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-6', part_number: 'ENG-015', description: 'Fuel Injector - Diesel', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 180.00, selling_price: 299.99, quantity_on_hand: 6, core_required: true, core_charge: 75.00, min_qty: null, max_qty: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-7', part_number: 'ELC-001', description: 'Heavy Duty Battery - Group 31', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 145.00, selling_price: 229.99, quantity_on_hand: 12, core_required: true, core_charge: 25.00, min_qty: null, max_qty: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-8', part_number: 'ELC-010', description: 'Starter Motor - Diesel HD', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 280.00, selling_price: 449.99, quantity_on_hand: 4, core_required: true, core_charge: 85.00, min_qty: null, max_qty: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-9', part_number: 'ELC-015', description: 'Alternator - 200A HD', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 195.00, selling_price: 329.99, quantity_on_hand: 5, core_required: true, core_charge: 65.00, min_qty: null, max_qty: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-10', part_number: 'SUS-001', description: 'Shock Absorber - Front HD', vendor_id: 'vendor-1', category_id: 'cat-4', cost: 85.00, selling_price: 149.99, quantity_on_hand: 16, core_required: false, core_charge: 0, min_qty: null, max_qty: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-11', part_number: 'FLT-001', description: 'Engine Oil 15W-40 (1 Gal)', vendor_id: 'vendor-2', category_id: 'cat-5', cost: 18.00, selling_price: 32.99, quantity_on_hand: 48, core_required: false, core_charge: 0, min_qty: null, max_qty: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-12', part_number: 'FLT-005', description: 'Coolant - HD Extended Life (1 Gal)', vendor_id: 'vendor-2', category_id: 'cat-5', cost: 22.00, selling_price: 39.99, quantity_on_hand: 36, core_required: false, core_charge: 0, min_qty: null, max_qty: null, is_active: true, created_at: staticDate, updated_at: staticDate },
 ];
 
 // Sample Customers
@@ -232,7 +232,48 @@ const SAMPLE_TECHNICIANS: Technician[] = [
 
 export const useShopStore = create<ShopState>()(
   persist(
-    (set, get) => ({
+    (set, get) => {
+      const createPOsForNegativeInventory = (projectedQuantities?: Record<string, number>) => {
+        const state = get();
+        const shortages = state.parts
+          .map((part) => {
+            const qoh = projectedQuantities?.[part.id] ?? part.quantity_on_hand;
+            return { part, qoh };
+          })
+          .filter(
+            ({ part, qoh }) =>
+              qoh < 0 && !!part.vendor_id && part.max_qty !== null && part.max_qty > 0
+          );
+
+        if (shortages.length === 0) return;
+
+        const grouped = shortages.reduce<Record<string, { part: Part; qoh: number }[]>>(
+          (acc, item) => {
+            const key = item.part.vendor_id;
+            if (!key) return acc;
+            acc[key] = acc[key] || [];
+            acc[key].push(item);
+            return acc;
+          },
+          {}
+        );
+
+        Object.entries(grouped).forEach(([vendorId, items]) => {
+          const stateSnapshot = get();
+          const existingPo = stateSnapshot.purchaseOrders.find(
+            (po) => po.vendor_id === vendorId && po.status === 'OPEN'
+          );
+          const poId = existingPo ? existingPo.id : get().createPurchaseOrder(vendorId).id;
+
+          items.forEach(({ part, qoh }) => {
+            const orderQty = (part.max_qty ?? 0) - qoh;
+            if (orderQty <= 0) return;
+            get().poAddLine(poId, part.id, orderQty);
+          });
+        });
+      };
+
+      return {
       // Initial Settings
       settings: {
         id: '1',
@@ -393,6 +434,8 @@ export const useShopStore = create<ShopState>()(
         const newPart: Part = {
           ...part,
           id: generateId(),
+          min_qty: part.min_qty ?? null,
+          max_qty: part.max_qty ?? null,
           is_active: true,
           created_at: now(),
           updated_at: now(),
@@ -787,6 +830,11 @@ export const useShopStore = create<ShopState>()(
           acc[line.part_id] = (acc[line.part_id] || 0) + line.quantity;
           return acc;
         }, {});
+        const projectedQuantities = state.parts.reduce<Record<string, number>>((acc, part) => {
+          const qty = quantityByPart[part.id] || 0;
+          acc[part.id] = part.quantity_on_hand - qty;
+          return acc;
+        }, {});
         const timestamp = now();
 
         set((state) => ({
@@ -801,6 +849,7 @@ export const useShopStore = create<ShopState>()(
             return { ...p, quantity_on_hand: p.quantity_on_hand - qty, updated_at: timestamp };
           }),
         }));
+        createPOsForNegativeInventory(projectedQuantities);
         return { success: true };
       },
 
@@ -1235,6 +1284,7 @@ export const useShopStore = create<ShopState>()(
               : o
           ),
         }));
+        createPOsForNegativeInventory();
         return { success: true };
       },
 
@@ -1584,7 +1634,8 @@ export const useShopStore = create<ShopState>()(
 
         return { success: true };
       },
-    }),
+      };
+    },
     {
       name: 'shop-storage',
     }

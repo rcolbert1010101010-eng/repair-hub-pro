@@ -74,6 +74,8 @@ export interface Part {
   quantity_on_hand: number;
   core_required: boolean;
   core_charge: number;
+  min_qty: number | null;
+  max_qty: number | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
