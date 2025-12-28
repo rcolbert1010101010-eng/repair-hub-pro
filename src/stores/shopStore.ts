@@ -17,7 +17,10 @@ import type {
   PurchaseOrder,
   PurchaseOrderLine,
   ReceivingRecord,
+  UnitPMSchedule,
+  UnitPMHistory,
 } from '@/types';
+
 
 // Generate unique IDs
 const generateId = () => crypto.randomUUID();
@@ -123,6 +126,17 @@ interface ShopState {
   updatePurchaseOrderNotes: (orderId: string, notes: string | null) => void;
   getPurchaseOrderLines: (orderId: string) => PurchaseOrderLine[];
   getReceivingRecords: (lineId: string) => ReceivingRecord[];
+
+  // PM Schedules
+  pmSchedules: UnitPMSchedule[];
+  pmHistory: UnitPMHistory[];
+  addPMSchedule: (schedule: Omit<UnitPMSchedule, 'id' | 'is_active' | 'created_at' | 'updated_at'>) => UnitPMSchedule;
+  updatePMSchedule: (id: string, schedule: Partial<UnitPMSchedule>) => void;
+  deactivatePMSchedule: (id: string) => void;
+  getPMSchedulesByUnit: (unitId: string) => UnitPMSchedule[];
+  addPMHistory: (history: Omit<UnitPMHistory, 'id' | 'is_active' | 'created_at'>) => UnitPMHistory;
+  getPMHistoryByUnit: (unitId: string) => UnitPMHistory[];
+  markPMCompleted: (scheduleId: string, completedDate: string, completedMeter: number | null, notes: string | null) => { success: boolean; error?: string };
 }
 
 const now = () => new Date().toISOString();
@@ -1297,6 +1311,93 @@ export const useShopStore = create<ShopState>()(
 
       getReceivingRecords: (lineId) =>
         get().receivingRecords.filter((r) => r.purchase_order_line_id === lineId),
+
+      // PM Schedules
+      pmSchedules: [],
+      pmHistory: [],
+
+      addPMSchedule: (schedule) => {
+        const newSchedule: UnitPMSchedule = {
+          ...schedule,
+          id: generateId(),
+          is_active: true,
+          created_at: now(),
+          updated_at: now(),
+        };
+        set((state) => ({
+          pmSchedules: [...state.pmSchedules, newSchedule],
+        }));
+        return newSchedule;
+      },
+
+      updatePMSchedule: (id, schedule) =>
+        set((state) => ({
+          pmSchedules: state.pmSchedules.map((s) =>
+            s.id === id ? { ...s, ...schedule, updated_at: now() } : s
+          ),
+        })),
+
+      deactivatePMSchedule: (id) =>
+        set((state) => ({
+          pmSchedules: state.pmSchedules.map((s) =>
+            s.id === id ? { ...s, is_active: false, updated_at: now() } : s
+          ),
+        })),
+
+      getPMSchedulesByUnit: (unitId) =>
+        get().pmSchedules.filter((s) => s.unit_id === unitId && s.is_active),
+
+      addPMHistory: (history) => {
+        const newHistory: UnitPMHistory = {
+          ...history,
+          id: generateId(),
+          is_active: true,
+          created_at: now(),
+        };
+        set((state) => ({
+          pmHistory: [...state.pmHistory, newHistory],
+        }));
+        return newHistory;
+      },
+
+      getPMHistoryByUnit: (unitId) =>
+        get().pmHistory.filter((h) => h.unit_id === unitId && h.is_active),
+
+      markPMCompleted: (scheduleId, completedDate, completedMeter, notes) => {
+        const state = get();
+        const schedule = state.pmSchedules.find((s) => s.id === scheduleId);
+        if (!schedule) return { success: false, error: 'Schedule not found' };
+
+        // Add history record
+        const historyRecord: UnitPMHistory = {
+          id: generateId(),
+          unit_id: schedule.unit_id,
+          schedule_id: scheduleId,
+          completed_date: completedDate,
+          completed_meter: completedMeter,
+          notes: notes,
+          related_work_order_id: null,
+          is_active: true,
+          created_at: now(),
+        };
+
+        // Update schedule with last completed info
+        set((state) => ({
+          pmSchedules: state.pmSchedules.map((s) =>
+            s.id === scheduleId
+              ? {
+                  ...s,
+                  last_completed_date: completedDate,
+                  last_completed_meter: completedMeter,
+                  updated_at: now(),
+                }
+              : s
+          ),
+          pmHistory: [...state.pmHistory, historyRecord],
+        }));
+
+        return { success: true };
+      },
     }),
     {
       name: 'shop-storage',
