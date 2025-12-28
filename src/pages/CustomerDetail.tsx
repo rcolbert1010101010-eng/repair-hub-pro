@@ -7,8 +7,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useShopStore } from '@/stores/shopStore';
 import { useToast } from '@/hooks/use-toast';
-import { Edit, Save, X, Trash2 } from 'lucide-react';
+import { Edit, Save, X, Trash2, Plus } from 'lucide-react';
 import { DataTable, Column } from '@/components/ui/data-table';
+import { AddUnitDialog } from '@/components/units/AddUnitDialog';
 import type { Unit } from '@/types';
 
 export default function CustomerDetail() {
@@ -17,6 +18,7 @@ export default function CustomerDetail() {
   const { customers, units, updateCustomer, deactivateCustomer } = useShopStore();
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
+  const [unitDialogOpen, setUnitDialogOpen] = useState(false);
 
   const customer = customers.find((c) => c.id === id);
   const customerUnits = units.filter((u) => u.customer_id === id);
@@ -207,7 +209,8 @@ export default function CustomerDetail() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Units / Equipment</h2>
-            <Button size="sm" onClick={() => navigate(`/units/new?customer=${id}`)}>
+            <Button size="sm" onClick={() => setUnitDialogOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
               Add Unit
             </Button>
           </div>
@@ -220,6 +223,13 @@ export default function CustomerDetail() {
           />
         </div>
       </div>
+
+      <AddUnitDialog
+        open={unitDialogOpen}
+        onOpenChange={setUnitDialogOpen}
+        customerId={id!}
+        customerName={customer.company_name}
+      />
     </div>
   );
 }
