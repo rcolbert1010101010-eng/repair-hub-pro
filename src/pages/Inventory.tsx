@@ -28,6 +28,12 @@ export default function Inventory() {
       },
     },
     {
+      key: 'bin_location',
+      header: 'Bin',
+      sortable: false,
+      render: (item) => item.bin_location || '—',
+    },
+    {
       key: 'vendor_id',
       header: 'Vendor',
       sortable: true,

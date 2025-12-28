@@ -50,6 +50,7 @@ export default function PartForm() {
     core_charge: part?.core_charge?.toString() || '0',
     min_qty: part?.min_qty?.toString() || '',
     max_qty: part?.max_qty?.toString() || '',
+    bin_location: part?.bin_location ?? '',
   });
 
   // Quick add dialogs
@@ -108,6 +109,7 @@ export default function PartForm() {
       core_charge: parseFloat(formData.core_charge) || 0,
       min_qty: formData.min_qty === '' ? null : (Number.isFinite(parseInt(formData.min_qty)) ? parseInt(formData.min_qty) : null),
       max_qty: formData.max_qty === '' ? null : (Number.isFinite(parseInt(formData.max_qty)) ? parseInt(formData.max_qty) : null),
+      bin_location: formData.bin_location.trim() || null,
     };
 
     if (isNew) {
@@ -177,6 +179,7 @@ export default function PartForm() {
       core_charge: parseFloat(pendingPartData.core_charge) || 0,
       min_qty: pendingPartData.min_qty === '' ? null : (Number.isFinite(parseInt(pendingPartData.min_qty)) ? parseInt(pendingPartData.min_qty) : null),
       max_qty: pendingPartData.max_qty === '' ? null : (Number.isFinite(parseInt(pendingPartData.max_qty)) ? parseInt(pendingPartData.max_qty) : null),
+      bin_location: pendingPartData.bin_location.trim() || null,
     };
     updatePartWithQohAdjustment(id!, partData, { reason: adjustReason.trim(), adjusted_by: 'system' });
     toast({ title: 'Part Updated', description: 'Changes have been saved' });
@@ -281,6 +284,18 @@ export default function PartForm() {
               rows={2}
               placeholder="Part description"
             />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="bin_location">Bin Location</Label>
+              <Input
+                id="bin_location"
+                value={formData.bin_location}
+                onChange={(e) => setFormData({ ...formData, bin_location: e.target.value })}
+                disabled={!editing}
+                placeholder="e.g., Aisle 3 - Bin 12"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

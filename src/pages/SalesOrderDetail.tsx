@@ -238,6 +238,7 @@ export default function SalesOrderDetail() {
       core_charge: 0,
       min_qty: null,
       max_qty: null,
+      bin_location: null,
     });
 
     toast({

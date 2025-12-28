@@ -76,6 +76,7 @@ export interface Part {
   core_charge: number;
   min_qty: number | null;
   max_qty: number | null;
+  bin_location: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
