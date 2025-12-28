@@ -51,6 +51,20 @@ export default function Inventory() {
       className: 'text-right',
     },
     {
+      key: 'min_qty',
+      header: 'Min',
+      sortable: false,
+      render: (item) => (item.min_qty ?? '—'),
+      className: 'text-right',
+    },
+    {
+      key: 'max_qty',
+      header: 'Max',
+      sortable: false,
+      render: (item) => (item.max_qty ?? '—'),
+      className: 'text-right',
+    },
+    {
       key: 'quantity_on_hand',
       header: 'QOH',
       sortable: true,
