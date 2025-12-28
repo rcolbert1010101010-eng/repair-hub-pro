@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import {
 import { useShopStore } from '@/stores/shopStore';
 import { useToast } from '@/hooks/use-toast';
 import { Save, X, Trash2, Edit } from 'lucide-react';
+import { PMSection } from '@/components/pm/PMSection';
 
 export default function UnitForm() {
   const { id } = useParams<{ id: string }>();
@@ -293,6 +294,10 @@ export default function UnitForm() {
           </div>
         </div>
       </div>
+
+      {/* PM Section - only show for existing units */}
+      {!isNew && unit && <PMSection unit={unit} />}
     </div>
   );
 }
+
