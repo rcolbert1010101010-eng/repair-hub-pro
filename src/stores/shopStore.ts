@@ -1547,7 +1547,7 @@ export const useShopStore = create<ShopState>()(
           completed_date: completedDate,
           completed_meter: completedMeter,
           notes: notes,
-          related_work_order_id: null,
+          related_work_order_id: schedule.last_generated_work_order_id ?? null,
           is_active: true,
           created_at: now(),
         };
