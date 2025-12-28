@@ -57,7 +57,9 @@ export default function SalesOrderDetail() {
   } = repos.salesOrders;
   const { customers, addCustomer } = repos.customers;
   const { units } = repos.units;
-  const { parts } = repos.parts;
+  const { parts, addPart } = repos.parts;
+  const { vendors } = repos.vendors;
+  const { categories } = repos.categories;
   const { settings } = repos.settings;
   const { toast } = useToast();
 
@@ -72,6 +74,15 @@ export default function SalesOrderDetail() {
   const [addPartDialogOpen, setAddPartDialogOpen] = useState(false);
   const [selectedPartId, setSelectedPartId] = useState('');
   const [partQty, setPartQty] = useState('1');
+  const [newPartDialogOpen, setNewPartDialogOpen] = useState(false);
+  const [newPartData, setNewPartData] = useState({
+    part_number: '',
+    description: '',
+    vendor_id: '',
+    category_id: '',
+    cost: '',
+    selling_price: '',
+  });
 
   const [quickAddCustomerOpen, setQuickAddCustomerOpen] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
@@ -90,6 +101,8 @@ export default function SalesOrderDetail() {
     return units.filter((u) => u.customer_id === selectedCustomerId && u.is_active);
   }, [selectedCustomerId, units]);
   const activeParts = parts.filter((p) => p.is_active);
+  const activeVendors = vendors.filter((v) => v.is_active);
+  const activeCategories = categories.filter((c) => c.is_active);
 
   const isInvoiced = currentOrder?.status === 'INVOICED';
 
@@ -170,6 +183,73 @@ export default function SalesOrderDetail() {
     setQuickAddCustomerOpen(false);
     setNewCustomerName('');
     toast({ title: 'Customer Added' });
+  };
+
+  const handleQuickAddPart = () => {
+    if (!newPartData.part_number.trim()) {
+      toast({
+        title: 'Validation Error',
+        description: 'Part number is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!newPartData.vendor_id) {
+      toast({
+        title: 'Validation Error',
+        description: 'Vendor is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!newPartData.category_id) {
+      toast({
+        title: 'Validation Error',
+        description: 'Category is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const exists = parts.some(
+      (p) => (p.part_number || '').toLowerCase() === newPartData.part_number.trim().toLowerCase()
+    );
+    if (exists) {
+      toast({
+        title: 'Validation Error',
+        description: 'A part with this number already exists',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const partNumber = newPartData.part_number.trim().toUpperCase();
+    const newPart = addPart({
+      part_number: partNumber,
+      description: newPartData.description.trim() || null,
+      vendor_id: newPartData.vendor_id,
+      category_id: newPartData.category_id,
+      cost: parseFloat(newPartData.cost) || 0,
+      selling_price: parseFloat(newPartData.selling_price) || 0,
+      quantity_on_hand: 0,
+      core_required: false,
+      core_charge: 0,
+    });
+
+    toast({
+      title: 'Part Created',
+      description: `${partNumber} has been added`,
+    });
+    setNewPartDialogOpen(false);
+    setNewPartData({
+      part_number: '',
+      description: '',
+      vendor_id: '',
+      category_id: '',
+      cost: '',
+      selling_price: '',
+    });
+    setSelectedPartId(newPart.id);
   };
 
   const handleEditNotes = () => {
@@ -476,18 +556,113 @@ export default function SalesOrderDetail() {
         <div className="space-y-4">
           <div>
             <Label>Part *</Label>
-            <Select value={selectedPartId} onValueChange={setSelectedPartId}>
-              <SelectTrigger><SelectValue placeholder="Select part" /></SelectTrigger>
-              <SelectContent>
-                {activeParts.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.part_number} - {p.description} (${p.selling_price.toFixed(2)})</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex gap-2">
+              <Select value={selectedPartId} onValueChange={setSelectedPartId}>
+                <SelectTrigger className="flex-1"><SelectValue placeholder="Select part" /></SelectTrigger>
+                <SelectContent>
+                  {activeParts.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.part_number} - {p.description} (${p.selling_price.toFixed(2)})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" onClick={() => setNewPartDialogOpen(true)}>
+                New Part
+              </Button>
+            </div>
           </div>
           <div>
             <Label>Quantity</Label>
             <Input type="number" min="1" value={partQty} onChange={(e) => setPartQty(e.target.value)} />
+          </div>
+        </div>
+      </QuickAddDialog>
+
+      {/* Quick Add Part Dialog */}
+      <QuickAddDialog
+        open={newPartDialogOpen}
+        onOpenChange={setNewPartDialogOpen}
+        title="New Part"
+        onSave={handleQuickAddPart}
+        onCancel={() => setNewPartDialogOpen(false)}
+      >
+        <div className="space-y-3">
+          <div>
+            <Label>Part Number *</Label>
+            <Input
+              value={newPartData.part_number}
+              onChange={(e) => setNewPartData({ ...newPartData, part_number: e.target.value.toUpperCase() })}
+              placeholder="e.g., BRK-001"
+              className="font-mono"
+            />
+          </div>
+          <div>
+            <Label>Description</Label>
+            <Textarea
+              value={newPartData.description}
+              onChange={(e) => setNewPartData({ ...newPartData, description: e.target.value })}
+              rows={2}
+              placeholder="Part description"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Vendor *</Label>
+              <Select
+                value={newPartData.vendor_id}
+                onValueChange={(value) => setNewPartData({ ...newPartData, vendor_id: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select vendor" />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeVendors.map((vendor) => (
+                    <SelectItem key={vendor.id} value={vendor.id}>
+                      {vendor.vendor_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Category *</Label>
+              <Select
+                value={newPartData.category_id}
+                onValueChange={(value) => setNewPartData({ ...newPartData, category_id: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeCategories.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.category_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Cost</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={newPartData.cost}
+                onChange={(e) => setNewPartData({ ...newPartData, cost: e.target.value })}
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <Label>Selling Price</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={newPartData.selling_price}
+                onChange={(e) => setNewPartData({ ...newPartData, selling_price: e.target.value })}
+                placeholder="0.00"
+              />
+            </div>
           </div>
         </div>
       </QuickAddDialog>
