@@ -53,7 +53,7 @@ export interface CategoriesRepo {
 
 export interface PartsRepo {
   parts: Part[];
-  addPart: (part: Omit<Part, 'id' | 'is_active' | 'created_at' | 'updated_at'>) => Part;
+  addPart: (part: Omit<Part, 'id' | 'is_active' | 'created_at' | 'updated_at' | 'last_cost' | 'avg_cost'> & Partial<Pick<Part, 'last_cost' | 'avg_cost'>>) => Part;
   updatePart: (id: string, part: Partial<Part>) => void;
   updatePartWithQohAdjustment: (id: string, part: Partial<Part>, meta: { reason: string; adjusted_by: string }) => void;
   deactivatePart: (id: string) => void;

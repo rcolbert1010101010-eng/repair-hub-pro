@@ -77,11 +77,25 @@ export interface Part {
   min_qty: number | null;
   max_qty: number | null;
   bin_location: string | null;
+  last_cost: number | null;
+  avg_cost: number | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
   vendor?: Vendor;
   category?: PartCategory;
+}
+
+export type VendorCostSource = 'RECEIVING' | 'MANUAL';
+
+export interface VendorCostHistory {
+  id: string;
+  part_id: string;
+  vendor_id: string;
+  unit_cost: number;
+  quantity: number | null;
+  source: VendorCostSource;
+  created_at: string;
 }
 
 export interface InventoryAdjustment {

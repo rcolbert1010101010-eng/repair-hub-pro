@@ -17,6 +17,8 @@ import type {
   PurchaseOrder,
   PurchaseOrderLine,
   ReceivingRecord,
+  InventoryAdjustment,
+  VendorCostHistory,
   UnitPMSchedule,
   UnitPMHistory,
 } from '@/types';
@@ -61,7 +63,7 @@ interface ShopState {
 
   // Parts
   parts: Part[];
-  addPart: (part: Omit<Part, 'id' | 'is_active' | 'created_at' | 'updated_at'>) => Part;
+  addPart: (part: Omit<Part, 'id' | 'is_active' | 'created_at' | 'updated_at' | 'last_cost' | 'avg_cost'> & Partial<Pick<Part, 'last_cost' | 'avg_cost'>>) => Part;
   updatePart: (id: string, part: Partial<Part>) => void;
   updatePartWithQohAdjustment: (id: string, part: Partial<Part>, meta: { reason: string; adjusted_by: string }) => void;
   deactivatePart: (id: string) => void;
@@ -122,6 +124,7 @@ interface ShopState {
   purchaseOrderLines: PurchaseOrderLine[];
   receivingRecords: ReceivingRecord[];
   inventoryAdjustments: InventoryAdjustment[];
+  vendorCostHistory: VendorCostHistory[];
   createPurchaseOrder: (vendorId: string) => PurchaseOrder;
   poAddLine: (orderId: string, partId: string, quantity: number) => { success: boolean; error?: string };
   poUpdateLineQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
@@ -179,18 +182,18 @@ const SAMPLE_CATEGORIES: PartCategory[] = [
 
 // Sample Parts
 const SAMPLE_PARTS: Part[] = [
-  { id: 'part-1', part_number: 'BRK-001', description: 'Heavy Duty Brake Pad Set (Front)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 45.00, selling_price: 89.99, quantity_on_hand: 24, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-2', part_number: 'BRK-002', description: 'Heavy Duty Brake Pad Set (Rear)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 42.00, selling_price: 84.99, quantity_on_hand: 18, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-3', part_number: 'BRK-010', description: 'Brake Rotor - 15\" HD', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 120.00, selling_price: 189.99, quantity_on_hand: 8, core_required: true, core_charge: 35.00, min_qty: null, max_qty: null, bin_location: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-4', part_number: 'ENG-001', description: 'Oil Filter - Heavy Duty', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 8.50, selling_price: 18.99, quantity_on_hand: 50, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-5', part_number: 'ENG-002', description: 'Air Filter - Commercial Truck', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 25.00, selling_price: 49.99, quantity_on_hand: 30, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-6', part_number: 'ENG-015', description: 'Fuel Injector - Diesel', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 180.00, selling_price: 299.99, quantity_on_hand: 6, core_required: true, core_charge: 75.00, min_qty: null, max_qty: null, bin_location: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-7', part_number: 'ELC-001', description: 'Heavy Duty Battery - Group 31', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 145.00, selling_price: 229.99, quantity_on_hand: 12, core_required: true, core_charge: 25.00, min_qty: null, max_qty: null, bin_location: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-8', part_number: 'ELC-010', description: 'Starter Motor - Diesel HD', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 280.00, selling_price: 449.99, quantity_on_hand: 4, core_required: true, core_charge: 85.00, min_qty: null, max_qty: null, bin_location: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-9', part_number: 'ELC-015', description: 'Alternator - 200A HD', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 195.00, selling_price: 329.99, quantity_on_hand: 5, core_required: true, core_charge: 65.00, min_qty: null, max_qty: null, bin_location: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-10', part_number: 'SUS-001', description: 'Shock Absorber - Front HD', vendor_id: 'vendor-1', category_id: 'cat-4', cost: 85.00, selling_price: 149.99, quantity_on_hand: 16, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-11', part_number: 'FLT-001', description: 'Engine Oil 15W-40 (1 Gal)', vendor_id: 'vendor-2', category_id: 'cat-5', cost: 18.00, selling_price: 32.99, quantity_on_hand: 48, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-12', part_number: 'FLT-005', description: 'Coolant - HD Extended Life (1 Gal)', vendor_id: 'vendor-2', category_id: 'cat-5', cost: 22.00, selling_price: 39.99, quantity_on_hand: 36, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-1', part_number: 'BRK-001', description: 'Heavy Duty Brake Pad Set (Front)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 45.00, selling_price: 89.99, quantity_on_hand: 24, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-2', part_number: 'BRK-002', description: 'Heavy Duty Brake Pad Set (Rear)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 42.00, selling_price: 84.99, quantity_on_hand: 18, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-3', part_number: 'BRK-010', description: 'Brake Rotor - 15\" HD', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 120.00, selling_price: 189.99, quantity_on_hand: 8, core_required: true, core_charge: 35.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-4', part_number: 'ENG-001', description: 'Oil Filter - Heavy Duty', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 8.50, selling_price: 18.99, quantity_on_hand: 50, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-5', part_number: 'ENG-002', description: 'Air Filter - Commercial Truck', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 25.00, selling_price: 49.99, quantity_on_hand: 30, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-6', part_number: 'ENG-015', description: 'Fuel Injector - Diesel', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 180.00, selling_price: 299.99, quantity_on_hand: 6, core_required: true, core_charge: 75.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-7', part_number: 'ELC-001', description: 'Heavy Duty Battery - Group 31', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 145.00, selling_price: 229.99, quantity_on_hand: 12, core_required: true, core_charge: 25.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-8', part_number: 'ELC-010', description: 'Starter Motor - Diesel HD', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 280.00, selling_price: 449.99, quantity_on_hand: 4, core_required: true, core_charge: 85.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-9', part_number: 'ELC-015', description: 'Alternator - 200A HD', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 195.00, selling_price: 329.99, quantity_on_hand: 5, core_required: true, core_charge: 65.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-10', part_number: 'SUS-001', description: 'Shock Absorber - Front HD', vendor_id: 'vendor-1', category_id: 'cat-4', cost: 85.00, selling_price: 149.99, quantity_on_hand: 16, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-11', part_number: 'FLT-001', description: 'Engine Oil 15W-40 (1 Gal)', vendor_id: 'vendor-2', category_id: 'cat-5', cost: 18.00, selling_price: 32.99, quantity_on_hand: 48, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-12', part_number: 'FLT-005', description: 'Coolant - HD Extended Life (1 Gal)', vendor_id: 'vendor-2', category_id: 'cat-5', cost: 22.00, selling_price: 39.99, quantity_on_hand: 36, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, is_active: true, created_at: staticDate, updated_at: staticDate },
 ];
 
 // Sample Customers
@@ -465,6 +468,8 @@ export const useShopStore = create<ShopState>()(
           min_qty: part.min_qty ?? null,
           max_qty: part.max_qty ?? null,
           bin_location: part.bin_location ?? null,
+          last_cost: part.last_cost ?? null,
+          avg_cost: part.avg_cost ?? null,
           is_active: true,
           created_at: now(),
           updated_at: now(),
@@ -1418,6 +1423,7 @@ export const useShopStore = create<ShopState>()(
       purchaseOrderLines: [],
       receivingRecords: [],
       inventoryAdjustments: [],
+      vendorCostHistory: [],
 
       createPurchaseOrder: (vendorId) => {
         const state = get();
@@ -1537,6 +1543,8 @@ export const useShopStore = create<ShopState>()(
         }
 
         const newReceivedQty = line.received_quantity + quantity;
+        const part = state.parts.find((p) => p.id === line.part_id);
+        if (!part) return { success: false, error: 'Part not found' };
 
         // Create receiving record
         const receivingRecord: ReceivingRecord = {
@@ -1546,11 +1554,30 @@ export const useShopStore = create<ShopState>()(
           received_at: now(),
           notes: null,
         };
+        const costHistory: VendorCostHistory = {
+          id: generateId(),
+          part_id: line.part_id,
+          vendor_id: order.vendor_id,
+          unit_cost: line.unit_cost,
+          quantity,
+          source: 'RECEIVING',
+          created_at: now(),
+        };
+        const oldQoh = part.quantity_on_hand;
+        const receivedCost = line.unit_cost;
+        const receivedQty = quantity;
+        let avgCost = part.avg_cost;
+        if (avgCost === null || oldQoh <= 0) {
+          avgCost = receivedCost;
+        } else {
+          avgCost = ((avgCost * oldQoh) + (receivedCost * receivedQty)) / (oldQoh + receivedQty);
+        }
+        const timestamp = now();
 
         set((state) => ({
           purchaseOrderLines: state.purchaseOrderLines.map((l) =>
             l.id === lineId
-              ? { ...l, received_quantity: newReceivedQty, updated_at: now() }
+              ? { ...l, received_quantity: newReceivedQty, updated_at: timestamp }
               : l
           ),
           // Update part inventory and cost
@@ -1560,11 +1587,14 @@ export const useShopStore = create<ShopState>()(
                   ...p, 
                   quantity_on_hand: p.quantity_on_hand + quantity,
                   cost: line.unit_cost, // Update to last received cost
-                  updated_at: now() 
+                  last_cost: receivedCost,
+                  avg_cost: avgCost,
+                  updated_at: timestamp, 
                 }
               : p
           ),
           receivingRecords: [...state.receivingRecords, receivingRecord],
+          vendorCostHistory: [...state.vendorCostHistory, costHistory],
         }));
 
         return { success: true };

@@ -379,6 +379,24 @@ export default function PartForm() {
               />
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Last Cost</Label>
+              <Input
+                value={part?.last_cost != null ? part.last_cost.toFixed(2) : ''}
+                disabled
+                placeholder="N/A"
+              />
+            </div>
+            <div>
+              <Label>Avg Cost</Label>
+              <Input
+                value={part?.avg_cost != null ? part.avg_cost.toFixed(2) : ''}
+                disabled
+                placeholder="N/A"
+              />
+            </div>
+          </div>
 
           {/* Core Charge Section */}
           <div className="border border-border rounded-lg p-4 space-y-4">
