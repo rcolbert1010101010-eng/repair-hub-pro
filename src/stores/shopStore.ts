@@ -1489,6 +1489,8 @@ export const useShopStore = create<ShopState>()(
         const newSchedule: UnitPMSchedule = {
           ...schedule,
           id: generateId(),
+          last_generated_due_key: schedule.last_generated_due_key ?? null,
+          last_generated_work_order_id: schedule.last_generated_work_order_id ?? null,
           is_active: true,
           created_at: now(),
           updated_at: now(),
@@ -1558,6 +1560,8 @@ export const useShopStore = create<ShopState>()(
                   ...s,
                   last_completed_date: completedDate,
                   last_completed_meter: completedMeter,
+                  last_generated_due_key: null,
+                  last_generated_work_order_id: null,
                   updated_at: now(),
                 }
               : s

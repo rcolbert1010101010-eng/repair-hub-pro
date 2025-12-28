@@ -170,7 +170,7 @@ function formatLastCompleted(schedule: UnitPMSchedule): string {
 
 export function PMSection({ unit }: PMSectionProps) {
   const navigate = useNavigate();
-  const { getPMSchedulesByUnit, getPMHistoryByUnit, deactivatePMSchedule, pmSchedules, createWorkOrder, updateWorkOrderNotes, woAddLaborLine } = useShopStore();
+  const { getPMSchedulesByUnit, getPMHistoryByUnit, deactivatePMSchedule, pmSchedules, createWorkOrder, updateWorkOrderNotes, woAddLaborLine, updatePMSchedule } = useShopStore();
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<UnitPMSchedule | null>(null);
   const [completingSchedule, setCompletingSchedule] = useState<UnitPMSchedule | null>(null);
@@ -249,6 +249,16 @@ export function PMSection({ unit }: PMSectionProps) {
   const handleCreateWorkOrder = (computed: ComputedSchedule) => {
     if (computed.status !== 'OVERDUE' && computed.status !== 'DUE_SOON') return;
 
+    const dueKey = `${computed.schedule.interval_type}:${computed.nextDue ?? 'NONE'}`;
+    if (computed.status === 'NOT_CONFIGURED' || dueKey.endsWith(':NONE')) {
+      return;
+    }
+
+    if (computed.schedule.last_generated_due_key === dueKey && computed.schedule.last_generated_work_order_id) {
+      navigate(`/work-orders/${computed.schedule.last_generated_work_order_id}`);
+      return;
+    }
+
     const wo = createWorkOrder(unit.customer_id, unit.id);
 
     const dueText =
@@ -261,6 +271,11 @@ export function PMSection({ unit }: PMSectionProps) {
     const laborDesc = computed.schedule.default_labor_description ?? `Preventive Maintenance - ${computed.schedule.name}`;
     const laborHours = computed.schedule.default_labor_hours ?? 1;
     woAddLaborLine(wo.id, laborDesc, laborHours);
+
+    updatePMSchedule(computed.schedule.id, {
+      last_generated_due_key: dueKey,
+      last_generated_work_order_id: wo.id,
+    });
 
     navigate(`/work-orders/${wo.id}`);
   };

@@ -313,6 +313,8 @@ export interface UnitPMSchedule {
   last_completed_meter: number | null;
   default_labor_description: string | null;
   default_labor_hours: number | null;
+  last_generated_due_key: string | null;
+  last_generated_work_order_id: string | null;
   notes: string | null;
   is_active: boolean;
   created_at: string;
