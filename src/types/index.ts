@@ -105,6 +105,9 @@ export interface TimeEntry {
   technician?: Technician;
 }
 
+// Core Status
+export type CoreStatus = 'CORE_OWED' | 'CORE_RETURNED' | 'CORE_CREDITED' | 'NOT_APPLICABLE';
+
 // Sales Order Status
 export type SalesOrderStatus = 'OPEN' | 'INVOICED';
 
@@ -140,6 +143,12 @@ export interface SalesOrderLine {
   is_warranty: boolean;
   core_charge: number;
   core_returned: boolean;
+  core_status: CoreStatus;
+  core_returned_at: string | null;
+  core_refunded_at: string | null;
+  is_core_refund_line: boolean;
+  core_refund_for_line_id: string | null;
+  description: string | null;
   created_at: string;
   updated_at: string;
   part?: Part;
@@ -184,6 +193,12 @@ export interface WorkOrderPartLine {
   is_warranty: boolean;
   core_charge: number;
   core_returned: boolean;
+  core_status: CoreStatus;
+  core_returned_at: string | null;
+  core_refunded_at: string | null;
+  is_core_refund_line: boolean;
+  core_refund_for_line_id: string | null;
+  description: string | null;
   created_at: string;
   updated_at: string;
   part?: Part;
