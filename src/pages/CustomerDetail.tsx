@@ -5,6 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Edit, Save, X, Trash2, Plus } from 'lucide-react';
@@ -32,6 +39,7 @@ export default function CustomerDetail() {
     email: customer?.email || '',
     address: customer?.address || '',
     notes: customer?.notes || '',
+    price_level: customer?.price_level || 'RETAIL',
   });
 
   if (!customer) {
@@ -73,6 +81,7 @@ export default function CustomerDetail() {
       email: formData.email.trim() || null,
       address: formData.address.trim() || null,
       notes: formData.notes.trim() || null,
+      price_level: formData.price_level,
     });
 
     toast({
@@ -154,6 +163,23 @@ export default function CustomerDetail() {
                 onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
                 disabled={!editing}
               />
+            </div>
+            <div>
+              <Label>Price Level</Label>
+              <Select
+                value={formData.price_level}
+                onValueChange={(value) => setFormData({ ...formData, price_level: value as any })}
+                disabled={!editing}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select price level" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="RETAIL">Retail</SelectItem>
+                  <SelectItem value="FLEET">Fleet</SelectItem>
+                  <SelectItem value="WHOLESALE">Wholesale</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label htmlFor="contact_name">Contact Name</Label>
