@@ -32,6 +32,7 @@ export default function PartForm() {
   const { categories } = repos.categories;
   const { addVendor } = repos.vendors;
   const { addCategory } = repos.categories;
+  const { vendorCostHistory } = repos.vendorCostHistory;
   const { toast } = useToast();
 
   const isNew = id === 'new';
@@ -64,6 +65,10 @@ export default function PartForm() {
 
   const activeVendors = vendors.filter((v) => v.is_active);
   const activeCategories = categories.filter((c) => c.is_active);
+  const partCostHistory = vendorCostHistory
+    .filter((h) => h.part_id === id)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 15);
 
   if (!isNew && !part) {
     return (
@@ -383,7 +388,7 @@ export default function PartForm() {
             <div>
               <Label>Last Cost</Label>
               <Input
-                value={part?.last_cost != null ? part.last_cost.toFixed(2) : ''}
+                value={part?.last_cost != null ? part.last_cost.toFixed(2) : '—'}
                 disabled
                 placeholder="N/A"
               />
@@ -391,12 +396,47 @@ export default function PartForm() {
             <div>
               <Label>Avg Cost</Label>
               <Input
-                value={part?.avg_cost != null ? part.avg_cost.toFixed(2) : ''}
+                value={part?.avg_cost != null ? part.avg_cost.toFixed(2) : '—'}
                 disabled
                 placeholder="N/A"
               />
             </div>
           </div>
+
+          {!isNew && (
+            <div className="border border-border rounded-lg p-4 space-y-3">
+              <h3 className="text-sm font-semibold">Cost History</h3>
+              {partCostHistory.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No cost history yet.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-muted-foreground">
+                      <th className="py-1">Date</th>
+                      <th className="py-1">Vendor</th>
+                      <th className="py-1 text-right">Unit Cost</th>
+                      <th className="py-1 text-right">Qty</th>
+                      <th className="py-1">Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {partCostHistory.map((entry) => {
+                      const vendor = vendors.find((v) => v.id === entry.vendor_id);
+                      return (
+                        <tr key={entry.id} className="border-t border-border/60">
+                          <td className="py-1">{new Date(entry.created_at).toLocaleDateString()}</td>
+                          <td className="py-1">{vendor?.vendor_name || '—'}</td>
+                          <td className="py-1 text-right">${entry.unit_cost.toFixed(2)}</td>
+                          <td className="py-1 text-right">{entry.quantity ?? '—'}</td>
+                          <td className="py-1 uppercase text-xs text-muted-foreground">{entry.source}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
 
           {/* Core Charge Section */}
           <div className="border border-border rounded-lg p-4 space-y-4">

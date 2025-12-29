@@ -5,6 +5,7 @@ import type {
   Vendor,
   PartCategory,
   Part,
+  VendorCostHistory,
   Technician,
   TimeEntry,
   SalesOrder,
@@ -57,6 +58,10 @@ export interface PartsRepo {
   updatePart: (id: string, part: Partial<Part>) => void;
   updatePartWithQohAdjustment: (id: string, part: Partial<Part>, meta: { reason: string; adjusted_by: string }) => void;
   deactivatePart: (id: string) => void;
+}
+
+export interface VendorCostHistoryRepo {
+  vendorCostHistory: VendorCostHistory[];
 }
 
 export interface TechniciansRepo {
@@ -134,6 +139,7 @@ export interface Repos {
   vendors: VendorsRepo;
   categories: CategoriesRepo;
   parts: PartsRepo;
+  vendorCostHistory: VendorCostHistoryRepo;
   technicians: TechniciansRepo;
   timeEntries: TimeEntriesRepo;
   salesOrders: SalesOrdersRepo;

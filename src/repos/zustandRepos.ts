@@ -118,6 +118,11 @@ export const zustandRepos: Repos = {
       return useShopStore.getState().getTimeEntriesByWorkOrder(workOrderId);
     },
   },
+  vendorCostHistory: {
+    get vendorCostHistory() {
+      return useShopStore.getState().vendorCostHistory;
+    },
+  },
   salesOrders: {
     get salesOrders() {
       return useShopStore.getState().salesOrders;
