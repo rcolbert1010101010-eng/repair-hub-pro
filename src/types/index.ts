@@ -22,6 +22,7 @@ export interface Customer {
   email: string | null;
   address: string | null;
   notes: string | null;
+  price_level: PriceLevel;
   is_active: boolean;
   created_at: string;
   updated_at: string;

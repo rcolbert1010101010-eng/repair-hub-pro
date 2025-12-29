@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { calcPartPriceForLevel } from '@/domain/pricing/partPricing';
 import type {
   SystemSettings,
   Customer,
@@ -159,6 +160,7 @@ const WALKIN_CUSTOMER: Customer = {
   email: null,
   address: null,
   notes: 'Default walk-in customer for counter sales',
+  price_level: 'RETAIL',
   is_active: true,
   created_at: staticDate,
   updated_at: staticDate,
@@ -198,10 +200,10 @@ const SAMPLE_PARTS: Part[] = [
 
 // Sample Customers
 const SAMPLE_CUSTOMERS: Customer[] = [
-  { id: 'cust-1', company_name: 'ABC Trucking Inc', contact_name: 'John Smith', phone: '555-111-1111', email: 'john@abctrucking.com', address: '123 Industrial Blvd, Houston, TX 77001', notes: 'Fleet account - Net 30', is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'cust-2', company_name: 'Metro Logistics', contact_name: 'Sarah Johnson', phone: '555-222-2222', email: 'sarah@metrologistics.com', address: '456 Commerce St, Dallas, TX 75201', notes: 'Preferred customer', is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'cust-3', company_name: 'Sunrise Freight', contact_name: 'Mike Davis', phone: '555-333-3333', email: 'mike@sunrisefreight.com', address: '789 Highway 45, Austin, TX 78701', notes: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'cust-4', company_name: 'Central Delivery Co', contact_name: 'Lisa Brown', phone: '555-444-4444', email: 'lisa@centraldelivery.com', address: '321 Main St, San Antonio, TX 78201', notes: 'COD only', is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'cust-1', company_name: 'ABC Trucking Inc', contact_name: 'John Smith', phone: '555-111-1111', email: 'john@abctrucking.com', address: '123 Industrial Blvd, Houston, TX 77001', notes: 'Fleet account - Net 30', price_level: 'FLEET', is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'cust-2', company_name: 'Metro Logistics', contact_name: 'Sarah Johnson', phone: '555-222-2222', email: 'sarah@metrologistics.com', address: '456 Commerce St, Dallas, TX 75201', notes: 'Preferred customer', price_level: 'RETAIL', is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'cust-3', company_name: 'Sunrise Freight', contact_name: 'Mike Davis', phone: '555-333-3333', email: 'mike@sunrisefreight.com', address: '789 Highway 45, Austin, TX 78701', notes: null, price_level: 'RETAIL', is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'cust-4', company_name: 'Central Delivery Co', contact_name: 'Lisa Brown', phone: '555-444-4444', email: 'lisa@centraldelivery.com', address: '321 Main St, San Antonio, TX 78201', notes: 'COD only', price_level: 'WHOLESALE', is_active: true, created_at: staticDate, updated_at: staticDate },
 ];
 
 // Sample Units
@@ -330,6 +332,7 @@ export const useShopStore = create<ShopState>()(
         const newCustomer: Customer = {
           ...customer,
           id: generateId(),
+          price_level: customer.price_level ?? 'RETAIL',
           is_active: true,
           created_at: now(),
           updated_at: now(),
@@ -696,6 +699,11 @@ export const useShopStore = create<ShopState>()(
         const part = state.parts.find((p) => p.id === partId);
         if (!part) return { success: false, error: 'Part not found' };
 
+        const customer = state.customers.find((c) => c.id === order.customer_id);
+        const level = customer?.price_level ?? 'RETAIL';
+        const suggested = calcPartPriceForLevel(part, state.settings, level);
+        const unitPrice = suggested ?? part.selling_price;
+
         const existingLine = state.salesOrderLines.find(
           (l) => l.sales_order_id === orderId && l.part_id === partId
         );
@@ -717,8 +725,8 @@ export const useShopStore = create<ShopState>()(
             sales_order_id: orderId,
             part_id: partId,
             quantity: qty,
-            unit_price: part.selling_price,
-            line_total: qty * part.selling_price,
+            unit_price: unitPrice,
+            line_total: qty * unitPrice,
             is_warranty: false,
             core_charge: part.core_required ? part.core_charge : 0,
             core_returned: false,
