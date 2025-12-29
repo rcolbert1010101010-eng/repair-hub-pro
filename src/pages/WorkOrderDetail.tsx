@@ -304,6 +304,12 @@ export default function WorkOrderDetail() {
   const unit = units.find((u) => u.id === (currentOrder?.unit_id || selectedUnitId));
   const allPartLines = currentOrder ? getWorkOrderPartLines(currentOrder.id) : [];
   const laborLines = currentOrder ? getWorkOrderLaborLines(currentOrder.id) : [];
+  const priceLevelLabel =
+    customer?.price_level === 'WHOLESALE'
+      ? 'Wholesale'
+      : customer?.price_level === 'FLEET'
+      ? 'Fleet'
+      : 'Retail';
   
   // Separate part lines and refund lines for display
   const partLines = allPartLines.filter((l) => !l.is_core_refund_line);
@@ -427,6 +433,10 @@ export default function WorkOrderDetail() {
             <div>
               <span className="text-muted-foreground">Customer:</span>
               <p className="font-medium">{customer?.company_name || '-'}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Price Level:</span>
+              <p className="font-medium">{customer ? priceLevelLabel : 'Retail'}</p>
             </div>
             <div>
               <span className="text-muted-foreground">Unit:</span>

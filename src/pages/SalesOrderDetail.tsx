@@ -303,6 +303,12 @@ export default function SalesOrderDetail() {
   const customer = customers.find((c) => c.id === (currentOrder?.customer_id || selectedCustomerId));
   const unit = units.find((u) => u.id === (currentOrder?.unit_id || selectedUnitId));
   const orderLines = currentOrder ? getSalesOrderLines(currentOrder.id) : [];
+  const priceLevelLabel =
+    customer?.price_level === 'WHOLESALE'
+      ? 'Wholesale'
+      : customer?.price_level === 'FLEET'
+      ? 'Fleet'
+      : 'Retail';
   
   // Separate part lines and refund lines for display
   const partLines = orderLines.filter((l) => !l.is_core_refund_line);
@@ -426,6 +432,10 @@ export default function SalesOrderDetail() {
             <div>
               <span className="text-muted-foreground">Customer:</span>
               <p className="font-medium">{customer?.company_name || '-'}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Price Level:</span>
+              <p className="font-medium">{customer ? priceLevelLabel : 'Retail'}</p>
             </div>
             {unit && (
               <div>
