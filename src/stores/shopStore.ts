@@ -1030,6 +1030,10 @@ export const useShopStore = create<ShopState>()(
         
         const part = state.parts.find((p) => p.id === partId);
         if (!part) return { success: false, error: 'Part not found' };
+        const customer = state.customers.find((c) => c.id === order.customer_id);
+        const level = customer?.price_level ?? 'RETAIL';
+        const suggested = calcPartPriceForLevel(part, state.settings, level);
+        const unitPrice = suggested ?? part.selling_price;
 
         const existingLine = state.workOrderPartLines.find(
           (l) => l.work_order_id === orderId && l.part_id === partId
@@ -1057,8 +1061,8 @@ export const useShopStore = create<ShopState>()(
             work_order_id: orderId,
             part_id: partId,
             quantity: qty,
-            unit_price: part.selling_price,
-            line_total: qty * part.selling_price,
+            unit_price: unitPrice,
+            line_total: qty * unitPrice,
             is_warranty: false,
             core_charge: part.core_required ? part.core_charge : 0,
             core_returned: false,
