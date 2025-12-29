@@ -186,6 +186,9 @@ export const zustandRepos: Repos = {
     woUpdatePartQty(lineId, newQty) {
       return useShopStore.getState().woUpdatePartQty(lineId, newQty);
     },
+    woUpdateLineUnitPrice(lineId, newUnitPrice) {
+      return useShopStore.getState().woUpdateLineUnitPrice(lineId, newUnitPrice);
+    },
     woRemovePartLine(lineId) {
       return useShopStore.getState().woRemovePartLine(lineId);
     },

@@ -105,6 +105,7 @@ interface ShopState {
   createWorkOrder: (customerId: string, unitId: string) => WorkOrder;
   woAddPartLine: (orderId: string, partId: string, qty: number) => { success: boolean; error?: string };
   woUpdatePartQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
+  woUpdateLineUnitPrice: (lineId: string, newUnitPrice: number) => { success: boolean; error?: string };
   woRemovePartLine: (lineId: string) => { success: boolean; error?: string };
   woTogglePartWarranty: (lineId: string) => { success: boolean; error?: string };
   woToggleCoreReturned: (lineId: string) => { success: boolean; error?: string };
@@ -1138,6 +1139,31 @@ export const useShopStore = create<ShopState>()(
             p.id === line.part_id
               ? { ...p, quantity_on_hand: p.quantity_on_hand + delta, updated_at: now() }
               : p
+          ),
+        }));
+
+        get().recalculateWorkOrderTotals(line.work_order_id);
+        return { success: true };
+      },
+
+      woUpdateLineUnitPrice: (lineId, newUnitPrice) => {
+        const state = get();
+        const line = state.workOrderPartLines.find((l) => l.id === lineId);
+        if (!line) return { success: false, error: 'Line not found' };
+
+        const order = state.workOrders.find((o) => o.id === line.work_order_id);
+        if (!order) return { success: false, error: 'Order not found' };
+        if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
+
+        if (!Number.isFinite(newUnitPrice) || newUnitPrice < 0) {
+          return { success: false, error: 'Invalid unit price' };
+        }
+
+        const updatedLineTotal = line.quantity * newUnitPrice;
+
+        set((state) => ({
+          workOrderPartLines: state.workOrderPartLines.map((l) =>
+            l.id === lineId ? { ...l, unit_price: newUnitPrice, line_total: updatedLineTotal, updated_at: now() } : l
           ),
         }));
 

@@ -103,6 +103,7 @@ export interface WorkOrdersRepo {
   createWorkOrder: (customerId: string, unitId: string) => WorkOrder;
   woAddPartLine: (orderId: string, partId: string, qty: number) => { success: boolean; error?: string };
   woUpdatePartQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
+  woUpdateLineUnitPrice: (lineId: string, newUnitPrice: number) => { success: boolean; error?: string };
   woRemovePartLine: (lineId: string) => { success: boolean; error?: string };
   woTogglePartWarranty: (lineId: string) => { success: boolean; error?: string };
   woToggleCoreReturned: (lineId: string) => { success: boolean; error?: string };

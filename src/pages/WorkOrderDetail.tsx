@@ -35,9 +35,10 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useShopStore } from '@/stores/shopStore';
 import { useToast } from '@/hooks/use-toast';
-import { Save, Plus, Trash2, FileCheck, Printer, Play, Edit, X, Clock, Square, Shield, RotateCcw } from 'lucide-react';
+import { Save, Plus, Trash2, FileCheck, Printer, Play, Edit, X, Clock, Square, Shield, RotateCcw, Check, Pencil, X as XIcon } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { PrintWorkOrder } from '@/components/print/PrintInvoice';
+import { calcPartPriceForLevel } from '@/domain/pricing/partPricing';
 
 export default function WorkOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -56,6 +57,7 @@ export default function WorkOrderDetail() {
     createWorkOrder,
     woAddPartLine,
     woUpdatePartQty,
+    woUpdateLineUnitPrice,
     woRemovePartLine,
     woTogglePartWarranty,
     woToggleCoreReturned,
@@ -84,6 +86,8 @@ export default function WorkOrderDetail() {
   const [addPartDialogOpen, setAddPartDialogOpen] = useState(false);
   const [selectedPartId, setSelectedPartId] = useState('');
   const [partQty, setPartQty] = useState('1');
+  const [editingPriceLineId, setEditingPriceLineId] = useState<string | null>(null);
+  const [priceDraft, setPriceDraft] = useState<string>('');
 
   const [addLaborDialogOpen, setAddLaborDialogOpen] = useState(false);
   const [laborDescription, setLaborDescription] = useState('');
@@ -304,6 +308,7 @@ export default function WorkOrderDetail() {
   const unit = units.find((u) => u.id === (currentOrder?.unit_id || selectedUnitId));
   const allPartLines = currentOrder ? getWorkOrderPartLines(currentOrder.id) : [];
   const laborLines = currentOrder ? getWorkOrderLaborLines(currentOrder.id) : [];
+  const priceLevel = customer?.price_level ?? 'RETAIL';
   const priceLevelLabel =
     customer?.price_level === 'WHOLESALE'
       ? 'Wholesale'
@@ -583,7 +588,73 @@ export default function WorkOrderDetail() {
                                 <Input type="number" min="1" value={line.quantity} onChange={(e) => handleUpdateQty(line.id, parseInt(e.target.value) || 0)} className="w-16 text-right" />
                               )}
                             </TableCell>
-                            <TableCell className="text-right">${line.unit_price.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">
+                          {isInvoiced ? (
+                            `$${line.unit_price.toFixed(2)}`
+                          ) : editingPriceLineId === line.id ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={priceDraft}
+                                onChange={(e) => setPriceDraft(e.target.value)}
+                                className="w-24 h-8 text-right"
+                              />
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => {
+                                  const parsed = parseFloat(priceDraft);
+                                  const result = woUpdateLineUnitPrice(line.id, parsed);
+                                  if (!result.success) {
+                                    toast({ title: 'Error', description: result.error, variant: 'destructive' });
+                                    return;
+                                  }
+                                  setEditingPriceLineId(null);
+                                  setPriceDraft('');
+                                }}
+                              >
+                                <Check className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditingPriceLineId(null);
+                                  setPriceDraft('');
+                                }}
+                              >
+                                <XIcon className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const suggested = part ? calcPartPriceForLevel(part, settings, priceLevel) : null;
+                                  if (suggested != null) {
+                                    setPriceDraft(suggested.toFixed(2));
+                                  }
+                                }}
+                              >
+                                Reset
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-2">
+                              <span>${line.unit_price.toFixed(2)}</span>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditingPriceLineId(line.id);
+                                  setPriceDraft(line.unit_price.toFixed(2));
+                                }}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          )}
+                        </TableCell>
                             <TableCell className="text-right font-medium">
                               {line.is_warranty ? <span className="text-muted-foreground">$0.00</span> : `$${line.line_total.toFixed(2)}`}
                             </TableCell>
