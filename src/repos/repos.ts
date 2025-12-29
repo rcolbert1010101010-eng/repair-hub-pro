@@ -85,6 +85,7 @@ export interface SalesOrdersRepo {
   createSalesOrder: (customerId: string, unitId: string | null) => SalesOrder;
   soAddPartLine: (orderId: string, partId: string, qty: number) => { success: boolean; error?: string };
   soUpdatePartQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
+  soUpdateLineUnitPrice: (lineId: string, newUnitPrice: number) => { success: boolean; error?: string };
   soRemovePartLine: (lineId: string) => { success: boolean; error?: string };
   soToggleWarranty: (lineId: string) => { success: boolean; error?: string };
   soToggleCoreReturned: (lineId: string) => { success: boolean; error?: string };

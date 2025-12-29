@@ -88,6 +88,7 @@ interface ShopState {
   createSalesOrder: (customerId: string, unitId: string | null) => SalesOrder;
   soAddPartLine: (orderId: string, partId: string, qty: number) => { success: boolean; error?: string };
   soUpdatePartQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
+  soUpdateLineUnitPrice: (lineId: string, newUnitPrice: number) => { success: boolean; error?: string };
   soRemovePartLine: (lineId: string) => { success: boolean; error?: string };
   soToggleWarranty: (lineId: string) => { success: boolean; error?: string };
   soToggleCoreReturned: (lineId: string) => { success: boolean; error?: string };
@@ -766,6 +767,31 @@ export const useShopStore = create<ShopState>()(
             l.id === lineId
               ? { ...l, quantity: newQty, line_total: lineTotal, updated_at: now() }
               : l
+          ),
+        }));
+
+        get().recalculateSalesOrderTotals(line.sales_order_id);
+        return { success: true };
+      },
+
+      soUpdateLineUnitPrice: (lineId, newUnitPrice) => {
+        const state = get();
+        const line = state.salesOrderLines.find((l) => l.id === lineId);
+        if (!line) return { success: false, error: 'Line not found' };
+
+        const order = state.salesOrders.find((o) => o.id === line.sales_order_id);
+        if (!order) return { success: false, error: 'Order not found' };
+        if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
+
+        if (!Number.isFinite(newUnitPrice) || newUnitPrice < 0) {
+          return { success: false, error: 'Invalid unit price' };
+        }
+
+        const updatedLineTotal = line.quantity * newUnitPrice;
+
+        set((state) => ({
+          salesOrderLines: state.salesOrderLines.map((l) =>
+            l.id === lineId ? { ...l, unit_price: newUnitPrice, line_total: updatedLineTotal, updated_at: now() } : l
           ),
         }));
 

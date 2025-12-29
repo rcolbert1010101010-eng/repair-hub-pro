@@ -34,9 +34,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
-import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Shield, RotateCcw } from 'lucide-react';
+import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Shield, RotateCcw, Check, Pencil, X as XIcon } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { PrintSalesOrder } from '@/components/print/PrintInvoice';
+import { calcPartPriceForLevel } from '@/domain/pricing/partPricing';
 
 export default function SalesOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -48,6 +49,7 @@ export default function SalesOrderDetail() {
     createSalesOrder,
     soAddPartLine,
     soUpdatePartQty,
+    soUpdateLineUnitPrice,
     soRemovePartLine,
     soToggleWarranty,
     soToggleCoreReturned,
@@ -87,6 +89,8 @@ export default function SalesOrderDetail() {
 
   const [quickAddCustomerOpen, setQuickAddCustomerOpen] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
+  const [editingPriceLineId, setEditingPriceLineId] = useState<string | null>(null);
+  const [priceDraft, setPriceDraft] = useState<string>('');
   
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState('');
@@ -543,7 +547,73 @@ export default function SalesOrderDetail() {
                             <Input type="number" min="1" value={line.quantity} onChange={(e) => handleUpdateQty(line.id, parseInt(e.target.value) || 0)} className="w-16 text-right" />
                           )}
                         </TableCell>
-                        <TableCell className="text-right">${line.unit_price.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">
+                          {isInvoiced ? (
+                            `$${line.unit_price.toFixed(2)}`
+                          ) : editingPriceLineId === line.id ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={priceDraft}
+                                onChange={(e) => setPriceDraft(e.target.value)}
+                                className="w-24 h-8 text-right"
+                              />
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => {
+                                  const parsed = parseFloat(priceDraft);
+                                  const result = soUpdateLineUnitPrice(line.id, parsed);
+                                  if (!result.success) {
+                                    toast({ title: 'Error', description: result.error, variant: 'destructive' });
+                                    return;
+                                  }
+                                  setEditingPriceLineId(null);
+                                  setPriceDraft('');
+                                }}
+                              >
+                                <Check className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditingPriceLineId(null);
+                                  setPriceDraft('');
+                                }}
+                              >
+                                <XIcon className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const suggested = part ? calcPartPriceForLevel(part, settings, customer?.price_level ?? 'RETAIL') : null;
+                                  if (suggested != null) {
+                                    setPriceDraft(suggested.toFixed(2));
+                                  }
+                                }}
+                              >
+                                Reset
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-2">
+                              <span>${line.unit_price.toFixed(2)}</span>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditingPriceLineId(line.id);
+                                  setPriceDraft(line.unit_price.toFixed(2));
+                                }}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right font-medium">
                           {line.is_warranty ? <span className="text-muted-foreground">$0.00</span> : `$${line.line_total.toFixed(2)}`}
                         </TableCell>
