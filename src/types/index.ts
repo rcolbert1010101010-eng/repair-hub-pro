@@ -1,4 +1,6 @@
 // System Settings
+export type PriceLevel = 'RETAIL' | 'FLEET' | 'WHOLESALE';
+
 export interface SystemSettings {
   id: string;
   shop_name: string;
@@ -6,6 +8,9 @@ export interface SystemSettings {
   default_tax_rate: number;
   currency: string;
   units: string;
+  markup_retail_percent: number;
+  markup_fleet_percent: number;
+  markup_wholesale_percent: number;
 }
 
 // Customer

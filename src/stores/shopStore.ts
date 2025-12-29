@@ -313,6 +313,9 @@ export const useShopStore = create<ShopState>()(
         default_tax_rate: 8.25,
         currency: 'USD',
         units: 'imperial',
+        markup_retail_percent: 60,
+        markup_fleet_percent: 40,
+        markup_wholesale_percent: 25,
       },
 
       updateSettings: (newSettings) =>

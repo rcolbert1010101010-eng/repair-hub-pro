@@ -16,6 +16,7 @@ import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, X, Trash2, Edit, Plus } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
+import { calcPartPriceForLevel, getPartCostBasis } from '@/domain/pricing/partPricing';
 
 export default function PartForm() {
   const { id } = useParams<{ id: string }>();
@@ -33,6 +34,7 @@ export default function PartForm() {
   const { addVendor } = repos.vendors;
   const { addCategory } = repos.categories;
   const { vendorCostHistory } = repos.vendorCostHistory;
+  const { settings } = repos.settings;
   const { toast } = useToast();
 
   const isNew = id === 'new';
@@ -69,6 +71,32 @@ export default function PartForm() {
     .filter((h) => h.part_id === id)
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 15);
+
+  const tempPartForPricing: Part = part || {
+    id: 'temp',
+    part_number: formData.part_number,
+    description: formData.description || null,
+    vendor_id: formData.vendor_id,
+    category_id: formData.category_id,
+    cost: parseFloat(formData.cost) || 0,
+    selling_price: parseFloat(formData.selling_price) || 0,
+    quantity_on_hand: parseInt(formData.quantity_on_hand) || 0,
+    core_required: part?.core_required ?? false,
+    core_charge: parseFloat(formData.core_charge) || 0,
+    min_qty: formData.min_qty === '' ? null : (Number.isFinite(parseInt(formData.min_qty)) ? parseInt(formData.min_qty) : null),
+    max_qty: formData.max_qty === '' ? null : (Number.isFinite(parseInt(formData.max_qty)) ? parseInt(formData.max_qty) : null),
+    bin_location: formData.bin_location.trim() || null,
+    last_cost: part?.last_cost ?? null,
+    avg_cost: part?.avg_cost ?? null,
+    is_active: true,
+    created_at: '',
+    updated_at: '',
+  };
+
+  const costBasis = getPartCostBasis(tempPartForPricing);
+  const suggestedRetail = calcPartPriceForLevel(tempPartForPricing, settings, 'RETAIL');
+  const suggestedFleet = calcPartPriceForLevel(tempPartForPricing, settings, 'FLEET');
+  const suggestedWholesale = calcPartPriceForLevel(tempPartForPricing, settings, 'WHOLESALE');
 
   if (!isNew && !part) {
     return (
@@ -400,6 +428,49 @@ export default function PartForm() {
                 disabled
                 placeholder="N/A"
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Suggested Basis</Label>
+              <Input
+                value={
+                  costBasis.basis != null
+                    ? `$${costBasis.basis.toFixed(2)} (${costBasis.source.replace('_', ' ')})`
+                    : '—'
+                }
+                disabled
+              />
+            </div>
+            {editing && (
+              <div className="flex items-end justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    if (suggestedRetail != null) {
+                      setFormData({ ...formData, selling_price: suggestedRetail.toFixed(2) });
+                    }
+                  }}
+                >
+                  Apply Retail Suggested
+                </Button>
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <Label>Retail Suggested</Label>
+              <Input value={suggestedRetail != null ? suggestedRetail.toFixed(2) : '—'} disabled />
+            </div>
+            <div>
+              <Label>Fleet Suggested</Label>
+              <Input value={suggestedFleet != null ? suggestedFleet.toFixed(2) : '—'} disabled />
+            </div>
+            <div>
+              <Label>Wholesale Suggested</Label>
+              <Input value={suggestedWholesale != null ? suggestedWholesale.toFixed(2) : '—'} disabled />
             </div>
           </div>
 
