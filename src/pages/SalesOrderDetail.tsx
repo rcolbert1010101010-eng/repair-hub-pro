@@ -98,7 +98,7 @@ export default function SalesOrderDetail() {
   const [showCoreReturnDialog, setShowCoreReturnDialog] = useState(false);
   const [coreReturnLineId, setCoreReturnLineId] = useState<string | null>(null);
 
-  const currentOrder = order || salesOrders.find((o) => o.id === id);
+  const currentOrder = salesOrders.find((o) => o.id === id) || order;
 
   const activeCustomers = customers.filter((c) => c.is_active);
   const customerUnits = useMemo(() => {

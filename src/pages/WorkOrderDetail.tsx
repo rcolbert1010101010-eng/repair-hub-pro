@@ -104,7 +104,7 @@ export default function WorkOrderDetail() {
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
   const [showCoreReturnDialog, setShowCoreReturnDialog] = useState(false);
   const [coreReturnLineId, setCoreReturnLineId] = useState<string | null>(null);
-  const currentOrder = order || workOrders.find((o) => o.id === id);
+  const currentOrder = workOrders.find((o) => o.id === id) || order;
   const activeCustomers = customers.filter((c) => c.is_active && c.id !== 'walkin');
   const customerUnits = useMemo(() => {
     const custId = selectedCustomerId || currentOrder?.customer_id;

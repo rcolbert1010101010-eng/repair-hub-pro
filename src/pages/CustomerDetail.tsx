@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -40,6 +41,8 @@ export default function CustomerDetail() {
     address: customer?.address || '',
     notes: customer?.notes || '',
     price_level: customer?.price_level || 'RETAIL',
+    is_tax_exempt: customer?.is_tax_exempt ?? false,
+    tax_rate_override: customer?.tax_rate_override?.toString() || '',
   });
 
   if (!customer) {
@@ -82,6 +85,8 @@ export default function CustomerDetail() {
       address: formData.address.trim() || null,
       notes: formData.notes.trim() || null,
       price_level: formData.price_level,
+      is_tax_exempt: formData.is_tax_exempt,
+      tax_rate_override: formData.tax_rate_override.trim() === '' ? null : (Number.isFinite(parseFloat(formData.tax_rate_override)) ? parseFloat(formData.tax_rate_override) : null),
     });
 
     toast({
@@ -180,6 +185,31 @@ export default function CustomerDetail() {
                   <SelectItem value="WHOLESALE">Wholesale</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="is_tax_exempt"
+                checked={formData.is_tax_exempt}
+                onCheckedChange={(checked) =>
+                  setFormData({ ...formData, is_tax_exempt: Boolean(checked) })
+                }
+                disabled={!editing}
+              />
+              <Label htmlFor="is_tax_exempt" className="font-medium">
+                Tax Exempt
+              </Label>
+            </div>
+            <div>
+              <Label htmlFor="tax_rate_override">Tax Rate Override (%)</Label>
+              <Input
+                id="tax_rate_override"
+                type="number"
+                step="0.01"
+                value={formData.tax_rate_override}
+                onChange={(e) => setFormData({ ...formData, tax_rate_override: e.target.value })}
+                disabled={!editing || formData.is_tax_exempt}
+                placeholder="e.g., 8.25"
+              />
             </div>
             <div>
               <Label htmlFor="contact_name">Contact Name</Label>

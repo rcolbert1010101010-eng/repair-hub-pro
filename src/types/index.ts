@@ -23,6 +23,8 @@ export interface Customer {
   address: string | null;
   notes: string | null;
   price_level: PriceLevel;
+  is_tax_exempt: boolean;
+  tax_rate_override: number | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;

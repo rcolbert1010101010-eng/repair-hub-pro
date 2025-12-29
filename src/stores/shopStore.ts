@@ -32,6 +32,15 @@ const generateId = () => crypto.randomUUID();
 const generateOrderNumber = (prefix: string, count: number) => 
   `${prefix}-${String(count + 1).padStart(6, '0')}`;
 
+const resolveTaxRateForCustomer = (customer: Customer | undefined, settings: SystemSettings) => {
+  if (!customer) return settings.default_tax_rate;
+  if (customer.is_tax_exempt) return 0;
+  if (customer.tax_rate_override != null && Number.isFinite(customer.tax_rate_override) && customer.tax_rate_override >= 0) {
+    return customer.tax_rate_override;
+  }
+  return settings.default_tax_rate;
+};
+
 interface ShopState {
   // System Settings
   settings: SystemSettings;
@@ -163,6 +172,8 @@ const WALKIN_CUSTOMER: Customer = {
   address: null,
   notes: 'Default walk-in customer for counter sales',
   price_level: 'RETAIL',
+  is_tax_exempt: false,
+  tax_rate_override: null,
   is_active: true,
   created_at: staticDate,
   updated_at: staticDate,
@@ -202,10 +213,10 @@ const SAMPLE_PARTS: Part[] = [
 
 // Sample Customers
 const SAMPLE_CUSTOMERS: Customer[] = [
-  { id: 'cust-1', company_name: 'ABC Trucking Inc', contact_name: 'John Smith', phone: '555-111-1111', email: 'john@abctrucking.com', address: '123 Industrial Blvd, Houston, TX 77001', notes: 'Fleet account - Net 30', price_level: 'FLEET', is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'cust-2', company_name: 'Metro Logistics', contact_name: 'Sarah Johnson', phone: '555-222-2222', email: 'sarah@metrologistics.com', address: '456 Commerce St, Dallas, TX 75201', notes: 'Preferred customer', price_level: 'RETAIL', is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'cust-3', company_name: 'Sunrise Freight', contact_name: 'Mike Davis', phone: '555-333-3333', email: 'mike@sunrisefreight.com', address: '789 Highway 45, Austin, TX 78701', notes: null, price_level: 'RETAIL', is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'cust-4', company_name: 'Central Delivery Co', contact_name: 'Lisa Brown', phone: '555-444-4444', email: 'lisa@centraldelivery.com', address: '321 Main St, San Antonio, TX 78201', notes: 'COD only', price_level: 'WHOLESALE', is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'cust-1', company_name: 'ABC Trucking Inc', contact_name: 'John Smith', phone: '555-111-1111', email: 'john@abctrucking.com', address: '123 Industrial Blvd, Houston, TX 77001', notes: 'Fleet account - Net 30', price_level: 'FLEET', is_tax_exempt: false, tax_rate_override: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'cust-2', company_name: 'Metro Logistics', contact_name: 'Sarah Johnson', phone: '555-222-2222', email: 'sarah@metrologistics.com', address: '456 Commerce St, Dallas, TX 75201', notes: 'Preferred customer', price_level: 'RETAIL', is_tax_exempt: false, tax_rate_override: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'cust-3', company_name: 'Sunrise Freight', contact_name: 'Mike Davis', phone: '555-333-3333', email: 'mike@sunrisefreight.com', address: '789 Highway 45, Austin, TX 78701', notes: null, price_level: 'RETAIL', is_tax_exempt: false, tax_rate_override: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'cust-4', company_name: 'Central Delivery Co', contact_name: 'Lisa Brown', phone: '555-444-4444', email: 'lisa@centraldelivery.com', address: '321 Main St, San Antonio, TX 78201', notes: 'COD only', price_level: 'WHOLESALE', is_tax_exempt: false, tax_rate_override: null, is_active: true, created_at: staticDate, updated_at: staticDate },
 ];
 
 // Sample Units
@@ -335,6 +346,8 @@ export const useShopStore = create<ShopState>()(
           ...customer,
           id: generateId(),
           price_level: customer.price_level ?? 'RETAIL',
+          is_tax_exempt: customer.is_tax_exempt ?? false,
+          tax_rate_override: customer.tax_rate_override ?? null,
           is_active: true,
           created_at: now(),
           updated_at: now(),
@@ -669,6 +682,8 @@ export const useShopStore = create<ShopState>()(
 
       createSalesOrder: (customerId, unitId) => {
         const state = get();
+        const customer = state.customers.find((c) => c.id === customerId);
+        const taxRate = resolveTaxRateForCustomer(customer, state.settings);
         const newOrder: SalesOrder = {
           id: generateId(),
           order_number: generateOrderNumber('SO', state.salesOrders.length),
@@ -676,7 +691,7 @@ export const useShopStore = create<ShopState>()(
           unit_id: unitId,
           status: 'ESTIMATE',
           notes: null,
-          tax_rate: state.settings.default_tax_rate,
+          tax_rate: taxRate,
           subtotal: 0,
           core_charges_total: 0,
           tax_amount: 0,
@@ -1002,15 +1017,17 @@ export const useShopStore = create<ShopState>()(
         
         const order = state.salesOrders.find((o) => o.id === orderId);
         if (!order) return;
+        const customer = state.customers.find((c) => c.id === order.customer_id);
+        const tax_rate = resolveTaxRateForCustomer(customer, state.settings);
         
         const taxableAmount = subtotal + core_charges_total;
-        const tax_amount = taxableAmount * (order.tax_rate / 100);
+        const tax_amount = taxableAmount * (tax_rate / 100);
         const total = taxableAmount + tax_amount;
 
         set((state) => ({
           salesOrders: state.salesOrders.map((o) =>
             o.id === orderId
-              ? { ...o, subtotal, core_charges_total, tax_amount, total, updated_at: now() }
+              ? { ...o, subtotal, core_charges_total, tax_rate, tax_amount, total, updated_at: now() }
               : o
           ),
         }));
@@ -1023,6 +1040,8 @@ export const useShopStore = create<ShopState>()(
 
       createWorkOrder: (customerId, unitId) => {
         const state = get();
+        const customer = state.customers.find((c) => c.id === customerId);
+        const taxRate = resolveTaxRateForCustomer(customer, state.settings);
         const newOrder: WorkOrder = {
           id: generateId(),
           order_number: generateOrderNumber('WO', state.workOrders.length),
@@ -1030,7 +1049,7 @@ export const useShopStore = create<ShopState>()(
           unit_id: unitId,
           status: 'OPEN',
           notes: null,
-          tax_rate: state.settings.default_tax_rate,
+          tax_rate: taxRate,
           parts_subtotal: 0,
           labor_subtotal: 0,
           core_charges_total: 0,
@@ -1472,6 +1491,8 @@ export const useShopStore = create<ShopState>()(
         
         const order = state.workOrders.find((o) => o.id === orderId);
         if (!order) return;
+        const customer = state.customers.find((c) => c.id === order.customer_id);
+        const tax_rate = resolveTaxRateForCustomer(customer, state.settings);
         
         const tax_amount = subtotal * (order.tax_rate / 100);
         const total = subtotal + tax_amount;
@@ -1479,7 +1500,7 @@ export const useShopStore = create<ShopState>()(
         set((state) => ({
           workOrders: state.workOrders.map((o) =>
             o.id === orderId
-              ? { ...o, parts_subtotal, labor_subtotal, core_charges_total, subtotal, tax_amount, total, labor_cost, updated_at: now() }
+              ? { ...o, parts_subtotal, labor_subtotal, core_charges_total, subtotal, tax_rate, tax_amount, total, labor_cost, updated_at: now() }
               : o
           ),
         }));
