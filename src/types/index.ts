@@ -87,6 +87,8 @@ export interface Part {
   bin_location: string | null;
   last_cost: number | null;
   avg_cost: number | null;
+  model: string | null;
+  serial_number: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;

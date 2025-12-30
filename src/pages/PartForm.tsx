@@ -55,6 +55,8 @@ export default function PartForm() {
     min_qty: part?.min_qty?.toString() || '',
     max_qty: part?.max_qty?.toString() || '',
     bin_location: part?.bin_location ?? '',
+    model: part?.model ?? '',
+    serial_number: part?.serial_number ?? '',
   });
 
   // Quick add dialogs
@@ -89,6 +91,8 @@ export default function PartForm() {
     bin_location: formData.bin_location.trim() || null,
     last_cost: part?.last_cost ?? null,
     avg_cost: part?.avg_cost ?? null,
+    model: part?.model ?? null,
+    serial_number: part?.serial_number ?? null,
     is_active: true,
     created_at: '',
     updated_at: '',
@@ -162,6 +166,8 @@ export default function PartForm() {
       min_qty: formData.min_qty === '' ? null : (Number.isFinite(parseInt(formData.min_qty)) ? parseInt(formData.min_qty) : null),
       max_qty: formData.max_qty === '' ? null : (Number.isFinite(parseInt(formData.max_qty)) ? parseInt(formData.max_qty) : null),
       bin_location: formData.bin_location.trim() || null,
+      model: formData.model.trim() || null,
+      serial_number: formData.serial_number.trim() || null,
     };
 
     if (isNew) {
@@ -299,6 +305,26 @@ export default function PartForm() {
                 type="number"
                 value={formData.quantity_on_hand}
                 onChange={(e) => setFormData({ ...formData, quantity_on_hand: e.target.value })}
+                disabled={!editing}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="model">Model</Label>
+              <Input
+                id="model"
+                value={formData.model}
+                onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                disabled={!editing}
+              />
+            </div>
+            <div>
+              <Label htmlFor="serial_number">Serial Number</Label>
+              <Input
+                id="serial_number"
+                value={formData.serial_number}
+                onChange={(e) => setFormData({ ...formData, serial_number: e.target.value })}
                 disabled={!editing}
               />
             </div>

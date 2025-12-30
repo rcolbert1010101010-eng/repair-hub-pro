@@ -244,6 +244,8 @@ export default function SalesOrderDetail() {
       min_qty: null,
       max_qty: null,
       bin_location: null,
+      model: null,
+      serial_number: null,
     });
 
     toast({
