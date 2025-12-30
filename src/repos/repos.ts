@@ -17,6 +17,8 @@ import type {
   PurchaseOrder,
   PurchaseOrderLine,
   ReceivingRecord,
+  CycleCountSession,
+  CycleCountLine,
 } from '@/types';
 
 export interface SettingsRepo {
@@ -142,6 +144,18 @@ export interface PurchaseOrdersRepo {
   getReceivingRecords: (lineId: string) => ReceivingRecord[];
 }
 
+export interface CycleCountsRepo {
+  cycleCountSessions: CycleCountSession[];
+  cycleCountLines: CycleCountLine[];
+  createCycleCountSession: (session: { title?: string | null; notes?: string | null; created_by?: string }) => CycleCountSession;
+  updateCycleCountSession: (id: string, session: Partial<Pick<CycleCountSession, 'title' | 'notes' | 'posted_by'>>) => void;
+  cancelCycleCountSession: (id: string) => { success: boolean; error?: string };
+  addCycleCountLine: (sessionId: string, partId: string) => { success: boolean; error?: string };
+  updateCycleCountLine: (id: string, updates: Partial<Pick<CycleCountLine, 'counted_qty' | 'reason'>>) => { success: boolean; error?: string };
+  postCycleCountSession: (id: string, posted_by?: string) => { success: boolean; error?: string };
+  getCycleCountLines: (sessionId: string) => CycleCountLine[];
+}
+
 export interface Repos {
   settings: SettingsRepo;
   customers: CustomersRepo;
@@ -156,4 +170,5 @@ export interface Repos {
   salesOrders: SalesOrdersRepo;
   workOrders: WorkOrdersRepo;
   purchaseOrders: PurchaseOrdersRepo;
+  cycleCounts: CycleCountsRepo;
 }

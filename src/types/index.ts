@@ -107,6 +107,31 @@ export interface PartKitComponent {
   updated_at: string;
 }
 
+export type CycleCountStatus = 'DRAFT' | 'POSTED' | 'CANCELLED';
+
+export interface CycleCountSession {
+  id: string;
+  status: CycleCountStatus;
+  title: string | null;
+  notes: string | null;
+  created_at: string;
+  created_by: string;
+  posted_at: string | null;
+  posted_by: string | null;
+}
+
+export interface CycleCountLine {
+  id: string;
+  session_id: string;
+  part_id: string;
+  expected_qty: number;
+  counted_qty: number;
+  variance: number;
+  reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export type VendorCostSource = 'RECEIVING' | 'MANUAL';
 
 export interface VendorCostHistory {

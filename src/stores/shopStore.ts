@@ -174,6 +174,17 @@ interface ShopState {
   addPMHistory: (history: Omit<UnitPMHistory, 'id' | 'is_active' | 'created_at'>) => UnitPMHistory;
   getPMHistoryByUnit: (unitId: string) => UnitPMHistory[];
   markPMCompleted: (scheduleId: string, completedDate: string, completedMeter: number | null, notes: string | null) => { success: boolean; error?: string };
+
+  // Cycle Counts
+  cycleCountSessions: CycleCountSession[];
+  cycleCountLines: CycleCountLine[];
+  createCycleCountSession: (session: { title?: string | null; notes?: string | null; created_by?: string }) => CycleCountSession;
+  updateCycleCountSession: (id: string, session: Partial<Pick<CycleCountSession, 'title' | 'notes' | 'posted_by'>>) => void;
+  cancelCycleCountSession: (id: string) => { success: boolean; error?: string };
+  addCycleCountLine: (sessionId: string, partId: string) => { success: boolean; error?: string };
+  updateCycleCountLine: (id: string, updates: Partial<Pick<CycleCountLine, 'counted_qty' | 'reason'>>) => { success: boolean; error?: string };
+  postCycleCountSession: (id: string, posted_by?: string) => { success: boolean; error?: string };
+  getCycleCountLines: (sessionId: string) => CycleCountLine[];
 }
 
 const now = () => new Date().toISOString();
@@ -1814,6 +1825,143 @@ export const useShopStore = create<ShopState>()(
 
       getReceivingRecords: (lineId) =>
         get().receivingRecords.filter((r) => r.purchase_order_line_id === lineId),
+
+      // Cycle Counts
+      cycleCountSessions: [],
+      cycleCountLines: [],
+
+      createCycleCountSession: (session) => {
+        const timestamp = now();
+        const newSession: CycleCountSession = {
+          id: generateId(),
+          status: 'DRAFT',
+          title: session.title?.trim() || null,
+          notes: session.notes?.trim() || null,
+          created_at: timestamp,
+          created_by: session.created_by?.trim() || 'system',
+          posted_at: null,
+          posted_by: null,
+        };
+        set((state) => ({
+          cycleCountSessions: [...state.cycleCountSessions, newSession],
+        }));
+        return newSession;
+      },
+
+      updateCycleCountSession: (id, session) =>
+        set((state) => ({
+          cycleCountSessions: state.cycleCountSessions.map((s) =>
+            s.id === id ? { ...s, ...session } : s
+          ),
+        })),
+
+      cancelCycleCountSession: (id) => {
+        const state = get();
+        const existing = state.cycleCountSessions.find((s) => s.id === id);
+        if (!existing) return { success: false, error: 'Cycle count not found' };
+        if (existing.status !== 'DRAFT') return { success: false, error: 'Cannot cancel posted cycle count' };
+        set((state) => ({
+          cycleCountSessions: state.cycleCountSessions.map((s) =>
+            s.id === id ? { ...s, status: 'CANCELLED' as const } : s
+          ),
+        }));
+        return { success: true };
+      },
+
+      addCycleCountLine: (sessionId, partId) => {
+        const state = get();
+        const session = state.cycleCountSessions.find((s) => s.id === sessionId);
+        if (!session) return { success: false, error: 'Cycle count not found' };
+        if (session.status !== 'DRAFT') return { success: false, error: 'Cannot modify a posted cycle count' };
+        const part = state.parts.find((p) => p.id === partId);
+        if (!part) return { success: false, error: 'Part not found' };
+        if (part.is_kit) return { success: false, error: 'Kits cannot be counted directly' };
+        if (state.cycleCountLines.some((l) => l.session_id === sessionId && l.part_id === partId)) {
+          return { success: false, error: 'Part already added' };
+        }
+
+        const expected = part.quantity_on_hand;
+        const timestamp = now();
+        const newLine: CycleCountLine = {
+          id: generateId(),
+          session_id: sessionId,
+          part_id: partId,
+          expected_qty: expected,
+          counted_qty: expected,
+          variance: 0,
+          reason: null,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+
+        set((state) => ({
+          cycleCountLines: [...state.cycleCountLines, newLine],
+        }));
+
+        return { success: true };
+      },
+
+      updateCycleCountLine: (id, updates) => {
+        const state = get();
+        const line = state.cycleCountLines.find((l) => l.id === id);
+        if (!line) return { success: false, error: 'Line not found' };
+        const session = state.cycleCountSessions.find((s) => s.id === line.session_id);
+        if (!session || session.status !== 'DRAFT') return { success: false, error: 'Cannot edit this cycle count' };
+
+        const counted_qty = updates.counted_qty ?? line.counted_qty;
+        const variance = counted_qty - line.expected_qty;
+        set((state) => ({
+          cycleCountLines: state.cycleCountLines.map((l) =>
+            l.id === id
+              ? {
+                  ...l,
+                  counted_qty,
+                  variance,
+                  reason: updates.reason ?? l.reason,
+                  updated_at: now(),
+                }
+              : l
+          ),
+        }));
+        return { success: true };
+      },
+
+      postCycleCountSession: (id, posted_by = 'system') => {
+        const state = get();
+        const session = state.cycleCountSessions.find((s) => s.id === id);
+        if (!session) return { success: false, error: 'Cycle count not found' };
+        if (session.status !== 'DRAFT') return { success: false, error: 'Cycle count already processed' };
+
+        const lines = state.cycleCountLines.filter((l) => l.session_id === id);
+        for (const line of lines) {
+          if (line.variance !== 0 && (!line.reason || !line.reason.trim())) {
+            return { success: false, error: 'Reason required for all variances before posting' };
+          }
+        }
+
+        const poster = posted_by?.trim() || 'system';
+        const timestamp = now();
+
+        for (const line of lines) {
+          if (line.variance === 0) continue;
+          const reasonText = line.reason?.trim() || 'Variance';
+          const reason = `Cycle Count ${id}: ${reasonText}`;
+          get().updatePartWithQohAdjustment(line.part_id, { quantity_on_hand: line.counted_qty }, { reason, adjusted_by: poster });
+        }
+
+        set((state) => ({
+          cycleCountSessions: state.cycleCountSessions.map((s) =>
+            s.id === id
+              ? { ...s, status: 'POSTED' as const, posted_at: timestamp, posted_by: poster }
+              : s
+          ),
+        }));
+
+        return { success: true };
+      },
+
+      getCycleCountLines: (sessionId) =>
+        get().cycleCountLines.filter((l) => l.session_id === sessionId),
 
       // PM Schedules
       pmSchedules: [],

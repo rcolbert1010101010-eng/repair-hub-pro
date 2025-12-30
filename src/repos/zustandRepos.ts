@@ -281,4 +281,33 @@ export const zustandRepos: Repos = {
       return useShopStore.getState().getReceivingRecords(lineId);
     },
   },
+  cycleCounts: {
+    get cycleCountSessions() {
+      return useShopStore.getState().cycleCountSessions;
+    },
+    get cycleCountLines() {
+      return useShopStore.getState().cycleCountLines;
+    },
+    createCycleCountSession(session) {
+      return useShopStore.getState().createCycleCountSession(session);
+    },
+    updateCycleCountSession(id, session) {
+      return useShopStore.getState().updateCycleCountSession(id, session);
+    },
+    cancelCycleCountSession(id) {
+      return useShopStore.getState().cancelCycleCountSession(id);
+    },
+    addCycleCountLine(sessionId, partId) {
+      return useShopStore.getState().addCycleCountLine(sessionId, partId);
+    },
+    updateCycleCountLine(id, updates) {
+      return useShopStore.getState().updateCycleCountLine(id, updates);
+    },
+    postCycleCountSession(id, posted_by) {
+      return useShopStore.getState().postCycleCountSession(id, posted_by);
+    },
+    getCycleCountLines(sessionId) {
+      return useShopStore.getState().getCycleCountLines(sessionId);
+    },
+  },
 };

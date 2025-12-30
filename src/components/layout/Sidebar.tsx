@@ -15,6 +15,7 @@ import {
   ClipboardList,
   Sun,
   Moon,
+  ListChecks,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -29,6 +30,7 @@ const navItems = [
   { path: '/sales-orders', label: 'Sales Orders', icon: ShoppingCart },
   { path: '/purchase-orders', label: 'Purchase Orders', icon: ClipboardList },
   { path: '/inventory', label: 'Inventory', icon: Package },
+  { path: '/cycle-counts', label: 'Cycle Counts', icon: ListChecks },
   { path: '/technicians', label: 'Technicians', icon: HardHat },
   { path: '/vendors', label: 'Vendors', icon: Building2 },
   { path: '/categories', label: 'Categories', icon: Tags },
