@@ -34,6 +34,7 @@ export default function PartForm() {
   const { addVendor } = repos.vendors;
   const { addCategory } = repos.categories;
   const { vendorCostHistory } = repos.vendorCostHistory;
+  const { purchaseOrders, purchaseOrderLines } = repos.purchaseOrders;
   const { settings } = repos.settings;
   const { toast } = useToast();
 
@@ -97,6 +98,24 @@ export default function PartForm() {
   const suggestedRetail = calcPartPriceForLevel(tempPartForPricing, settings, 'RETAIL');
   const suggestedFleet = calcPartPriceForLevel(tempPartForPricing, settings, 'FLEET');
   const suggestedWholesale = calcPartPriceForLevel(tempPartForPricing, settings, 'WHOLESALE');
+  const poLinesForPart = part
+    ? purchaseOrderLines
+        .map((line) => {
+          const po = purchaseOrders.find((p) => p.id === line.purchase_order_id);
+          return { line, po };
+        })
+        .filter(({ line, po }) => po && po.status === 'OPEN' && line.part_id === part.id)
+    : [];
+  const poLinesWithOutstanding = poLinesForPart
+    .map(({ line, po }) => {
+      const outstanding = (line.ordered_quantity ?? 0) - (line.received_quantity ?? 0);
+      return { line, po: po!, outstanding: Math.max(0, outstanding) };
+    })
+    .filter((entry) => entry.outstanding > 0);
+  const totalOnOrder = poLinesWithOutstanding.reduce((sum, entry) => sum + entry.outstanding, 0);
+  const poLinesSorted = poLinesWithOutstanding.sort(
+    (a, b) => new Date(b.po.created_at).getTime() - new Date(a.po.created_at).getTime()
+  );
 
   if (!isNew && !part) {
     return (
@@ -500,6 +519,52 @@ export default function PartForm() {
                           <td className="py-1 text-right">${entry.unit_cost.toFixed(2)}</td>
                           <td className="py-1 text-right">{entry.quantity ?? '—'}</td>
                           <td className="py-1 uppercase text-xs text-muted-foreground">{entry.source}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {!isNew && (
+            <div className="border border-border rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">On Order</h3>
+                <span className="text-sm font-medium">
+                  {totalOnOrder > 0 ? 'Yes' : 'No'} (Qty: {totalOnOrder})
+                </span>
+              </div>
+              {poLinesSorted.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No open purchase orders for this part.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-muted-foreground">
+                      <th className="py-1">PO</th>
+                      <th className="py-1">Vendor</th>
+                      <th className="py-1 text-right">Qty On Order</th>
+                      <th className="py-1">Status</th>
+                      <th className="py-1">Created</th>
+                      <th className="py-1"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {poLinesSorted.slice(0, 15).map(({ line, po, outstanding }) => {
+                      const vendor = vendors.find((v) => v.id === po.vendor_id);
+                      return (
+                        <tr key={line.id} className="border-t border-border/60">
+                          <td className="py-1 font-mono">{po.po_number || po.id}</td>
+                          <td className="py-1">{vendor?.vendor_name || '—'}</td>
+                          <td className="py-1 text-right">{outstanding}</td>
+                          <td className="py-1">{po.status}</td>
+                          <td className="py-1">{new Date(po.created_at).toLocaleDateString()}</td>
+                          <td className="py-1 text-right">
+                            <Button variant="link" size="sm" onClick={() => navigate(`/purchase-orders/${po.id}`)}>
+                              View
+                            </Button>
+                          </td>
                         </tr>
                       );
                     })}
