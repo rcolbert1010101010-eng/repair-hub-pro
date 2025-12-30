@@ -17,6 +17,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Save, X, Trash2, Edit, Plus } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { calcPartPriceForLevel, getPartCostBasis } from '@/domain/pricing/partPricing';
+import type { Part } from '@/types';
 
 export default function PartForm() {
   const { id } = useParams<{ id: string }>();
@@ -29,6 +30,12 @@ export default function PartForm() {
     updatePartWithQohAdjustment,
     deactivatePart,
   } = repos.parts;
+  const {
+    kitComponents,
+    addKitComponent,
+    updateKitComponentQuantity,
+    removeKitComponent,
+  } = repos.kitComponents;
   const { vendors } = repos.vendors;
   const { categories } = repos.categories;
   const { addVendor } = repos.vendors;
@@ -52,6 +59,7 @@ export default function PartForm() {
     quantity_on_hand: part?.quantity_on_hand?.toString() || '0',
     core_required: part?.core_required || false,
     core_charge: part?.core_charge?.toString() || '0',
+    is_kit: part?.is_kit ?? false,
     min_qty: part?.min_qty?.toString() || '',
     max_qty: part?.max_qty?.toString() || '',
     bin_location: part?.bin_location ?? '',
@@ -67,6 +75,8 @@ export default function PartForm() {
   const [adjustReason, setAdjustReason] = useState('');
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
   const [pendingPartData, setPendingPartData] = useState<null | typeof formData>(null);
+  const [newComponentId, setNewComponentId] = useState('');
+  const [newComponentQty, setNewComponentQty] = useState('1');
 
   const activeVendors = vendors.filter((v) => v.is_active);
   const activeCategories = categories.filter((c) => c.is_active);
@@ -93,6 +103,7 @@ export default function PartForm() {
     avg_cost: part?.avg_cost ?? null,
     model: part?.model ?? null,
     serial_number: part?.serial_number ?? null,
+    is_kit: part?.is_kit ?? formData.is_kit ?? false,
     is_active: true,
     created_at: '',
     updated_at: '',
@@ -119,6 +130,12 @@ export default function PartForm() {
   const totalOnOrder = poLinesWithOutstanding.reduce((sum, entry) => sum + entry.outstanding, 0);
   const poLinesSorted = poLinesWithOutstanding.sort(
     (a, b) => new Date(b.po.created_at).getTime() - new Date(a.po.created_at).getTime()
+  );
+  const kitComponentsForPart = part
+    ? kitComponents.filter((component) => component.kit_part_id === part.id && component.is_active)
+    : [];
+  const availableComponentParts = parts.filter(
+    (p) => p.is_active && p.id !== part?.id && !p.is_kit
   );
 
   if (!isNew && !part) {
@@ -163,6 +180,7 @@ export default function PartForm() {
       quantity_on_hand: parseInt(formData.quantity_on_hand) || 0,
       core_required: formData.core_required,
       core_charge: parseFloat(formData.core_charge) || 0,
+      is_kit: formData.is_kit,
       min_qty: formData.min_qty === '' ? null : (Number.isFinite(parseInt(formData.min_qty)) ? parseInt(formData.min_qty) : null),
       max_qty: formData.max_qty === '' ? null : (Number.isFinite(parseInt(formData.max_qty)) ? parseInt(formData.max_qty) : null),
       bin_location: formData.bin_location.trim() || null,
@@ -219,6 +237,59 @@ export default function PartForm() {
     toast({ title: 'Category Added', description: `${newCategory.category_name} has been created` });
   };
 
+  const handleAddKitComponent = () => {
+    if (!editing) return;
+    if (!formData.is_kit) return;
+    if (!part) {
+      toast({ title: 'Save Part First', description: 'Save the part before adding kit components', variant: 'destructive' });
+      return;
+    }
+    if (!newComponentId) {
+      toast({ title: 'Validation Error', description: 'Select a component part to add', variant: 'destructive' });
+      return;
+    }
+    const quantity = parseFloat(newComponentQty);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      toast({ title: 'Validation Error', description: 'Quantity must be greater than 0', variant: 'destructive' });
+      return;
+    }
+
+    const existing = kitComponents.find(
+      (component) =>
+        component.kit_part_id === part.id &&
+        component.component_part_id === newComponentId &&
+        component.is_active
+    );
+
+    if (existing) {
+      updateKitComponentQuantity(existing.id, quantity);
+      toast({ title: 'Component Updated', description: 'Quantity has been updated' });
+    } else {
+      addKitComponent({
+        kit_part_id: part.id,
+        component_part_id: newComponentId,
+        quantity,
+      });
+      toast({ title: 'Component Added', description: 'Component added to kit' });
+    }
+
+    setNewComponentId('');
+    setNewComponentQty('1');
+  };
+
+  const handleUpdateKitComponentQty = (componentId: string, value: string) => {
+    if (!editing) return;
+    const quantity = parseFloat(value);
+    if (!Number.isFinite(quantity) || quantity <= 0) return;
+    updateKitComponentQuantity(componentId, quantity);
+  };
+
+  const handleRemoveKitComponent = (componentId: string) => {
+    if (!editing) return;
+    removeKitComponent(componentId);
+    toast({ title: 'Component Removed', description: 'Component removed from kit' });
+  };
+
   const handleConfirmAdjustment = () => {
     if (!pendingPartData || !part) return;
     if (!adjustReason.trim()) {
@@ -235,6 +306,7 @@ export default function PartForm() {
       quantity_on_hand: parseInt(pendingPartData.quantity_on_hand) || 0,
       core_required: pendingPartData.core_required,
       core_charge: parseFloat(pendingPartData.core_charge) || 0,
+      is_kit: pendingPartData.is_kit,
       min_qty: pendingPartData.min_qty === '' ? null : (Number.isFinite(parseInt(pendingPartData.min_qty)) ? parseInt(pendingPartData.min_qty) : null),
       max_qty: pendingPartData.max_qty === '' ? null : (Number.isFinite(parseInt(pendingPartData.max_qty)) ? parseInt(pendingPartData.max_qty) : null),
       bin_location: pendingPartData.bin_location.trim() || null,
@@ -429,6 +501,117 @@ export default function PartForm() {
                 )}
               </div>
             </div>
+          </div>
+
+          <div className="border border-border rounded-lg p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="is_kit"
+                  checked={formData.is_kit}
+                  onChange={(e) => setFormData({ ...formData, is_kit: e.target.checked })}
+                  disabled={!editing}
+                  className="h-4 w-4 rounded border-input"
+                />
+                <Label htmlFor="is_kit" className="font-medium">Kit</Label>
+              </div>
+              {formData.is_kit && isNew && (
+                <span className="text-xs text-muted-foreground">Save the part to manage components</span>
+              )}
+            </div>
+            {formData.is_kit && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-3 items-end">
+                  <div className="col-span-2">
+                    <Label htmlFor="component_part_id">Add Component</Label>
+                    <Select
+                      value={newComponentId}
+                      onValueChange={setNewComponentId}
+                      disabled={!editing || isNew}
+                    >
+                      <SelectTrigger id="component_part_id">
+                        <SelectValue placeholder="Select part" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableComponentParts.map((componentPart) => (
+                          <SelectItem key={componentPart.id} value={componentPart.id}>
+                            {componentPart.part_number} — {componentPart.description || 'No description'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="component_qty">Qty</Label>
+                    <Input
+                      id="component_qty"
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={newComponentQty}
+                      onChange={(e) => setNewComponentQty(e.target.value)}
+                      disabled={!editing || isNew}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleAddKitComponent}
+                    disabled={!editing || isNew}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Component
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {kitComponentsForPart.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No components added yet.</p>
+                  ) : (
+                    kitComponentsForPart.map((component) => {
+                      const componentPart = parts.find((p) => p.id === component.component_part_id);
+                      return (
+                        <div
+                          key={component.id}
+                          className="flex items-center justify-between rounded-md border border-border px-3 py-2"
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium">
+                              {componentPart?.part_number || 'Component'}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {componentPart?.description || 'No description'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={component.quantity}
+                              onChange={(e) => handleUpdateKitComponentQty(component.id, e.target.value)}
+                              disabled={!editing}
+                              className="w-20"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleRemoveKitComponent(component.id)}
+                              disabled={!editing}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

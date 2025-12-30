@@ -5,6 +5,7 @@ import type {
   Vendor,
   PartCategory,
   Part,
+  PartKitComponent,
   VendorCostHistory,
   Technician,
   TimeEntry,
@@ -58,6 +59,13 @@ export interface PartsRepo {
   updatePart: (id: string, part: Partial<Part>) => void;
   updatePartWithQohAdjustment: (id: string, part: Partial<Part>, meta: { reason: string; adjusted_by: string }) => void;
   deactivatePart: (id: string) => void;
+}
+
+export interface KitComponentsRepo {
+  kitComponents: PartKitComponent[];
+  addKitComponent: (component: Omit<PartKitComponent, 'id' | 'is_active' | 'created_at' | 'updated_at'>) => PartKitComponent;
+  updateKitComponentQuantity: (id: string, quantity: number) => void;
+  removeKitComponent: (id: string) => void;
 }
 
 export interface VendorCostHistoryRepo {
@@ -141,6 +149,7 @@ export interface Repos {
   vendors: VendorsRepo;
   categories: CategoriesRepo;
   parts: PartsRepo;
+  kitComponents: KitComponentsRepo;
   vendorCostHistory: VendorCostHistoryRepo;
   technicians: TechniciansRepo;
   timeEntries: TimeEntriesRepo;

@@ -89,11 +89,22 @@ export interface Part {
   avg_cost: number | null;
   model: string | null;
   serial_number: string | null;
+  is_kit: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;
   vendor?: Vendor;
   category?: PartCategory;
+}
+
+export interface PartKitComponent {
+  id: string;
+  kit_part_id: string;
+  component_part_id: string;
+  quantity: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export type VendorCostSource = 'RECEIVING' | 'MANUAL';

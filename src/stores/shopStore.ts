@@ -22,6 +22,7 @@ import type {
   VendorCostHistory,
   UnitPMSchedule,
   UnitPMHistory,
+  PartKitComponent,
 } from '@/types';
 
 
@@ -39,6 +40,18 @@ const resolveTaxRateForCustomer = (customer: Customer | undefined, settings: Sys
     return customer.tax_rate_override;
   }
   return settings.default_tax_rate;
+};
+
+const getKitComponentDeltas = (
+  kitPartId: string,
+  qty: number,
+  kitComponents: PartKitComponent[]
+): Record<string, number> => {
+  const components = kitComponents.filter((c) => c.is_active && c.kit_part_id === kitPartId);
+  return components.reduce<Record<string, number>>((acc, comp) => {
+    acc[comp.component_part_id] = (acc[comp.component_part_id] || 0) + qty * comp.quantity;
+    return acc;
+  }, {});
 };
 
 interface ShopState {
@@ -77,6 +90,10 @@ interface ShopState {
   updatePart: (id: string, part: Partial<Part>) => void;
   updatePartWithQohAdjustment: (id: string, part: Partial<Part>, meta: { reason: string; adjusted_by: string }) => void;
   deactivatePart: (id: string) => void;
+  kitComponents: PartKitComponent[];
+  addKitComponent: (component: Omit<PartKitComponent, 'id' | 'is_active' | 'created_at' | 'updated_at'>) => PartKitComponent;
+  updateKitComponentQuantity: (id: string, quantity: number) => void;
+  removeKitComponent: (id: string) => void;
 
   // Technicians
   technicians: Technician[];
@@ -197,18 +214,18 @@ const SAMPLE_CATEGORIES: PartCategory[] = [
 
 // Sample Parts
 const SAMPLE_PARTS: Part[] = [
-  { id: 'part-1', part_number: 'BRK-001', description: 'Heavy Duty Brake Pad Set (Front)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 45.00, selling_price: 89.99, quantity_on_hand: 24, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-2', part_number: 'BRK-002', description: 'Heavy Duty Brake Pad Set (Rear)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 42.00, selling_price: 84.99, quantity_on_hand: 18, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-3', part_number: 'BRK-010', description: 'Brake Rotor - 15\" HD', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 120.00, selling_price: 189.99, quantity_on_hand: 8, core_required: true, core_charge: 35.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-4', part_number: 'ENG-001', description: 'Oil Filter - Heavy Duty', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 8.50, selling_price: 18.99, quantity_on_hand: 50, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-5', part_number: 'ENG-002', description: 'Air Filter - Commercial Truck', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 25.00, selling_price: 49.99, quantity_on_hand: 30, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-6', part_number: 'ENG-015', description: 'Fuel Injector - Diesel', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 180.00, selling_price: 299.99, quantity_on_hand: 6, core_required: true, core_charge: 75.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-7', part_number: 'ELC-001', description: 'Heavy Duty Battery - Group 31', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 145.00, selling_price: 229.99, quantity_on_hand: 12, core_required: true, core_charge: 25.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-8', part_number: 'ELC-010', description: 'Starter Motor - Diesel HD', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 280.00, selling_price: 449.99, quantity_on_hand: 4, core_required: true, core_charge: 85.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-9', part_number: 'ELC-015', description: 'Alternator - 200A HD', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 195.00, selling_price: 329.99, quantity_on_hand: 5, core_required: true, core_charge: 65.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-10', part_number: 'SUS-001', description: 'Shock Absorber - Front HD', vendor_id: 'vendor-1', category_id: 'cat-4', cost: 85.00, selling_price: 149.99, quantity_on_hand: 16, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-11', part_number: 'FLT-001', description: 'Engine Oil 15W-40 (1 Gal)', vendor_id: 'vendor-2', category_id: 'cat-5', cost: 18.00, selling_price: 32.99, quantity_on_hand: 48, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-12', part_number: 'FLT-005', description: 'Coolant - HD Extended Life (1 Gal)', vendor_id: 'vendor-2', category_id: 'cat-5', cost: 22.00, selling_price: 39.99, quantity_on_hand: 36, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-1', part_number: 'BRK-001', description: 'Heavy Duty Brake Pad Set (Front)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 45.00, selling_price: 89.99, quantity_on_hand: 24, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-2', part_number: 'BRK-002', description: 'Heavy Duty Brake Pad Set (Rear)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 42.00, selling_price: 84.99, quantity_on_hand: 18, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-3', part_number: 'BRK-010', description: 'Brake Rotor - 15\" HD', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 120.00, selling_price: 189.99, quantity_on_hand: 8, core_required: true, core_charge: 35.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-4', part_number: 'ENG-001', description: 'Oil Filter - Heavy Duty', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 8.50, selling_price: 18.99, quantity_on_hand: 50, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-5', part_number: 'ENG-002', description: 'Air Filter - Commercial Truck', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 25.00, selling_price: 49.99, quantity_on_hand: 30, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-6', part_number: 'ENG-015', description: 'Fuel Injector - Diesel', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 180.00, selling_price: 299.99, quantity_on_hand: 6, core_required: true, core_charge: 75.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-7', part_number: 'ELC-001', description: 'Heavy Duty Battery - Group 31', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 145.00, selling_price: 229.99, quantity_on_hand: 12, core_required: true, core_charge: 25.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-8', part_number: 'ELC-010', description: 'Starter Motor - Diesel HD', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 280.00, selling_price: 449.99, quantity_on_hand: 4, core_required: true, core_charge: 85.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-9', part_number: 'ELC-015', description: 'Alternator - 200A HD', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 195.00, selling_price: 329.99, quantity_on_hand: 5, core_required: true, core_charge: 65.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-10', part_number: 'SUS-001', description: 'Shock Absorber - Front HD', vendor_id: 'vendor-1', category_id: 'cat-4', cost: 85.00, selling_price: 149.99, quantity_on_hand: 16, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-11', part_number: 'FLT-001', description: 'Engine Oil 15W-40 (1 Gal)', vendor_id: 'vendor-2', category_id: 'cat-5', cost: 18.00, selling_price: 32.99, quantity_on_hand: 48, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-12', part_number: 'FLT-005', description: 'Coolant - HD Extended Life (1 Gal)', vendor_id: 'vendor-2', category_id: 'cat-5', cost: 22.00, selling_price: 39.99, quantity_on_hand: 36, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
 ];
 
 // Sample Customers
@@ -481,6 +498,7 @@ export const useShopStore = create<ShopState>()(
 
       // Parts
       parts: [...SAMPLE_PARTS],
+      kitComponents: [],
 
       addPart: (part) => {
         const newPart: Part = {
@@ -493,6 +511,7 @@ export const useShopStore = create<ShopState>()(
           avg_cost: part.avg_cost ?? null,
           model: part.model ?? null,
           serial_number: part.serial_number ?? null,
+          is_kit: part.is_kit ?? false,
           is_active: true,
           created_at: now(),
           updated_at: now(),
@@ -542,6 +561,36 @@ export const useShopStore = create<ShopState>()(
             p.id === id ? { ...p, is_active: false, updated_at: now() } : p
           ),
         })),
+
+      addKitComponent: (component) => {
+        const newComponent: PartKitComponent = {
+          ...component,
+          id: generateId(),
+          is_active: true,
+          created_at: now(),
+          updated_at: now(),
+        };
+        set((state) => ({
+          kitComponents: [...state.kitComponents, newComponent],
+        }));
+        return newComponent;
+      },
+
+      updateKitComponentQuantity: (id, quantity) => {
+        set((state) => ({
+          kitComponents: state.kitComponents.map((c) =>
+            c.id === id ? { ...c, quantity, updated_at: now() } : c
+          ),
+        }));
+      },
+
+      removeKitComponent: (id) => {
+        set((state) => ({
+          kitComponents: state.kitComponents.map((c) =>
+            c.id === id ? { ...c, is_active: false, updated_at: now() } : c
+          ),
+        }));
+      },
 
       // Technicians
       technicians: [...SAMPLE_TECHNICIANS],
@@ -940,13 +989,21 @@ export const useShopStore = create<ShopState>()(
         const linesForOrder = state.salesOrderLines.filter(
           (l) => l.sales_order_id === orderId && !l.is_core_refund_line
         );
-        const quantityByPart = linesForOrder.reduce<Record<string, number>>((acc, line) => {
+        const consumptionByPart = linesForOrder.reduce<Record<string, number>>((acc, line) => {
           if (!line.part_id) return acc;
+          const part = state.parts.find((p) => p.id === line.part_id);
+          if (part?.is_kit) {
+            const kitDeltas = getKitComponentDeltas(part.id, line.quantity, state.kitComponents);
+            Object.entries(kitDeltas).forEach(([componentId, qty]) => {
+              acc[componentId] = (acc[componentId] || 0) + qty;
+            });
+            return acc;
+          }
           acc[line.part_id] = (acc[line.part_id] || 0) + line.quantity;
           return acc;
         }, {});
         const projectedQuantities = state.parts.reduce<Record<string, number>>((acc, part) => {
-          const qty = quantityByPart[part.id] || 0;
+          const qty = consumptionByPart[part.id] || 0;
           acc[part.id] = part.quantity_on_hand - qty;
           return acc;
         }, {});
@@ -959,7 +1016,7 @@ export const useShopStore = create<ShopState>()(
               : o
           ),
           parts: state.parts.map((p) => {
-            const qty = quantityByPart[p.id];
+            const qty = consumptionByPart[p.id];
             if (!qty) return p;
             return { ...p, quantity_on_hand: p.quantity_on_hand - qty, updated_at: timestamp };
           }),
@@ -1078,6 +1135,7 @@ export const useShopStore = create<ShopState>()(
         
         const part = state.parts.find((p) => p.id === partId);
         if (!part) return { success: false, error: 'Part not found' };
+        const componentDeltas = part.is_kit ? getKitComponentDeltas(part.id, qty, state.kitComponents) : null;
         const customer = state.customers.find((c) => c.id === order.customer_id);
         const level = customer?.price_level ?? 'RETAIL';
         const suggested = calcPartPriceForLevel(part, state.settings, level);
@@ -1097,13 +1155,18 @@ export const useShopStore = create<ShopState>()(
                 ? { ...l, quantity: newQty, line_total: lineTotal, updated_at: now() }
                 : l
             ),
-            parts: state.parts.map((p) =>
-              p.id === partId
-                ? { ...p, quantity_on_hand: p.quantity_on_hand - qty, updated_at: now() }
-                : p
-            ),
+            parts: state.parts.map((p) => {
+              if (componentDeltas && componentDeltas[p.id]) {
+                return { ...p, quantity_on_hand: p.quantity_on_hand - componentDeltas[p.id], updated_at: now() };
+              }
+              if (!part.is_kit && p.id === partId) {
+                return { ...p, quantity_on_hand: p.quantity_on_hand - qty, updated_at: now() };
+              }
+              return p;
+            }),
           }));
         } else {
+          const timestamp = now();
           const newLine: WorkOrderPartLine = {
             id: generateId(),
             work_order_id: orderId,
@@ -1120,17 +1183,21 @@ export const useShopStore = create<ShopState>()(
             is_core_refund_line: false,
             core_refund_for_line_id: null,
             description: null,
-            created_at: now(),
-            updated_at: now(),
+            created_at: timestamp,
+            updated_at: timestamp,
           };
 
           set((state) => ({
             workOrderPartLines: [...state.workOrderPartLines, newLine],
-            parts: state.parts.map((p) =>
-              p.id === partId
-                ? { ...p, quantity_on_hand: p.quantity_on_hand - qty, updated_at: now() }
-                : p
-            ),
+            parts: state.parts.map((p) => {
+              if (componentDeltas && componentDeltas[p.id]) {
+                return { ...p, quantity_on_hand: p.quantity_on_hand - componentDeltas[p.id], updated_at: timestamp };
+              }
+              if (!part.is_kit && p.id === partId) {
+                return { ...p, quantity_on_hand: p.quantity_on_hand - qty, updated_at: timestamp };
+              }
+              return p;
+            }),
           }));
         }
 
@@ -1147,20 +1214,31 @@ export const useShopStore = create<ShopState>()(
         if (!order) return { success: false, error: 'Order not found' };
         if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
 
-        const delta = line.quantity - newQty;
+        const qtyChange = newQty - line.quantity;
         const lineTotal = newQty * line.unit_price;
+        const part = state.parts.find((p) => p.id === line.part_id);
+        const isKit = part?.is_kit;
+        const timestamp = now();
+        const kitDeltas =
+          isKit && line.part_id
+            ? getKitComponentDeltas(line.part_id, qtyChange, state.kitComponents)
+            : null;
 
         set((state) => ({
           workOrderPartLines: state.workOrderPartLines.map((l) =>
             l.id === lineId
-              ? { ...l, quantity: newQty, line_total: lineTotal, updated_at: now() }
+              ? { ...l, quantity: newQty, line_total: lineTotal, updated_at: timestamp }
               : l
           ),
-          parts: state.parts.map((p) =>
-            p.id === line.part_id
-              ? { ...p, quantity_on_hand: p.quantity_on_hand + delta, updated_at: now() }
-              : p
-          ),
+          parts: state.parts.map((p) => {
+            if (kitDeltas && kitDeltas[p.id]) {
+              return { ...p, quantity_on_hand: p.quantity_on_hand - kitDeltas[p.id], updated_at: timestamp };
+            }
+            if (!isKit && p.id === line.part_id) {
+              return { ...p, quantity_on_hand: p.quantity_on_hand - qtyChange, updated_at: timestamp };
+            }
+            return p;
+          }),
         }));
 
         get().recalculateWorkOrderTotals(line.work_order_id);
@@ -1201,13 +1279,24 @@ export const useShopStore = create<ShopState>()(
         if (!order) return { success: false, error: 'Order not found' };
         if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
 
+        const part = state.parts.find((p) => p.id === line.part_id);
+        const isKit = part?.is_kit;
+        const restoration = isKit && line.part_id
+          ? getKitComponentDeltas(line.part_id, line.quantity, state.kitComponents)
+          : null;
+        const timestamp = now();
+
         set((state) => ({
           workOrderPartLines: state.workOrderPartLines.filter((l) => l.id !== lineId),
-          parts: state.parts.map((p) =>
-            p.id === line.part_id
-              ? { ...p, quantity_on_hand: p.quantity_on_hand + line.quantity, updated_at: now() }
-              : p
-          ),
+          parts: state.parts.map((p) => {
+            if (restoration && restoration[p.id]) {
+              return { ...p, quantity_on_hand: p.quantity_on_hand + restoration[p.id], updated_at: timestamp };
+            }
+            if (!isKit && p.id === line.part_id) {
+              return { ...p, quantity_on_hand: p.quantity_on_hand + line.quantity, updated_at: timestamp };
+            }
+            return p;
+          }),
         }));
 
         get().recalculateWorkOrderTotals(line.work_order_id);

@@ -87,6 +87,20 @@ export const zustandRepos: Repos = {
       return useShopStore.getState().deactivatePart(id);
     },
   },
+  kitComponents: {
+    get kitComponents() {
+      return useShopStore.getState().kitComponents;
+    },
+    addKitComponent(component) {
+      return useShopStore.getState().addKitComponent(component);
+    },
+    updateKitComponentQuantity(id, quantity) {
+      return useShopStore.getState().updateKitComponentQuantity(id, quantity);
+    },
+    removeKitComponent(id) {
+      return useShopStore.getState().removeKitComponent(id);
+    },
+  },
   technicians: {
     get technicians() {
       return useShopStore.getState().technicians;
