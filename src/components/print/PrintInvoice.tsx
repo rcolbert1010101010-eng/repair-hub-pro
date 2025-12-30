@@ -372,3 +372,135 @@ export function PrintWorkOrder({ order, partLines, laborLines, customer, unit, p
     </div>
   );
 }
+
+export function PrintSalesOrderPickList(props: PrintSalesOrderProps) {
+  const { order, lines, customer, parts, shopName } = props;
+  const pickListItems = lines
+    .map((line) => {
+      const part = parts.find((p) => p.id === line.part_id);
+      return {
+        id: line.id,
+        quantity: line.quantity,
+        partNumber: part?.part_number || '-',
+        description: part?.description || '-',
+        bin: part?.bin_location || '—',
+      };
+    })
+    .sort((a, b) => {
+      const binA = a.bin === '—' ? 'ZZZ' : a.bin;
+      const binB = b.bin === '—' ? 'ZZZ' : b.bin;
+      if (binA.localeCompare(binB) !== 0) return binA.localeCompare(binB);
+      if (a.partNumber.localeCompare(b.partNumber) !== 0) return a.partNumber.localeCompare(b.partNumber);
+      return a.description.localeCompare(b.description);
+    });
+
+  if (pickListItems.length === 0) return null;
+
+  return (
+    <div className="print-invoice hidden print:block bg-white text-black p-8 min-h-screen">
+      <div className="flex justify-between items-start mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">{shopName}</h1>
+          <p className="text-gray-600 mt-1">Sales Order Pick List</p>
+        </div>
+        <div className="text-right">
+          <p className="text-xl font-mono font-bold">{order.order_number}</p>
+          <p className="text-gray-600">{new Date(order.created_at).toLocaleDateString()}</p>
+          {customer && <p className="text-sm text-gray-600">{customer.company_name}</p>}
+        </div>
+      </div>
+      <table className="w-full mb-4">
+        <tbody>
+          {pickListItems.reduce<JSX.Element[]>((rows, item, index) => {
+            const prev = pickListItems[index - 1];
+            const isNewBin = !prev || prev.bin !== item.bin;
+            if (isNewBin) {
+              rows.push(
+                <tr key={`bin-${item.bin}-${index}`} className="bg-gray-100">
+                  <td colSpan={4} className="py-1 px-2 text-xs font-semibold text-gray-700">
+                    Bin: {item.bin}
+                  </td>
+                </tr>
+              );
+            }
+            rows.push(
+              <tr key={item.id} className="border-b border-gray-200">
+                <td className="py-1 px-2 text-sm text-right w-16">{item.quantity}</td>
+                <td className="py-1 px-2 text-sm font-mono">{item.partNumber}</td>
+                <td className="py-1 px-2 text-sm">{item.description}</td>
+                <td className="py-1 px-2 text-sm">{item.bin}</td>
+              </tr>
+            );
+            return rows;
+          }, [])}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function PrintWorkOrderPickList(props: PrintWorkOrderProps) {
+  const { order, partLines, customer, parts, shopName } = props;
+  const pickListItems = partLines
+    .map((line) => {
+      const part = parts.find((p) => p.id === line.part_id);
+      return {
+        id: line.id,
+        quantity: line.quantity,
+        partNumber: part?.part_number || '-',
+        description: part?.description || '-',
+        bin: part?.bin_location || '—',
+      };
+    })
+    .sort((a, b) => {
+      const binA = a.bin === '—' ? 'ZZZ' : a.bin;
+      const binB = b.bin === '—' ? 'ZZZ' : b.bin;
+      if (binA.localeCompare(binB) !== 0) return binA.localeCompare(binB);
+      if (a.partNumber.localeCompare(b.partNumber) !== 0) return a.partNumber.localeCompare(b.partNumber);
+      return a.description.localeCompare(b.description);
+    });
+
+  if (pickListItems.length === 0) return null;
+
+  return (
+    <div className="print-invoice hidden print:block bg-white text-black p-8 min-h-screen">
+      <div className="flex justify-between items-start mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">{shopName}</h1>
+          <p className="text-gray-600 mt-1">Work Order Pick List</p>
+        </div>
+        <div className="text-right">
+          <p className="text-xl font-mono font-bold">{order.order_number}</p>
+          <p className="text-gray-600">{new Date(order.created_at).toLocaleDateString()}</p>
+          {customer && <p className="text-sm text-gray-600">{customer.company_name}</p>}
+        </div>
+      </div>
+      <table className="w-full mb-4">
+        <tbody>
+          {pickListItems.reduce<JSX.Element[]>((rows, item, index) => {
+            const prev = pickListItems[index - 1];
+            const isNewBin = !prev || prev.bin !== item.bin;
+            if (isNewBin) {
+              rows.push(
+                <tr key={`bin-${item.bin}-${index}`} className="bg-gray-100">
+                  <td colSpan={4} className="py-1 px-2 text-xs font-semibold text-gray-700">
+                    Bin: {item.bin}
+                  </td>
+                </tr>
+              );
+            }
+            rows.push(
+              <tr key={item.id} className="border-b border-gray-200">
+                <td className="py-1 px-2 text-sm text-right w-16">{item.quantity}</td>
+                <td className="py-1 px-2 text-sm font-mono">{item.partNumber}</td>
+                <td className="py-1 px-2 text-sm">{item.description}</td>
+                <td className="py-1 px-2 text-sm">{item.bin}</td>
+              </tr>
+            );
+            return rows;
+          }, [])}
+        </tbody>
+      </table>
+    </div>
+  );
+}

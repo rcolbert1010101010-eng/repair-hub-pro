@@ -36,7 +36,7 @@ import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Shield, RotateCcw, Check, Pencil, X as XIcon } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
-import { PrintSalesOrder } from '@/components/print/PrintInvoice';
+import { PrintSalesOrder, PrintSalesOrderPickList } from '@/components/print/PrintInvoice';
 import { calcPartPriceForLevel } from '@/domain/pricing/partPricing';
 
 export default function SalesOrderDetail() {
@@ -97,6 +97,7 @@ export default function SalesOrderDetail() {
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
   const [showCoreReturnDialog, setShowCoreReturnDialog] = useState(false);
   const [coreReturnLineId, setCoreReturnLineId] = useState<string | null>(null);
+  const [printMode, setPrintMode] = useState<'invoice' | 'picklist'>('invoice');
 
   const currentOrder = salesOrders.find((o) => o.id === id) || order;
 
@@ -407,6 +408,13 @@ export default function SalesOrderDetail() {
                 <Printer className="w-4 h-4 mr-2" />
                 Print
               </Button>
+              <Button variant="outline" onClick={() => {
+                setPrintMode('picklist');
+                setTimeout(() => window.print(), 0);
+              }}>
+                <Printer className="w-4 h-4 mr-2" />
+                Pick List
+              </Button>
               {isEstimate ? (
                 <Button onClick={handleConvertToOpen}>
                   <Save className="w-4 h-4 mr-2" />
@@ -420,10 +428,19 @@ export default function SalesOrderDetail() {
               )}
             </>
           ) : (
-            <Button variant="outline" onClick={() => window.print()}>
-              <Printer className="w-4 h-4 mr-2" />
-              Print
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => window.print()}>
+                <Printer className="w-4 h-4 mr-2" />
+                Print
+              </Button>
+              <Button variant="outline" onClick={() => {
+                setPrintMode('picklist');
+                setTimeout(() => window.print(), 0);
+              }}>
+                <Printer className="w-4 h-4 mr-2" />
+                Pick List
+              </Button>
+            </div>
           )
         }
       />
@@ -660,7 +677,14 @@ export default function SalesOrderDetail() {
 
       {/* Print Invoice */}
       {currentOrder && (
-        <PrintSalesOrder order={currentOrder} lines={orderLines} customer={customer} unit={unit} parts={parts} shopName={settings.shop_name} />
+        <>
+          {printMode === 'invoice' && (
+            <PrintSalesOrder order={currentOrder} lines={orderLines} customer={customer} unit={unit} parts={parts} shopName={settings.shop_name} />
+          )}
+          {printMode === 'picklist' && (
+            <PrintSalesOrderPickList order={currentOrder} lines={orderLines} customer={customer} unit={unit} parts={parts} shopName={settings.shop_name} />
+          )}
+        </>
       )}
 
       {/* Add Part Dialog */}

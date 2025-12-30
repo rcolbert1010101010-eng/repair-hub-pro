@@ -37,7 +37,7 @@ import { useShopStore } from '@/stores/shopStore';
 import { useToast } from '@/hooks/use-toast';
 import { Save, Plus, Trash2, FileCheck, Printer, Play, Edit, X, Clock, Square, Shield, RotateCcw, Check, Pencil, X as XIcon } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
-import { PrintWorkOrder } from '@/components/print/PrintInvoice';
+import { PrintWorkOrder, PrintWorkOrderPickList } from '@/components/print/PrintInvoice';
 import { calcPartPriceForLevel } from '@/domain/pricing/partPricing';
 
 export default function WorkOrderDetail() {
@@ -88,6 +88,7 @@ export default function WorkOrderDetail() {
   const [partQty, setPartQty] = useState('1');
   const [editingPriceLineId, setEditingPriceLineId] = useState<string | null>(null);
   const [priceDraft, setPriceDraft] = useState<string>('');
+  const [printMode, setPrintMode] = useState<'invoice' | 'picklist'>('invoice');
 
   const [addLaborDialogOpen, setAddLaborDialogOpen] = useState(false);
   const [laborDescription, setLaborDescription] = useState('');
@@ -406,9 +407,25 @@ export default function WorkOrderDetail() {
         actions={
           !isInvoiced ? (
             <>
-              <Button variant="outline" onClick={() => window.print()}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setPrintMode('invoice');
+                  setTimeout(() => window.print(), 0);
+                }}
+              >
                 <Printer className="w-4 h-4 mr-2" />
                 Print
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setPrintMode('picklist');
+                  setTimeout(() => window.print(), 0);
+                }}
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Pick List
               </Button>
               {currentOrder?.status === 'OPEN' && (
                 <Button variant="secondary" onClick={handleStartWork}>
@@ -422,10 +439,28 @@ export default function WorkOrderDetail() {
               </Button>
             </>
           ) : (
-            <Button variant="outline" onClick={() => window.print()}>
-              <Printer className="w-4 h-4 mr-2" />
-              Print
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setPrintMode('invoice');
+                  setTimeout(() => window.print(), 0);
+                }}
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Print
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setPrintMode('picklist');
+                  setTimeout(() => window.print(), 0);
+                }}
+              >
+                <Printer className="w-4 h-4 mr-2" />
+                Pick List
+              </Button>
+            </div>
           )
         }
       />
@@ -805,7 +840,14 @@ export default function WorkOrderDetail() {
 
       {/* Print Invoice */}
       {currentOrder && (
-        <PrintWorkOrder order={currentOrder} partLines={partLines} laborLines={laborLines} customer={customer} unit={unit} parts={parts} shopName={settings.shop_name} />
+        <>
+          {printMode === 'invoice' && (
+            <PrintWorkOrder order={currentOrder} partLines={partLines} laborLines={laborLines} customer={customer} unit={unit} parts={parts} shopName={settings.shop_name} />
+          )}
+          {printMode === 'picklist' && (
+            <PrintWorkOrderPickList order={currentOrder} partLines={partLines} laborLines={laborLines} customer={customer} unit={unit} parts={parts} shopName={settings.shop_name} />
+          )}
+        </>
       )}
 
       {/* Add Part Dialog */}
