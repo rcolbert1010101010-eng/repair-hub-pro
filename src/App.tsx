@@ -28,6 +28,16 @@ import Settings from "@/pages/Settings";
 import NotFound from "@/pages/NotFound";
 import CycleCounts from "@/pages/CycleCounts";
 import CycleCountDetail from "@/pages/CycleCountDetail";
+import Returns from "@/pages/Returns";
+import ReturnDetail from "@/pages/ReturnDetail";
+import WarrantyClaims from "@/pages/WarrantyClaims";
+import WarrantyClaimDetail from "@/pages/WarrantyClaimDetail";
+import ReturnsWarrantyReport from "@/pages/ReturnsWarrantyReport";
+import PlasmaProjects from "@/pages/PlasmaProjects";
+import PlasmaProjectDetail from "@/pages/PlasmaProjectDetail";
+import PlasmaPrint from "@/pages/PlasmaPrint";
+import PlasmaTemplates from "@/pages/PlasmaTemplates";
+import PlasmaTemplateDetail from "@/pages/PlasmaTemplateDetail";
 
 const queryClient = new QueryClient();
 
@@ -53,10 +63,20 @@ const App = () => (
               <Route path="/inventory/:id" element={<PartForm />} />
               <Route path="/sales-orders" element={<SalesOrders />} />
               <Route path="/sales-orders/:id" element={<SalesOrderDetail />} />
+              <Route path="/plasma" element={<PlasmaProjects />} />
+              <Route path="/plasma/:id" element={<PlasmaProjectDetail />} />
+              <Route path="/plasma/:id/print" element={<PlasmaPrint />} />
+              <Route path="/plasma/templates" element={<PlasmaTemplates />} />
+              <Route path="/plasma/templates/:id" element={<PlasmaTemplateDetail />} />
               <Route path="/work-orders" element={<WorkOrders />} />
               <Route path="/work-orders/:id" element={<WorkOrderDetail />} />
               <Route path="/purchase-orders" element={<PurchaseOrders />} />
               <Route path="/purchase-orders/:id" element={<PurchaseOrderDetail />} />
+              <Route path="/returns" element={<Returns />} />
+              <Route path="/returns/:id" element={<ReturnDetail />} />
+              <Route path="/warranty" element={<WarrantyClaims />} />
+              <Route path="/warranty/:id" element={<WarrantyClaimDetail />} />
+              <Route path="/reports/returns-warranty" element={<ReturnsWarrantyReport />} />
               <Route path="/cycle-counts" element={<CycleCounts />} />
               <Route path="/cycle-counts/:id" element={<CycleCountDetail />} />
               <Route path="/technicians" element={<Technicians />} />

@@ -8,6 +8,8 @@ import { useRepos } from '@/repos';
 import type { SalesOrder } from '@/types';
 import { StatusBadge } from '@/components/ui/status-badge';
 
+type SalesOrderRow = SalesOrder & { customer_name: string; is_active?: boolean };
+
 export default function SalesOrders() {
   const navigate = useNavigate();
   const repos = useRepos();
@@ -15,16 +17,23 @@ export default function SalesOrders() {
   const { customers } = repos.customers;
   const [statusFilter, setStatusFilter] = useState<'open' | 'estimate' | 'invoiced' | 'deleted'>('open');
 
-  const columns: Column<SalesOrder>[] = [
+  const tableData = useMemo<SalesOrderRow[]>(() => {
+    return salesOrders.map((order) => {
+      const customer = customers.find((c) => c.id === order.customer_id);
+      return {
+        ...order,
+        customer_name: customer?.company_name || '-',
+      };
+    });
+  }, [customers, salesOrders]);
+
+  const columns: Column<SalesOrderRow>[] = [
     { key: 'order_number', header: 'Order #', sortable: true, className: 'font-mono' },
     {
-      key: 'customer_id',
+      key: 'customer_name',
       header: 'Customer',
       sortable: true,
-      render: (item) => {
-        const customer = customers.find((c) => c.id === item.customer_id);
-        return customer?.company_name || '-';
-      },
+      render: (item) => item.customer_name || '-',
     },
     {
       key: 'status',
@@ -47,8 +56,8 @@ export default function SalesOrders() {
     },
   ];
 
-  const filteredSalesOrders = useMemo(() => {
-    return salesOrders.filter((order) => {
+  const filteredTableData = useMemo(() => {
+    const statusFiltered = tableData.filter((order) => {
       switch (statusFilter) {
         case 'open':
           return order.is_active !== false && order.status === 'OPEN';
@@ -62,14 +71,13 @@ export default function SalesOrders() {
           return true;
       }
     });
-  }, [salesOrders, statusFilter]);
 
-  const tableData = useMemo(() => {
     if (statusFilter === 'deleted') {
-      return filteredSalesOrders.map((order) => ({ ...order, is_active: true }));
+      return statusFiltered.map((order) => ({ ...order, is_active: true }));
     }
-    return filteredSalesOrders;
-  }, [filteredSalesOrders, statusFilter]);
+
+    return statusFiltered;
+  }, [statusFilter, tableData]);
 
   return (
     <div className="page-container">
@@ -101,10 +109,10 @@ export default function SalesOrders() {
       </div>
 
       <DataTable
-        data={tableData}
+        data={filteredTableData}
         columns={columns}
-        searchKeys={['order_number']}
-        searchPlaceholder="Search orders..."
+        searchKeys={['order_number', 'customer_name']}
+        searchPlaceholder="Search sales orders..."
         onRowClick={(order) => navigate(`/sales-orders/${order.id}`)}
         emptyMessage="No sales orders found. Create your first sales order to get started."
       />

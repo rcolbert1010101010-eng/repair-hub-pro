@@ -19,7 +19,23 @@ import type {
   ReceivingRecord,
   CycleCountSession,
   CycleCountLine,
+  Return,
+  ReturnLine,
+  ReturnStatus,
+  WarrantyPolicy,
+  WarrantyClaim,
+  WarrantyClaimLine,
+  WarrantyClaimStatus,
+  WorkOrderChargeLine,
+  PlasmaJob,
+  PlasmaJobLine,
+  PlasmaJobAttachment,
+  PlasmaTemplate,
+  PlasmaTemplateLine,
+  Remnant,
+  SalesOrderChargeLine,
 } from '@/types';
+import type { PlasmaPricingSettings } from '@/services/plasmaPricingService';
 
 export interface SettingsRepo {
   settings: SystemSettings;
@@ -57,7 +73,7 @@ export interface CategoriesRepo {
 
 export interface PartsRepo {
   parts: Part[];
-  addPart: (part: Omit<Part, 'id' | 'is_active' | 'created_at' | 'updated_at' | 'last_cost' | 'avg_cost'> & Partial<Pick<Part, 'last_cost' | 'avg_cost'>>) => Part;
+  addPart: (part: Omit<Part, 'id' | 'is_active' | 'created_at' | 'updated_at' | 'last_cost' | 'avg_cost' | 'barcode'> & Partial<Pick<Part, 'last_cost' | 'avg_cost' | 'barcode'>>) => Part;
   updatePart: (id: string, part: Partial<Part>) => void;
   updatePartWithQohAdjustment: (id: string, part: Partial<Part>, meta: { reason: string; adjusted_by: string }) => void;
   deactivatePart: (id: string) => void;
@@ -92,6 +108,7 @@ export interface TimeEntriesRepo {
 export interface SalesOrdersRepo {
   salesOrders: SalesOrder[];
   salesOrderLines: SalesOrderLine[];
+  salesOrderChargeLines: SalesOrderChargeLine[];
   createSalesOrder: (customerId: string, unitId: string | null) => SalesOrder;
   soAddPartLine: (orderId: string, partId: string, qty: number) => { success: boolean; error?: string };
   soUpdatePartQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
@@ -103,6 +120,10 @@ export interface SalesOrdersRepo {
   soInvoice: (orderId: string) => { success: boolean; error?: string };
   updateSalesOrderNotes: (orderId: string, notes: string | null) => void;
   getSalesOrderLines: (orderId: string) => SalesOrderLine[];
+  getSalesOrderChargeLines: (orderId: string) => SalesOrderChargeLine[];
+  addSalesOrderChargeLine: (line: Omit<SalesOrderChargeLine, 'id' | 'created_at' | 'updated_at'> & { id?: string }) => SalesOrderChargeLine | null;
+  updateSalesOrderChargeLine: (id: string, patch: Partial<SalesOrderChargeLine>) => void;
+  removeSalesOrderChargeLine: (id: string) => void;
   recalculateSalesOrderTotals: (orderId: string) => void;
 }
 
@@ -110,6 +131,7 @@ export interface WorkOrdersRepo {
   workOrders: WorkOrder[];
   workOrderPartLines: WorkOrderPartLine[];
   workOrderLaborLines: WorkOrderLaborLine[];
+  workOrderChargeLines: WorkOrderChargeLine[];
   createWorkOrder: (customerId: string, unitId: string) => WorkOrder;
   woAddPartLine: (orderId: string, partId: string, qty: number) => { success: boolean; error?: string };
   woUpdatePartQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
@@ -122,11 +144,74 @@ export interface WorkOrdersRepo {
   woRemoveLaborLine: (lineId: string) => { success: boolean; error?: string };
   woToggleLaborWarranty: (lineId: string) => { success: boolean; error?: string };
   woUpdateStatus: (orderId: string, status: 'IN_PROGRESS') => { success: boolean; error?: string };
+  woConvertToOpen: (orderId: string) => { success: boolean; error?: string };
   woInvoice: (orderId: string) => { success: boolean; error?: string };
   getWorkOrderPartLines: (orderId: string) => WorkOrderPartLine[];
   getWorkOrderLaborLines: (orderId: string) => WorkOrderLaborLine[];
+  getWorkOrderChargeLines: (orderId: string) => WorkOrderChargeLine[];
   updateWorkOrderNotes: (orderId: string, notes: string | null) => void;
+  addWorkOrderChargeLine: (line: Omit<WorkOrderChargeLine, 'id' | 'created_at' | 'updated_at'> & { id?: string }) => WorkOrderChargeLine | null;
+  updateWorkOrderChargeLine: (id: string, patch: Partial<WorkOrderChargeLine>) => void;
+  removeWorkOrderChargeLine: (id: string) => void;
   recalculateWorkOrderTotals: (orderId: string) => void;
+}
+
+export interface PlasmaRepo {
+  plasmaJobs: PlasmaJob[];
+  plasmaJobLines: PlasmaJobLine[];
+  plasmaAttachments: PlasmaJobAttachment[];
+  plasmaTemplates: PlasmaTemplate[];
+  plasmaTemplateLines: PlasmaTemplateLine[];
+  remnants: Remnant[];
+  createForWorkOrder: (workOrderId: string) => PlasmaJob;
+  getByWorkOrder: (workOrderId: string) => { job: PlasmaJob; lines: PlasmaJobLine[] } | null;
+  createStandalone: (payload?: { sales_order_id?: string | null }) => PlasmaJob;
+  get: (plasmaJobId: string) => { job: PlasmaJob; lines: PlasmaJobLine[] } | null;
+  getPrintView: (
+    plasmaJobId: string
+  ) =>
+    | {
+        job: PlasmaJob;
+        lines: PlasmaJobLine[];
+        workOrder?: WorkOrder | null;
+        salesOrder?: SalesOrder | null;
+        customerName?: string | null;
+        metrics: import('@/services/plasmaJobSummary').PlasmaJobMetrics;
+        attachments: PlasmaJobAttachment[];
+      }
+    | null;
+  listStandalone: () => PlasmaJob[];
+  linkToSalesOrder: (plasmaJobId: string, salesOrderId: string) => PlasmaJob | null;
+  updateJob: (id: string, patch: Partial<PlasmaJob>) => PlasmaJob | null;
+  upsertLine: (jobId: string, line: Partial<PlasmaJobLine>) => PlasmaJobLine | null;
+  deleteLine: (lineId: string) => void;
+  recalc: (jobId: string, settingsOverride?: Partial<PlasmaPricingSettings>) => { success: boolean; error?: string; totals?: { sell_price_total: number }; warnings?: string[] };
+  postToWorkOrder: (plasmaJobId: string) => { success: boolean; error?: string };
+  postToSalesOrder: (plasmaJobId: string) => { success: boolean; error?: string };
+  templates: {
+    list: () => PlasmaTemplate[];
+    get: (templateId: string) => { template: PlasmaTemplate; lines: PlasmaTemplateLine[] } | null;
+    create: (payload: Omit<PlasmaTemplate, 'id' | 'created_at' | 'updated_at'>) => PlasmaTemplate;
+    update: (templateId: string, patch: Partial<PlasmaTemplate>) => void;
+    remove: (templateId: string) => void;
+    addLine: (templateId: string, line: Omit<PlasmaTemplateLine, 'id' | 'plasma_template_id' | 'created_at' | 'updated_at'>) => PlasmaTemplateLine;
+    updateLine: (lineId: string, patch: Partial<PlasmaTemplateLine>) => void;
+    removeLine: (lineId: string) => void;
+    applyToJob: (templateId: string, plasmaJobId: string) => { success: boolean; error?: string };
+  };
+  attachments: {
+    list: (plasmaJobId: string) => PlasmaJobAttachment[];
+    add: (plasmaJobId: string, file: File, options?: { notes?: string | null }) => { success: boolean; error?: string };
+    remove: (attachmentId: string) => void;
+    update: (attachmentId: string, patch: Partial<PlasmaJobAttachment>) => void;
+  };
+  remnants: {
+    list: () => Remnant[];
+    create: (remnant: Omit<Remnant, 'id' | 'created_at' | 'updated_at' | 'status'> & Partial<Pick<Remnant, 'status'>>) => Remnant;
+    update: (remnantId: string, patch: Partial<Remnant>) => void;
+    remove: (remnantId: string) => void;
+    consume: (remnantId: string) => void;
+  };
 }
 
 export interface PurchaseOrdersRepo {
@@ -140,8 +225,39 @@ export interface PurchaseOrdersRepo {
   poReceive: (lineId: string, quantity: number) => { success: boolean; error?: string };
   poClose: (orderId: string) => { success: boolean; error?: string };
   updatePurchaseOrderNotes: (orderId: string, notes: string | null) => void;
+  updatePurchaseOrderLinks: (orderId: string, links: { sales_order_id: string | null; work_order_id: string | null }) => void;
   getPurchaseOrderLines: (orderId: string) => PurchaseOrderLine[];
   getReceivingRecords: (lineId: string) => ReceivingRecord[];
+}
+
+export interface ReturnsRepo {
+  returns: Return[];
+  returnLines: ReturnLine[];
+  createReturn: (payload: { vendor_id: string; purchase_order_id?: string | null; sales_order_id?: string | null; work_order_id?: string | null }) => Return | null;
+  updateReturn: (id: string, patch: Partial<Return>) => void;
+  setReturnStatus: (id: string, status: ReturnStatus) => void;
+  addReturnLine: (returnId: string, payload: { part_id: string; purchase_order_line_id?: string | null; quantity: number; unit_cost: number | null; condition: ReturnLine['condition']; reason?: string | null }) => ReturnLine | null;
+  updateReturnLine: (lineId: string, patch: Partial<ReturnLine>) => void;
+  removeReturnLine: (lineId: string) => void;
+  getReturnLines: (returnId: string) => ReturnLine[];
+  getReturnsByPurchaseOrder: (poId: string) => Return[];
+}
+
+export interface WarrantyRepo {
+  warrantyPolicies: WarrantyPolicy[];
+  warrantyClaims: WarrantyClaim[];
+  warrantyClaimLines: WarrantyClaimLine[];
+  upsertWarrantyPolicy: (vendorId: string, patch: Partial<WarrantyPolicy>) => WarrantyPolicy;
+  createWarrantyClaim: (payload: { vendor_id: string; policy_id?: string | null; work_order_id?: string | null; sales_order_id?: string | null; purchase_order_id?: string | null }) => WarrantyClaim | null;
+  updateWarrantyClaim: (id: string, patch: Partial<WarrantyClaim>) => void;
+  setWarrantyClaimStatus: (id: string, status: WarrantyClaimStatus) => void;
+  addWarrantyClaimLine: (claimId: string, payload: Partial<WarrantyClaimLine> & { claim_id?: string }) => WarrantyClaimLine | null;
+  updateWarrantyClaimLine: (lineId: string, patch: Partial<WarrantyClaimLine>) => void;
+  removeWarrantyClaimLine: (lineId: string) => void;
+  getWarrantyPolicyByVendor: (vendorId: string) => WarrantyPolicy | undefined;
+  getClaimsByVendor: (vendorId: string) => WarrantyClaim[];
+  getClaimsByWorkOrder: (workOrderId: string) => WarrantyClaim[];
+  getWarrantyClaimLines: (claimId: string) => WarrantyClaimLine[];
 }
 
 export interface CycleCountsRepo {
@@ -171,4 +287,7 @@ export interface Repos {
   workOrders: WorkOrdersRepo;
   purchaseOrders: PurchaseOrdersRepo;
   cycleCounts: CycleCountsRepo;
+  returns: ReturnsRepo;
+  warranty: WarrantyRepo;
+  plasma: PlasmaRepo;
 }

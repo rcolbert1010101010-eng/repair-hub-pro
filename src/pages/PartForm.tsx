@@ -59,6 +59,7 @@ export default function PartForm() {
     quantity_on_hand: part?.quantity_on_hand?.toString() || '0',
     core_required: part?.core_required || false,
     core_charge: part?.core_charge?.toString() || '0',
+    barcode: part?.barcode || '',
     is_kit: part?.is_kit ?? false,
     min_qty: part?.min_qty?.toString() || '',
     max_qty: part?.max_qty?.toString() || '',
@@ -103,6 +104,7 @@ export default function PartForm() {
     avg_cost: part?.avg_cost ?? null,
     model: part?.model ?? null,
     serial_number: part?.serial_number ?? null,
+    barcode: part?.barcode ?? (formData.barcode.trim() ? formData.barcode.trim() : null),
     is_kit: part?.is_kit ?? formData.is_kit ?? false,
     is_active: true,
     created_at: '',
@@ -180,6 +182,7 @@ export default function PartForm() {
       quantity_on_hand: parseInt(formData.quantity_on_hand) || 0,
       core_required: formData.core_required,
       core_charge: parseFloat(formData.core_charge) || 0,
+      barcode: formData.barcode.trim() ? formData.barcode.trim() : null,
       is_kit: formData.is_kit,
       min_qty: formData.min_qty === '' ? null : (Number.isFinite(parseInt(formData.min_qty)) ? parseInt(formData.min_qty) : null),
       max_qty: formData.max_qty === '' ? null : (Number.isFinite(parseInt(formData.max_qty)) ? parseInt(formData.max_qty) : null),
@@ -306,6 +309,7 @@ export default function PartForm() {
       quantity_on_hand: parseInt(pendingPartData.quantity_on_hand) || 0,
       core_required: pendingPartData.core_required,
       core_charge: parseFloat(pendingPartData.core_charge) || 0,
+      barcode: pendingPartData.barcode.trim() ? pendingPartData.barcode.trim() : null,
       is_kit: pendingPartData.is_kit,
       min_qty: pendingPartData.min_qty === '' ? null : (Number.isFinite(parseInt(pendingPartData.min_qty)) ? parseInt(pendingPartData.min_qty) : null),
       max_qty: pendingPartData.max_qty === '' ? null : (Number.isFinite(parseInt(pendingPartData.max_qty)) ? parseInt(pendingPartData.max_qty) : null),
@@ -371,6 +375,18 @@ export default function PartForm() {
               />
             </div>
             <div>
+              <Label htmlFor="barcode">Barcode</Label>
+              <Input
+                id="barcode"
+                value={formData.barcode}
+                onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+                disabled={!editing}
+                placeholder="Scan or enter barcode"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
               <Label htmlFor="quantity_on_hand">Quantity on Hand</Label>
               <Input
                 id="quantity_on_hand"
@@ -380,8 +396,6 @@ export default function PartForm() {
                 disabled={!editing}
               />
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="model">Model</Label>
               <Input

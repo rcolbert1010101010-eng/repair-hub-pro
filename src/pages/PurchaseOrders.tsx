@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
@@ -7,20 +8,77 @@ import { Badge } from '@/components/ui/badge';
 import { Plus } from 'lucide-react';
 import { useRepos } from '@/repos';
 import type { PurchaseOrder } from '@/types';
+import { getPurchaseOrderDerivedStatus } from '@/services/purchaseOrderStatus';
+
+type PurchaseOrderRow = PurchaseOrder & {
+  vendor_name: string;
+  derived_status: string;
+  linked_sales_order: string;
+  linked_work_order: string;
+};
 
 export default function PurchaseOrders() {
   const navigate = useNavigate();
   const repos = useRepos();
-  const { purchaseOrders } = repos.purchaseOrders;
+  const { purchaseOrders, purchaseOrderLines } = repos.purchaseOrders;
   const { vendors } = repos.vendors;
+  const { salesOrders } = repos.salesOrders;
+  const { workOrders } = repos.workOrders;
+  const [statusFilter, setStatusFilter] = useState<'open' | 'partial' | 'received'>('open');
 
-  const columns: Column<PurchaseOrder>[] = [
+  const linesByPo = useMemo(() => {
+    return purchaseOrderLines.reduce<Record<string, typeof purchaseOrderLines>>((acc, line) => {
+      acc[line.purchase_order_id] = acc[line.purchase_order_id] || [];
+      acc[line.purchase_order_id].push(line);
+      return acc;
+    }, {});
+  }, [purchaseOrderLines]);
+
+  const tableData = useMemo<PurchaseOrderRow[]>(() => {
+    return purchaseOrders.map((order) => {
+      const derived_status = getPurchaseOrderDerivedStatus(order, linesByPo[order.id] || []);
+      const vendor = vendors.find((v) => v.id === order.vendor_id);
+      const linkedSales = order.sales_order_id
+        ? salesOrders.find((so) => so.id === order.sales_order_id)
+        : undefined;
+      const linkedWork = order.work_order_id
+        ? workOrders.find((wo) => wo.id === order.work_order_id)
+        : undefined;
+
+      return {
+        ...order,
+        vendor_name: vendor?.vendor_name || '-',
+        derived_status,
+        linked_sales_order: linkedSales
+          ? linkedSales.order_number || linkedSales.id
+          : '—',
+        linked_work_order: linkedWork ? linkedWork.order_number || linkedWork.id : '—',
+      };
+    });
+  }, [linesByPo, purchaseOrders, salesOrders, vendors, workOrders]);
+
+  const columns: Column<PurchaseOrderRow>[] = [
     { key: 'po_number', header: 'PO #', sortable: true, className: 'font-mono' },
     {
-      key: 'vendor_id',
+      key: 'derived_status',
+      header: 'Derived Status',
+      sortable: true,
+      render: (item) => <StatusBadge status={item.derived_status} variant={item.derived_status === 'RECEIVED' ? 'success' : 'warning'} />,
+    },
+    {
+      key: 'vendor_name',
       header: 'Vendor',
       sortable: true,
-      render: (item) => vendors.find((v) => v.id === item.vendor_id)?.vendor_name || '-',
+    },
+    {
+      key: 'linked_sales_order',
+      header: 'Linked SO',
+      sortable: true,
+    },
+    {
+      key: 'linked_work_order',
+      header: 'Linked WO',
+      sortable: true,
     },
     {
       key: 'status',
@@ -45,6 +103,22 @@ export default function PurchaseOrders() {
     },
   ];
 
+  const filteredOrders = useMemo(() => {
+    return tableData.filter((order) => {
+      const derivedStatus = order.derived_status;
+      switch (statusFilter) {
+        case 'open':
+          return derivedStatus === 'OPEN';
+        case 'partial':
+          return derivedStatus === 'PARTIALLY_RECEIVED';
+        case 'received':
+          return derivedStatus === 'RECEIVED';
+        default:
+          return true;
+      }
+    });
+  }, [tableData, statusFilter]);
+
   return (
     <div className="page-container">
       <PageHeader
@@ -58,10 +132,25 @@ export default function PurchaseOrders() {
         }
       />
 
+      <div className="flex justify-end gap-2 mb-4">
+        {(['open', 'partial', 'received'] as const).map((filter) => (
+          <Button
+            key={filter}
+            variant={statusFilter === filter ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setStatusFilter(filter)}
+          >
+            {filter === 'open' && 'Open'}
+            {filter === 'partial' && 'Partially Received'}
+            {filter === 'received' && 'Received'}
+          </Button>
+        ))}
+      </div>
+
       <DataTable
-        data={purchaseOrders}
+        data={filteredOrders}
         columns={columns}
-        searchKeys={['po_number']}
+        searchKeys={['po_number', 'vendor_name', 'linked_sales_order', 'linked_work_order']}
         searchPlaceholder="Search purchase orders..."
         onRowClick={(po) => navigate(`/purchase-orders/${po.id}`)}
         emptyMessage="No purchase orders found."

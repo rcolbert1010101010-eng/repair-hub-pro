@@ -38,6 +38,9 @@ import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Shield, RotateCcw, Che
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { PrintSalesOrder, PrintSalesOrderPickList } from '@/components/print/PrintInvoice';
 import { calcPartPriceForLevel } from '@/domain/pricing/partPricing';
+import { getPurchaseOrderDerivedStatus } from '@/services/purchaseOrderStatus';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { PurchaseOrderPreviewDialog } from '@/components/purchase-orders/PurchaseOrderPreviewDialog';
 
 export default function SalesOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -58,6 +61,7 @@ export default function SalesOrderDetail() {
     soInvoice,
     updateSalesOrderNotes,
   } = repos.salesOrders;
+  const { purchaseOrders, purchaseOrderLines } = repos.purchaseOrders;
   const { customers, addCustomer } = repos.customers;
   const { units } = repos.units;
   const { parts, addPart } = repos.parts;
@@ -246,6 +250,7 @@ export default function SalesOrderDetail() {
       bin_location: null,
       model: null,
       serial_number: null,
+      barcode: null,
     });
 
     toast({
@@ -310,6 +315,22 @@ export default function SalesOrderDetail() {
   const customer = customers.find((c) => c.id === (currentOrder?.customer_id || selectedCustomerId));
   const unit = units.find((u) => u.id === (currentOrder?.unit_id || selectedUnitId));
   const orderLines = currentOrder ? getSalesOrderLines(currentOrder.id) : [];
+  const poLinesByPo = useMemo(() => {
+    return purchaseOrderLines.reduce<Record<string, typeof purchaseOrderLines>>((acc, line) => {
+      acc[line.purchase_order_id] = acc[line.purchase_order_id] || [];
+      acc[line.purchase_order_id].push(line);
+      return acc;
+    }, {});
+  }, [purchaseOrderLines]);
+  const linkedPurchaseOrders = useMemo(() => {
+    if (!currentOrder) return [];
+    return purchaseOrders
+      .filter((po) => po.sales_order_id === currentOrder.id)
+      .map((po) => ({
+        ...po,
+        derivedStatus: getPurchaseOrderDerivedStatus(po, poLinesByPo[po.id] || []),
+      }));
+  }, [currentOrder, poLinesByPo, purchaseOrders]);
   const priceLevelLabel =
     customer?.price_level === 'WHOLESALE'
       ? 'Wholesale'
@@ -477,6 +498,31 @@ export default function SalesOrderDetail() {
                 <p className="font-medium">{new Date(currentOrder.invoiced_at).toLocaleString()}</p>
               </div>
             )}
+            <div className="pt-2 border-t border-border space-y-2">
+              <p className="text-sm font-medium">Purchase Orders</p>
+              {linkedPurchaseOrders.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No purchase orders linked.</p>
+              ) : (
+                <div className="space-y-2">
+                  {linkedPurchaseOrders.map((po) => (
+                    <div key={po.id} className="flex items-center justify-between gap-2 text-sm">
+                      <div className="space-y-1">
+                        <p className="font-medium">{po.po_number || po.id}</p>
+                        <StatusBadge status={po.derivedStatus} />
+                      </div>
+                      <PurchaseOrderPreviewDialog
+                        poId={po.id}
+                        trigger={
+                          <Button variant="outline" size="sm">
+                            View PO
+                          </Button>
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           
           {/* Notes Section */}

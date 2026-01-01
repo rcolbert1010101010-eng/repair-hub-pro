@@ -89,6 +89,7 @@ export interface Part {
   avg_cost: number | null;
   model: string | null;
   serial_number: string | null;
+  barcode: string | null;
   is_kit: boolean;
   is_active: boolean;
   created_at: string;
@@ -221,6 +222,7 @@ export interface SalesOrder {
   status: SalesOrderStatus;
   notes: string | null;
   tax_rate: number;
+  charge_subtotal?: number;
   subtotal: number;
   core_charges_total: number;
   tax_amount: number;
@@ -255,8 +257,138 @@ export interface SalesOrderLine {
   part?: Part;
 }
 
+export type SalesOrderChargeSourceType = 'PLASMA_JOB' | 'MANUAL' | 'WORK_ORDER';
+
+export interface SalesOrderChargeLine {
+  id: string;
+  sales_order_id: string;
+  description: string;
+  qty: number;
+  unit_price: number;
+  total_price: number;
+  source_ref_type: SalesOrderChargeSourceType;
+  source_ref_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Plasma Jobs
+export type PlasmaJobSourceType = 'STANDALONE' | 'WORK_ORDER';
+export type PlasmaJobStatus = 'DRAFT' | 'QUOTED' | 'APPROVED' | 'CUT' | 'COMPLETED' | 'VOID';
+
+export interface PlasmaJob {
+  id: string;
+  source_type: PlasmaJobSourceType;
+  work_order_id?: string | null;
+  sales_order_id?: string | null;
+  status: PlasmaJobStatus;
+  notes?: string | null;
+  calculated_at?: string | null;
+  posted_at?: string | null;
+  posted_by?: string | null;
+  dxf_estimated_total_cut_length?: number | null;
+  dxf_estimated_total_pierces?: number | null;
+  dxf_estimated_machine_minutes?: number | null;
+  dxf_notes?: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by?: string | null;
+  updated_by?: string | null;
+}
+
+export interface PlasmaTemplate {
+  id: string;
+  name: string;
+  description?: string | null;
+  default_material_type?: string | null;
+  default_thickness?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlasmaTemplateLine {
+  id: string;
+  plasma_template_id: string;
+  qty_default: number;
+  cut_length_default?: number | null;
+  pierce_count_default?: number | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type RemnantStatus = 'AVAILABLE' | 'CONSUMED';
+
+export interface Remnant {
+  id: string;
+  label: string;
+  material_type: string;
+  thickness: number;
+  width?: number | null;
+  height?: number | null;
+  notes?: string | null;
+  status: RemnantStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlasmaJobLine {
+  id: string;
+  plasma_job_id: string;
+  qty: number;
+  material_type?: string | null;
+  thickness?: number | null;
+  cut_length?: number | null;
+  pierce_count?: number | null;
+  setup_minutes?: number | null;
+  machine_minutes?: number | null;
+  derived_machine_minutes?: number | null;
+  overrides?: Record<string, number | null>;
+  material_cost: number;
+  consumables_cost: number;
+  derived_consumables_cost?: number | null;
+  labor_cost: number;
+  overhead_cost: number;
+  sell_price_each: number;
+  sell_price_total: number;
+  calc_version: number;
+  override_machine_minutes?: boolean;
+  override_consumables_cost?: boolean;
+  remnant_id?: string | null;
+}
+
+export type PlasmaJobAttachmentKind = 'DXF' | 'PDF' | 'IMAGE' | 'OTHER';
+
+export interface PlasmaJobAttachment {
+  id: string;
+  plasma_job_id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  kind: PlasmaJobAttachmentKind;
+  notes?: string | null;
+  local_url?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // Work Order Status
-export type WorkOrderStatus = 'OPEN' | 'IN_PROGRESS' | 'INVOICED';
+export type WorkOrderStatus = 'ESTIMATE' | 'OPEN' | 'IN_PROGRESS' | 'INVOICED';
+
+export type WorkOrderChargeSourceType = 'PLASMA_JOB' | 'MANUAL' | 'SALES_ORDER';
+
+export interface WorkOrderChargeLine {
+  id: string;
+  work_order_id: string;
+  description: string;
+  qty: number;
+  unit_price: number;
+  total_price: number;
+  source_ref_type: WorkOrderChargeSourceType;
+  source_ref_id: string;
+  created_at: string;
+  updated_at: string;
+}
 
 // Work Order
 export interface WorkOrder {
@@ -269,6 +401,7 @@ export interface WorkOrder {
   tax_rate: number;
   parts_subtotal: number;
   labor_subtotal: number;
+  charge_subtotal?: number;
   core_charges_total: number;
   subtotal: number;
   tax_amount: number;
@@ -281,6 +414,7 @@ export interface WorkOrder {
   unit?: Unit;
   part_lines?: WorkOrderPartLine[];
   labor_lines?: WorkOrderLaborLine[];
+  charge_lines?: WorkOrderChargeLine[];
 }
 
 // Work Order Part Line
@@ -328,11 +462,124 @@ export interface PurchaseOrder {
   po_number: string;
   vendor_id: string;
   status: PurchaseOrderStatus;
+  sales_order_id?: string | null;
+  work_order_id?: string | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
   vendor?: Vendor;
   lines?: PurchaseOrderLine[];
+}
+
+// Return Status
+export type ReturnStatus = 'DRAFT' | 'REQUESTED' | 'APPROVED' | 'SHIPPED' | 'RECEIVED' | 'CREDITED' | 'CLOSED' | 'CANCELLED';
+
+export type ReturnLineCondition = 'NEW' | 'INSTALLED' | 'DEFECTIVE' | 'DAMAGED' | 'UNKNOWN';
+
+// Return
+export interface Return {
+  id: string;
+  vendor_id: string;
+  purchase_order_id?: string | null;
+  sales_order_id?: string | null;
+  work_order_id?: string | null;
+  status: ReturnStatus;
+  reason: string | null;
+  rma_number: string | null;
+  carrier: string | null;
+  tracking_number: string | null;
+  shipped_at: string | null;
+  received_at: string | null;
+  credited_at: string | null;
+  credit_amount: number | null;
+  credit_memo_number: string | null;
+  credit_memo_amount: number | null;
+  credit_memo_date: string | null;
+  reimbursed_amount: number | null;
+  reimbursed_date: string | null;
+  reimbursement_reference: string | null;
+  approved_amount: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  is_active: boolean;
+}
+
+// Return Line
+export interface ReturnLine {
+  id: string;
+  return_id: string;
+  part_id: string;
+  purchase_order_line_id?: string | null;
+  quantity: number;
+  unit_cost: number | null;
+  condition: ReturnLineCondition;
+  reason: string | null;
+  created_at: string;
+  updated_at: string;
+  is_active: boolean;
+}
+
+// Warranty
+export type WarrantyClaimStatus = 'OPEN' | 'SUBMITTED' | 'APPROVED' | 'DENIED' | 'PAID' | 'CLOSED' | 'CANCELLED';
+
+export interface WarrantyPolicy {
+  id: string;
+  vendor_id: string;
+  default_labor_rate: number | null;
+  labor_coverage_percent: number | null;
+  parts_coverage_percent: number | null;
+  days_covered: number | null;
+  miles_covered: number | null;
+  requires_rma: boolean;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WarrantyClaim {
+  id: string;
+  vendor_id: string;
+  policy_id?: string | null;
+  work_order_id?: string | null;
+  sales_order_id?: string | null;
+  purchase_order_id?: string | null;
+  status: WarrantyClaimStatus;
+  claim_number: string | null;
+  rma_number: string | null;
+  submitted_at: string | null;
+  decided_at: string | null;
+  paid_at: string | null;
+  amount_requested: number | null;
+  approved_amount: number | null;
+  credit_memo_number: string | null;
+  credit_memo_amount: number | null;
+  credit_memo_date: string | null;
+  reimbursed_amount: number | null;
+  reimbursed_date: string | null;
+  reimbursement_reference: string | null;
+  reason: string | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WarrantyClaimLine {
+  id: string;
+  claim_id: string;
+  part_id?: string | null;
+  labor_line_id?: string | null;
+  description?: string | null;
+  quantity?: number | null;
+  unit_cost?: number | null;
+  labor_hours?: number | null;
+  labor_rate?: number | null;
+  amount?: number | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 // Purchase Order Line

@@ -144,6 +144,9 @@ export const zustandRepos: Repos = {
     get salesOrderLines() {
       return useShopStore.getState().salesOrderLines;
     },
+    get salesOrderChargeLines() {
+      return useShopStore.getState().salesOrderChargeLines;
+    },
     createSalesOrder(customerId, unitId) {
       return useShopStore.getState().createSalesOrder(customerId, unitId);
     },
@@ -177,6 +180,18 @@ export const zustandRepos: Repos = {
     getSalesOrderLines(orderId) {
       return useShopStore.getState().getSalesOrderLines(orderId);
     },
+    getSalesOrderChargeLines(orderId) {
+      return useShopStore.getState().getSalesOrderChargeLines(orderId);
+    },
+    addSalesOrderChargeLine(line) {
+      return useShopStore.getState().addSalesOrderChargeLine(line);
+    },
+    updateSalesOrderChargeLine(id, patch) {
+      return useShopStore.getState().updateSalesOrderChargeLine(id, patch);
+    },
+    removeSalesOrderChargeLine(id) {
+      return useShopStore.getState().removeSalesOrderChargeLine(id);
+    },
     recalculateSalesOrderTotals(orderId) {
       return useShopStore.getState().recalculateSalesOrderTotals(orderId);
     },
@@ -190,6 +205,9 @@ export const zustandRepos: Repos = {
     },
     get workOrderLaborLines() {
       return useShopStore.getState().workOrderLaborLines;
+    },
+    get workOrderChargeLines() {
+      return useShopStore.getState().workOrderChargeLines;
     },
     createWorkOrder(customerId, unitId) {
       return useShopStore.getState().createWorkOrder(customerId, unitId);
@@ -227,6 +245,9 @@ export const zustandRepos: Repos = {
     woUpdateStatus(orderId, status) {
       return useShopStore.getState().woUpdateStatus(orderId, status);
     },
+    woConvertToOpen(orderId) {
+      return useShopStore.getState().woConvertToOpen(orderId);
+    },
     woInvoice(orderId) {
       return useShopStore.getState().woInvoice(orderId);
     },
@@ -236,8 +257,20 @@ export const zustandRepos: Repos = {
     getWorkOrderLaborLines(orderId) {
       return useShopStore.getState().getWorkOrderLaborLines(orderId);
     },
+    getWorkOrderChargeLines(orderId) {
+      return useShopStore.getState().getWorkOrderChargeLines(orderId);
+    },
     updateWorkOrderNotes(orderId, notes) {
       return useShopStore.getState().updateWorkOrderNotes(orderId, notes);
+    },
+    addWorkOrderChargeLine(line) {
+      return useShopStore.getState().addWorkOrderChargeLine(line);
+    },
+    updateWorkOrderChargeLine(id, patch) {
+      return useShopStore.getState().updateWorkOrderChargeLine(id, patch);
+    },
+    removeWorkOrderChargeLine(id) {
+      return useShopStore.getState().removeWorkOrderChargeLine(id);
     },
     recalculateWorkOrderTotals(orderId) {
       return useShopStore.getState().recalculateWorkOrderTotals(orderId);
@@ -274,11 +307,90 @@ export const zustandRepos: Repos = {
     updatePurchaseOrderNotes(orderId, notes) {
       return useShopStore.getState().updatePurchaseOrderNotes(orderId, notes);
     },
+    updatePurchaseOrderLinks(orderId, links) {
+      return useShopStore.getState().updatePurchaseOrderLinks(orderId, links);
+    },
     getPurchaseOrderLines(orderId) {
       return useShopStore.getState().getPurchaseOrderLines(orderId);
     },
     getReceivingRecords(lineId) {
       return useShopStore.getState().getReceivingRecords(lineId);
+    },
+  },
+  returns: {
+    get returns() {
+      return useShopStore.getState().returns;
+    },
+    get returnLines() {
+      return useShopStore.getState().returnLines;
+    },
+    createReturn(payload) {
+      return useShopStore.getState().createReturn(payload);
+    },
+    updateReturn(id, patch) {
+      return useShopStore.getState().updateReturn(id, patch);
+    },
+    setReturnStatus(id, status) {
+      return useShopStore.getState().setReturnStatus(id, status);
+    },
+    addReturnLine(returnId, payload) {
+      return useShopStore.getState().addReturnLine(returnId, payload);
+    },
+    updateReturnLine(lineId, patch) {
+      return useShopStore.getState().updateReturnLine(lineId, patch);
+    },
+    removeReturnLine(lineId) {
+      return useShopStore.getState().removeReturnLine(lineId);
+    },
+    getReturnLines(returnId) {
+      return useShopStore.getState().getReturnLines(returnId);
+    },
+    getReturnsByPurchaseOrder(poId) {
+      return useShopStore.getState().getReturnsByPurchaseOrder(poId);
+    },
+  },
+  warranty: {
+    get warrantyPolicies() {
+      return useShopStore.getState().warrantyPolicies;
+    },
+    get warrantyClaims() {
+      return useShopStore.getState().warrantyClaims;
+    },
+    get warrantyClaimLines() {
+      return useShopStore.getState().warrantyClaimLines;
+    },
+    upsertWarrantyPolicy(vendorId, patch) {
+      return useShopStore.getState().upsertWarrantyPolicy(vendorId, patch);
+    },
+    createWarrantyClaim(payload) {
+      return useShopStore.getState().createWarrantyClaim(payload);
+    },
+    updateWarrantyClaim(id, patch) {
+      return useShopStore.getState().updateWarrantyClaim(id, patch);
+    },
+    setWarrantyClaimStatus(id, status) {
+      return useShopStore.getState().setWarrantyClaimStatus(id, status);
+    },
+    addWarrantyClaimLine(claimId, payload) {
+      return useShopStore.getState().addWarrantyClaimLine(claimId, payload);
+    },
+    updateWarrantyClaimLine(lineId, patch) {
+      return useShopStore.getState().updateWarrantyClaimLine(lineId, patch);
+    },
+    removeWarrantyClaimLine(lineId) {
+      return useShopStore.getState().removeWarrantyClaimLine(lineId);
+    },
+    getWarrantyPolicyByVendor(vendorId) {
+      return useShopStore.getState().getWarrantyPolicyByVendor(vendorId);
+    },
+    getClaimsByVendor(vendorId) {
+      return useShopStore.getState().getClaimsByVendor(vendorId);
+    },
+    getClaimsByWorkOrder(workOrderId) {
+      return useShopStore.getState().getClaimsByWorkOrder(workOrderId);
+    },
+    getWarrantyClaimLines(claimId) {
+      return useShopStore.getState().getWarrantyClaimLines(claimId);
     },
   },
   cycleCounts: {
@@ -308,6 +420,122 @@ export const zustandRepos: Repos = {
     },
     getCycleCountLines(sessionId) {
       return useShopStore.getState().getCycleCountLines(sessionId);
+    },
+  },
+  plasma: {
+    get plasmaJobs() {
+      return useShopStore.getState().plasmaJobs;
+    },
+    get plasmaJobLines() {
+      return useShopStore.getState().plasmaJobLines;
+    },
+    get plasmaAttachments() {
+      return useShopStore.getState().plasmaAttachments;
+    },
+    get plasmaTemplates() {
+      return useShopStore.getState().plasmaTemplates;
+    },
+    get plasmaTemplateLines() {
+      return useShopStore.getState().plasmaTemplateLines;
+    },
+    createForWorkOrder(workOrderId) {
+      return useShopStore.getState().createPlasmaJobForWorkOrder(workOrderId);
+    },
+    getByWorkOrder(workOrderId) {
+      return useShopStore.getState().getPlasmaJobByWorkOrder(workOrderId);
+    },
+    createStandalone(payload) {
+      return useShopStore.getState().createStandalonePlasmaJob(payload);
+    },
+    get(plasmaJobId) {
+      return useShopStore.getState().getPlasmaJob(plasmaJobId);
+    },
+    getPrintView(plasmaJobId) {
+      return useShopStore.getState().getPlasmaPrintView(plasmaJobId);
+    },
+    listStandalone() {
+      return useShopStore.getState().listStandalonePlasmaJobs();
+    },
+    linkToSalesOrder(plasmaJobId, salesOrderId) {
+      return useShopStore.getState().linkPlasmaJobToSalesOrder(plasmaJobId, salesOrderId);
+    },
+    updateJob(id, patch) {
+      return useShopStore.getState().updatePlasmaJob(id, patch);
+    },
+    upsertLine(jobId, line) {
+      return useShopStore.getState().upsertPlasmaJobLine(jobId, line);
+    },
+    deleteLine(lineId) {
+      return useShopStore.getState().deletePlasmaJobLine(lineId);
+    },
+    recalc(jobId, settingsOverride) {
+      return useShopStore.getState().recalculatePlasmaJob(jobId, settingsOverride);
+    },
+    postToWorkOrder(plasmaJobId) {
+      return useShopStore.getState().postPlasmaJobToWorkOrder(plasmaJobId);
+    },
+    postToSalesOrder(plasmaJobId) {
+      return useShopStore.getState().postPlasmaJobToSalesOrder(plasmaJobId);
+    },
+    attachments: {
+      list(plasmaJobId) {
+        return useShopStore.getState().listPlasmaAttachments(plasmaJobId);
+      },
+      add(plasmaJobId, file, options) {
+        return useShopStore.getState().addPlasmaAttachment(plasmaJobId, file, options);
+      },
+      remove(attachmentId) {
+        return useShopStore.getState().removePlasmaAttachment(attachmentId);
+      },
+      update(attachmentId, patch) {
+        return useShopStore.getState().updatePlasmaAttachment(attachmentId, patch);
+      },
+    },
+    remnants: {
+      list() {
+        return useShopStore.getState().listRemnants();
+      },
+      create(remnant) {
+        return useShopStore.getState().createRemnant(remnant);
+      },
+      update(id, patch) {
+        return useShopStore.getState().updateRemnant(id, patch);
+      },
+      remove(id) {
+        return useShopStore.getState().removeRemnant(id);
+      },
+      consume(id) {
+        return useShopStore.getState().consumeRemnant(id);
+      },
+    },
+    templates: {
+      list() {
+        return useShopStore.getState().listPlasmaTemplates();
+      },
+      get(templateId) {
+        return useShopStore.getState().getPlasmaTemplate(templateId);
+      },
+      create(payload) {
+        return useShopStore.getState().createPlasmaTemplate(payload);
+      },
+      update(templateId, patch) {
+        return useShopStore.getState().updatePlasmaTemplate(templateId, patch);
+      },
+      remove(templateId) {
+        return useShopStore.getState().removePlasmaTemplate(templateId);
+      },
+      addLine(templateId, line) {
+        return useShopStore.getState().addPlasmaTemplateLine(templateId, line);
+      },
+      updateLine(lineId, patch) {
+        return useShopStore.getState().updatePlasmaTemplateLine(lineId, patch);
+      },
+      removeLine(lineId) {
+        return useShopStore.getState().removePlasmaTemplateLine(lineId);
+      },
+      applyToJob(templateId, plasmaJobId) {
+        return useShopStore.getState().applyPlasmaTemplateToJob(templateId, plasmaJobId);
+      },
     },
   },
 };

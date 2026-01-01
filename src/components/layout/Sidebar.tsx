@@ -16,6 +16,8 @@ import {
   Sun,
   Moon,
   ListChecks,
+  BarChart2,
+  Flame,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -31,9 +33,12 @@ const navItems = [
   { path: '/purchase-orders', label: 'Purchase Orders', icon: ClipboardList },
   { path: '/inventory', label: 'Inventory', icon: Package },
   { path: '/cycle-counts', label: 'Cycle Counts', icon: ListChecks },
+  { path: '/plasma', label: 'Plasma Projects', icon: Flame },
+  { path: '/plasma/templates', label: 'Plasma Templates', icon: Flame },
   { path: '/technicians', label: 'Technicians', icon: HardHat },
   { path: '/vendors', label: 'Vendors', icon: Building2 },
   { path: '/categories', label: 'Categories', icon: Tags },
+  { path: '/reports/returns-warranty', label: 'Returns & Warranty', icon: BarChart2 },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 

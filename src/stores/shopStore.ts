@@ -23,7 +23,24 @@ import type {
   UnitPMSchedule,
   UnitPMHistory,
   PartKitComponent,
+  Return,
+  ReturnLine,
+  ReturnStatus,
+  WarrantyPolicy,
+  WarrantyClaim,
+  WarrantyClaimLine,
+  WarrantyClaimStatus,
+  PlasmaJob,
+  PlasmaJobLine,
+  WorkOrderChargeLine,
+  WorkOrderChargeSourceType,
+  SalesOrderChargeLine,
+  SalesOrderChargeSourceType,
+  PlasmaJobAttachment,
+  PlasmaJobAttachmentKind,
 } from '@/types';
+import { calculatePlasmaJob, plasmaPricingDefaults, type PlasmaPricingSettings } from '@/services/plasmaPricingService';
+import { computePlasmaJobMetrics } from '@/services/plasmaJobSummary';
 
 
 // Generate unique IDs
@@ -86,7 +103,7 @@ interface ShopState {
 
   // Parts
   parts: Part[];
-  addPart: (part: Omit<Part, 'id' | 'is_active' | 'created_at' | 'updated_at' | 'last_cost' | 'avg_cost'> & Partial<Pick<Part, 'last_cost' | 'avg_cost'>>) => Part;
+  addPart: (part: Omit<Part, 'id' | 'is_active' | 'created_at' | 'updated_at' | 'last_cost' | 'avg_cost' | 'barcode'> & Partial<Pick<Part, 'last_cost' | 'avg_cost' | 'barcode'>>) => Part;
   updatePart: (id: string, part: Partial<Part>) => void;
   updatePartWithQohAdjustment: (id: string, part: Partial<Part>, meta: { reason: string; adjusted_by: string }) => void;
   deactivatePart: (id: string) => void;
@@ -123,6 +140,12 @@ interface ShopState {
   soInvoice: (orderId: string) => { success: boolean; error?: string };
   updateSalesOrderNotes: (orderId: string, notes: string | null) => void;
   getSalesOrderLines: (orderId: string) => SalesOrderLine[];
+  salesOrderChargeLines: SalesOrderChargeLine[];
+  getSalesOrderChargeLines: (orderId: string) => SalesOrderChargeLine[];
+  addSalesOrderChargeLine: (line: Omit<SalesOrderChargeLine, 'id' | 'created_at' | 'updated_at'> & { id?: string }) => SalesOrderChargeLine | null;
+  updateSalesOrderChargeLine: (id: string, patch: Partial<SalesOrderChargeLine>) => void;
+  removeSalesOrderChargeLine: (id: string) => void;
+  postPlasmaJobToSalesOrder: (plasmaJobId: string) => { success: boolean; error?: string };
 
   // Work Orders
   workOrders: WorkOrder[];
@@ -147,6 +170,62 @@ interface ShopState {
   getWorkOrderLaborLines: (orderId: string) => WorkOrderLaborLine[];
   recalculateSalesOrderTotals: (orderId: string) => void;
   recalculateWorkOrderTotals: (orderId: string) => void;
+  workOrderChargeLines: WorkOrderChargeLine[];
+  getWorkOrderChargeLines: (orderId: string) => WorkOrderChargeLine[];
+  addWorkOrderChargeLine: (line: Omit<WorkOrderChargeLine, 'id' | 'created_at' | 'updated_at'> & { id?: string }) => WorkOrderChargeLine | null;
+  updateWorkOrderChargeLine: (id: string, patch: Partial<WorkOrderChargeLine>) => void;
+  removeWorkOrderChargeLine: (id: string) => void;
+  postPlasmaJobToWorkOrder: (plasmaJobId: string) => { success: boolean; error?: string };
+
+  // Plasma
+  plasmaJobs: PlasmaJob[];
+  plasmaJobLines: PlasmaJobLine[];
+  createPlasmaJobForWorkOrder: (workOrderId: string) => PlasmaJob;
+  getPlasmaJobByWorkOrder: (workOrderId: string) => { job: PlasmaJob; lines: PlasmaJobLine[] } | null;
+  createStandalonePlasmaJob: (payload?: { sales_order_id?: string | null }) => PlasmaJob;
+  getPlasmaJob: (plasmaJobId: string) => { job: PlasmaJob; lines: PlasmaJobLine[] } | null;
+  getPlasmaPrintView: (
+    plasmaJobId: string
+  ) =>
+    | {
+        job: PlasmaJob;
+        lines: PlasmaJobLine[];
+        workOrder?: WorkOrder | null;
+        salesOrder?: SalesOrder | null;
+        customerName?: string | null;
+        metrics: import('@/services/plasmaJobSummary').PlasmaJobMetrics;
+        attachments: PlasmaJobAttachment[];
+      }
+    | null;
+  listStandalonePlasmaJobs: () => PlasmaJob[];
+  linkPlasmaJobToSalesOrder: (plasmaJobId: string, salesOrderId: string) => PlasmaJob | null;
+  updatePlasmaJob: (id: string, patch: Partial<PlasmaJob>) => PlasmaJob | null;
+  upsertPlasmaJobLine: (jobId: string, line: Partial<PlasmaJobLine>) => PlasmaJobLine | null;
+  deletePlasmaJobLine: (lineId: string) => void;
+  recalculatePlasmaJob: (jobId: string, settingsOverride?: Partial<PlasmaPricingSettings>) => { success: boolean; error?: string; totals?: { sell_price_total: number }; warnings?: string[] };
+  postPlasmaJobToSalesOrder: (plasmaJobId: string) => { success: boolean; error?: string };
+  plasmaAttachments: PlasmaJobAttachment[];
+  listPlasmaAttachments: (plasmaJobId: string) => PlasmaJobAttachment[];
+  addPlasmaAttachment: (plasmaJobId: string, file: File, options?: { notes?: string | null }) => { success: boolean; error?: string };
+  removePlasmaAttachment: (attachmentId: string) => void;
+  updatePlasmaAttachment: (attachmentId: string, patch: Partial<PlasmaJobAttachment>) => void;
+  remnants: Remnant[];
+  listRemnants: () => Remnant[];
+  createRemnant: (payload: Omit<Remnant, 'id' | 'created_at' | 'updated_at' | 'status'> & Partial<Pick<Remnant, 'status'>>) => Remnant;
+  updateRemnant: (id: string, patch: Partial<Remnant>) => void;
+  removeRemnant: (id: string) => void;
+  consumeRemnant: (id: string) => void;
+  plasmaTemplates: PlasmaTemplate[];
+  plasmaTemplateLines: PlasmaTemplateLine[];
+  listPlasmaTemplates: () => PlasmaTemplate[];
+  getPlasmaTemplate: (templateId: string) => { template: PlasmaTemplate; lines: PlasmaTemplateLine[] } | null;
+  createPlasmaTemplate: (payload: Omit<PlasmaTemplate, 'id' | 'created_at' | 'updated_at'>) => PlasmaTemplate;
+  updatePlasmaTemplate: (templateId: string, patch: Partial<PlasmaTemplate>) => void;
+  removePlasmaTemplate: (templateId: string) => void;
+  addPlasmaTemplateLine: (templateId: string, line: Omit<PlasmaTemplateLine, 'id' | 'plasma_template_id' | 'created_at' | 'updated_at'>) => PlasmaTemplateLine;
+  updatePlasmaTemplateLine: (lineId: string, patch: Partial<PlasmaTemplateLine>) => void;
+  removePlasmaTemplateLine: (lineId: string) => void;
+  applyPlasmaTemplateToJob: (templateId: string, plasmaJobId: string) => { success: boolean; error?: string };
 
   // Purchase Orders
   purchaseOrders: PurchaseOrder[];
@@ -154,6 +233,11 @@ interface ShopState {
   receivingRecords: ReceivingRecord[];
   inventoryAdjustments: InventoryAdjustment[];
   vendorCostHistory: VendorCostHistory[];
+  returns: Return[];
+  returnLines: ReturnLine[];
+  warrantyPolicies: WarrantyPolicy[];
+  warrantyClaims: WarrantyClaim[];
+  warrantyClaimLines: WarrantyClaimLine[];
   createPurchaseOrder: (vendorId: string) => PurchaseOrder;
   poAddLine: (orderId: string, partId: string, quantity: number) => { success: boolean; error?: string };
   poUpdateLineQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
@@ -161,8 +245,32 @@ interface ShopState {
   poReceive: (lineId: string, quantity: number) => { success: boolean; error?: string };
   poClose: (orderId: string) => { success: boolean; error?: string };
   updatePurchaseOrderNotes: (orderId: string, notes: string | null) => void;
+  updatePurchaseOrderLinks: (orderId: string, links: { sales_order_id: string | null; work_order_id: string | null }) => void;
   getPurchaseOrderLines: (orderId: string) => PurchaseOrderLine[];
   getReceivingRecords: (lineId: string) => ReceivingRecord[];
+
+  // Returns
+  createReturn: (payload: { vendor_id: string; purchase_order_id?: string | null; sales_order_id?: string | null; work_order_id?: string | null }) => Return | null;
+  updateReturn: (id: string, patch: Partial<Return>) => void;
+  setReturnStatus: (id: string, status: ReturnStatus) => void;
+  addReturnLine: (returnId: string, payload: { part_id: string; purchase_order_line_id?: string | null; quantity: number; unit_cost: number | null; condition: ReturnLine['condition']; reason?: string | null }) => ReturnLine | null;
+  updateReturnLine: (lineId: string, patch: Partial<ReturnLine>) => void;
+  removeReturnLine: (lineId: string) => void;
+  getReturnLines: (returnId: string) => ReturnLine[];
+  getReturnsByPurchaseOrder: (poId: string) => Return[];
+
+  // Warranty
+  upsertWarrantyPolicy: (vendorId: string, patch: Partial<WarrantyPolicy>) => WarrantyPolicy;
+  createWarrantyClaim: (payload: { vendor_id: string; policy_id?: string | null; work_order_id?: string | null; sales_order_id?: string | null; purchase_order_id?: string | null }) => WarrantyClaim | null;
+  updateWarrantyClaim: (id: string, patch: Partial<WarrantyClaim>) => void;
+  setWarrantyClaimStatus: (id: string, status: WarrantyClaimStatus) => void;
+  addWarrantyClaimLine: (claimId: string, payload: Partial<WarrantyClaimLine>) => WarrantyClaimLine | null;
+  updateWarrantyClaimLine: (lineId: string, patch: Partial<WarrantyClaimLine>) => void;
+  removeWarrantyClaimLine: (lineId: string) => void;
+  getWarrantyPolicyByVendor: (vendorId: string) => WarrantyPolicy | undefined;
+  getClaimsByVendor: (vendorId: string) => WarrantyClaim[];
+  getClaimsByWorkOrder: (workOrderId: string) => WarrantyClaim[];
+  getWarrantyClaimLines: (claimId: string) => WarrantyClaimLine[];
 
   // PM Schedules
   pmSchedules: UnitPMSchedule[];
@@ -225,18 +333,18 @@ const SAMPLE_CATEGORIES: PartCategory[] = [
 
 // Sample Parts
 const SAMPLE_PARTS: Part[] = [
-  { id: 'part-1', part_number: 'BRK-001', description: 'Heavy Duty Brake Pad Set (Front)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 45.00, selling_price: 89.99, quantity_on_hand: 24, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-2', part_number: 'BRK-002', description: 'Heavy Duty Brake Pad Set (Rear)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 42.00, selling_price: 84.99, quantity_on_hand: 18, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-3', part_number: 'BRK-010', description: 'Brake Rotor - 15\" HD', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 120.00, selling_price: 189.99, quantity_on_hand: 8, core_required: true, core_charge: 35.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-4', part_number: 'ENG-001', description: 'Oil Filter - Heavy Duty', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 8.50, selling_price: 18.99, quantity_on_hand: 50, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-5', part_number: 'ENG-002', description: 'Air Filter - Commercial Truck', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 25.00, selling_price: 49.99, quantity_on_hand: 30, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-6', part_number: 'ENG-015', description: 'Fuel Injector - Diesel', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 180.00, selling_price: 299.99, quantity_on_hand: 6, core_required: true, core_charge: 75.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-7', part_number: 'ELC-001', description: 'Heavy Duty Battery - Group 31', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 145.00, selling_price: 229.99, quantity_on_hand: 12, core_required: true, core_charge: 25.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-8', part_number: 'ELC-010', description: 'Starter Motor - Diesel HD', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 280.00, selling_price: 449.99, quantity_on_hand: 4, core_required: true, core_charge: 85.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-9', part_number: 'ELC-015', description: 'Alternator - 200A HD', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 195.00, selling_price: 329.99, quantity_on_hand: 5, core_required: true, core_charge: 65.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-10', part_number: 'SUS-001', description: 'Shock Absorber - Front HD', vendor_id: 'vendor-1', category_id: 'cat-4', cost: 85.00, selling_price: 149.99, quantity_on_hand: 16, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-11', part_number: 'FLT-001', description: 'Engine Oil 15W-40 (1 Gal)', vendor_id: 'vendor-2', category_id: 'cat-5', cost: 18.00, selling_price: 32.99, quantity_on_hand: 48, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-12', part_number: 'FLT-005', description: 'Coolant - HD Extended Life (1 Gal)', vendor_id: 'vendor-2', category_id: 'cat-5', cost: 22.00, selling_price: 39.99, quantity_on_hand: 36, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-1', part_number: 'BRK-001', description: 'Heavy Duty Brake Pad Set (Front)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 45.00, selling_price: 89.99, quantity_on_hand: 24, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-2', part_number: 'BRK-002', description: 'Heavy Duty Brake Pad Set (Rear)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 42.00, selling_price: 84.99, quantity_on_hand: 18, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-3', part_number: 'BRK-010', description: 'Brake Rotor - 15\" HD', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 120.00, selling_price: 189.99, quantity_on_hand: 8, core_required: true, core_charge: 35.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-4', part_number: 'ENG-001', description: 'Oil Filter - Heavy Duty', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 8.50, selling_price: 18.99, quantity_on_hand: 50, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-5', part_number: 'ENG-002', description: 'Air Filter - Commercial Truck', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 25.00, selling_price: 49.99, quantity_on_hand: 30, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-6', part_number: 'ENG-015', description: 'Fuel Injector - Diesel', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 180.00, selling_price: 299.99, quantity_on_hand: 6, core_required: true, core_charge: 75.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-7', part_number: 'ELC-001', description: 'Heavy Duty Battery - Group 31', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 145.00, selling_price: 229.99, quantity_on_hand: 12, core_required: true, core_charge: 25.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-8', part_number: 'ELC-010', description: 'Starter Motor - Diesel HD', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 280.00, selling_price: 449.99, quantity_on_hand: 4, core_required: true, core_charge: 85.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-9', part_number: 'ELC-015', description: 'Alternator - 200A HD', vendor_id: 'vendor-3', category_id: 'cat-3', cost: 195.00, selling_price: 329.99, quantity_on_hand: 5, core_required: true, core_charge: 65.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-10', part_number: 'SUS-001', description: 'Shock Absorber - Front HD', vendor_id: 'vendor-1', category_id: 'cat-4', cost: 85.00, selling_price: 149.99, quantity_on_hand: 16, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-11', part_number: 'FLT-001', description: 'Engine Oil 15W-40 (1 Gal)', vendor_id: 'vendor-2', category_id: 'cat-5', cost: 18.00, selling_price: 32.99, quantity_on_hand: 48, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-12', part_number: 'FLT-005', description: 'Coolant - HD Extended Life (1 Gal)', vendor_id: 'vendor-2', category_id: 'cat-5', cost: 22.00, selling_price: 39.99, quantity_on_hand: 36, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
 ];
 
 // Sample Customers
@@ -281,6 +389,60 @@ const SAMPLE_TECHNICIANS: Technician[] = [
 export const useShopStore = create<ShopState>()(
   persist(
     (set, get) => {
+      const upsertPlasmaChargeLine = (params: {
+        target: 'WORK_ORDER' | 'SALES_ORDER';
+        orderId: string;
+        plasmaJobId: string;
+        description: string;
+        totalPrice: number;
+      }) => {
+        if (params.target === 'WORK_ORDER') {
+          const existingCharge = get().workOrderChargeLines.find(
+            (cl) =>
+              cl.work_order_id === params.orderId &&
+              cl.source_ref_type === 'PLASMA_JOB' &&
+              cl.source_ref_id === params.plasmaJobId
+          );
+          const payload = {
+            work_order_id: params.orderId,
+            description: params.description,
+            qty: 1,
+            unit_price: params.totalPrice,
+            total_price: params.totalPrice,
+            source_ref_type: 'PLASMA_JOB' as WorkOrderChargeSourceType,
+            source_ref_id: params.plasmaJobId,
+          };
+          if (existingCharge) {
+            get().updateWorkOrderChargeLine(existingCharge.id, payload);
+          } else {
+            get().addWorkOrderChargeLine(payload);
+          }
+          get().recalculateWorkOrderTotals(params.orderId);
+        } else {
+          const existingCharge = get().salesOrderChargeLines.find(
+            (cl) =>
+              cl.sales_order_id === params.orderId &&
+              cl.source_ref_type === 'PLASMA_JOB' &&
+              cl.source_ref_id === params.plasmaJobId
+          );
+          const payload = {
+            sales_order_id: params.orderId,
+            description: params.description,
+            qty: 1,
+            unit_price: params.totalPrice,
+            total_price: params.totalPrice,
+            source_ref_type: 'PLASMA_JOB' as SalesOrderChargeSourceType,
+            source_ref_id: params.plasmaJobId,
+          };
+          if (existingCharge) {
+            get().updateSalesOrderChargeLine(existingCharge.id, payload);
+          } else {
+            get().addSalesOrderChargeLine(payload);
+          }
+          get().recalculateSalesOrderTotals(params.orderId);
+        }
+      };
+
       const createPOsForNegativeInventory = (
         projectedQuantities?: Record<string, number>,
         sourceNote?: string
@@ -522,6 +684,7 @@ export const useShopStore = create<ShopState>()(
           avg_cost: part.avg_cost ?? null,
           model: part.model ?? null,
           serial_number: part.serial_number ?? null,
+          barcode: part.barcode ?? null,
           is_kit: part.is_kit ?? false,
           is_active: true,
           created_at: now(),
@@ -741,6 +904,7 @@ export const useShopStore = create<ShopState>()(
       // Sales Orders
       salesOrders: [],
       salesOrderLines: [],
+      salesOrderChargeLines: [],
 
       createSalesOrder: (customerId, unitId) => {
         const state = get();
@@ -754,6 +918,7 @@ export const useShopStore = create<ShopState>()(
           status: 'ESTIMATE',
           notes: null,
           tax_rate: taxRate,
+          charge_subtotal: 0,
           subtotal: 0,
           core_charges_total: 0,
           tax_amount: 0,
@@ -1058,6 +1223,61 @@ export const useShopStore = create<ShopState>()(
       getSalesOrderLines: (orderId) =>
         get().salesOrderLines.filter((l) => l.sales_order_id === orderId),
 
+      getSalesOrderChargeLines: (orderId) =>
+        get().salesOrderChargeLines.filter((l) => l.sales_order_id === orderId),
+
+      addSalesOrderChargeLine: (line) => {
+        if (line.qty <= 0) return null;
+        const timestamp = now();
+        const chargeLine: SalesOrderChargeLine = {
+          ...line,
+          id: line.id ?? generateId(),
+          total_price: line.qty * line.unit_price,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+        set((state) => ({
+          salesOrderChargeLines: [
+            ...state.salesOrderChargeLines.filter((l) => l.id !== chargeLine.id),
+            chargeLine,
+          ],
+        }));
+        get().recalculateSalesOrderTotals(chargeLine.sales_order_id);
+        return chargeLine;
+      },
+
+      updateSalesOrderChargeLine: (id, patch) => {
+        const state = get();
+        const existing = state.salesOrderChargeLines.find((l) => l.id === id);
+        if (!existing) return;
+        const qty = patch.qty ?? existing.qty;
+        const unit_price = patch.unit_price ?? existing.unit_price;
+        const updated: SalesOrderChargeLine = {
+          ...existing,
+          ...patch,
+          qty,
+          unit_price,
+          total_price: qty * unit_price,
+          updated_at: now(),
+        };
+        set((state) => ({
+          salesOrderChargeLines: state.salesOrderChargeLines.map((l) =>
+            l.id === id ? updated : l
+          ),
+        }));
+        get().recalculateSalesOrderTotals(updated.sales_order_id);
+      },
+
+      removeSalesOrderChargeLine: (id) => {
+        const state = get();
+        const line = state.salesOrderChargeLines.find((l) => l.id === id);
+        if (!line) return;
+        set((state) => ({
+          salesOrderChargeLines: state.salesOrderChargeLines.filter((l) => l.id !== id),
+        }));
+        get().recalculateSalesOrderTotals(line.sales_order_id);
+      },
+
       updateSalesOrderNotes: (orderId, notes) =>
         set((state) => ({
           salesOrders: state.salesOrders.map((o) =>
@@ -1068,6 +1288,7 @@ export const useShopStore = create<ShopState>()(
       recalculateSalesOrderTotals: (orderId: string) => {
         const state = get();
         const lines = state.salesOrderLines.filter((l) => l.sales_order_id === orderId);
+        const chargeLines = state.salesOrderChargeLines.filter((l) => l.sales_order_id === orderId);
         
         // Calculate subtotal (warranty items are $0 to customer, include refund lines)
         const subtotal = lines.reduce((sum, l) => {
@@ -1075,6 +1296,8 @@ export const useShopStore = create<ShopState>()(
           // Refund lines have negative line_total and should be included
           return sum + l.line_total;
         }, 0);
+
+        const charge_subtotal = chargeLines.reduce((sum, l) => sum + l.total_price, 0);
         
         // Calculate core charges (only for non-returned cores, exclude refund lines which are already in subtotal)
         const core_charges_total = lines.reduce((sum, l) => {
@@ -1090,23 +1313,271 @@ export const useShopStore = create<ShopState>()(
         const customer = state.customers.find((c) => c.id === order.customer_id);
         const tax_rate = resolveTaxRateForCustomer(customer, state.settings);
         
-        const taxableAmount = subtotal + core_charges_total;
+        const taxableAmount = subtotal + core_charges_total + charge_subtotal;
         const tax_amount = taxableAmount * (tax_rate / 100);
         const total = taxableAmount + tax_amount;
 
         set((state) => ({
           salesOrders: state.salesOrders.map((o) =>
             o.id === orderId
-              ? { ...o, subtotal, core_charges_total, tax_rate, tax_amount, total, updated_at: now() }
+              ? { ...o, subtotal, core_charges_total, charge_subtotal, tax_rate, tax_amount, total, updated_at: now() }
               : o
           ),
         }));
+      },
+
+      postPlasmaJobToSalesOrder: (plasmaJobId) => {
+        const state = get();
+        const job = state.plasmaJobs.find((j) => j.id === plasmaJobId);
+        if (!job) return { success: false, error: 'Plasma job not found' };
+        if (!job.sales_order_id) return { success: false, error: 'Plasma job is not linked to a sales order' };
+        const order = state.salesOrders.find((o) => o.id === job.sales_order_id);
+        if (!order) return { success: false, error: 'Sales order not found' };
+        if (order.status === 'INVOICED') return { success: false, error: 'Cannot post to invoiced sales order' };
+
+        const calculation = job.calculated_at ? { success: true } : get().recalculatePlasmaJob(plasmaJobId);
+        if (!calculation?.success) return calculation;
+        const updatedLines = get().plasmaJobLines.filter((l) => l.plasma_job_id === plasmaJobId);
+        const totalPrice = updatedLines.reduce((sum, line) => sum + line.sell_price_total, 0);
+        const description = `Plasma Job ${job.id}`;
+        upsertPlasmaChargeLine({
+          target: 'SALES_ORDER',
+          orderId: job.sales_order_id,
+          plasmaJobId,
+          description,
+          totalPrice,
+        });
+        set((state) => ({
+          plasmaJobs: state.plasmaJobs.map((j) =>
+            j.id === plasmaJobId
+              ? { ...j, status: j.status === 'CUT' ? 'CUT' : 'APPROVED', posted_at: now(), updated_at: now() }
+              : j
+          ),
+        }));
+        return { success: true };
+      },
+
+      listPlasmaAttachments: (plasmaJobId) =>
+        get().plasmaAttachments.filter((att) => att.plasma_job_id === plasmaJobId),
+
+      updatePlasmaAttachment: (attachmentId, patch) => {
+        set((state) => ({
+          plasmaAttachments: state.plasmaAttachments.map((att) =>
+            att.id === attachmentId ? { ...att, ...patch, updated_at: now() } : att
+          ),
+        }));
+      },
+
+      addPlasmaAttachment: (plasmaJobId, file, options) => {
+        const allowed = ['dxf', 'pdf', 'png', 'jpg', 'jpeg'];
+        const sizeLimit = 25 * 1024 * 1024;
+        const ext = file.name.split('.').pop()?.toLowerCase() || '';
+        if (!allowed.includes(ext)) {
+          return { success: false, error: 'File type not allowed. Allowed: DXF, PDF, PNG, JPG.' };
+        }
+        if (file.size > sizeLimit) {
+          return { success: false, error: 'File too large. Max 25MB.' };
+        }
+        const kindMap: Record<string, PlasmaJobAttachmentKind> = {
+          dxf: 'DXF',
+          pdf: 'PDF',
+          png: 'IMAGE',
+          jpg: 'IMAGE',
+          jpeg: 'IMAGE',
+        };
+        const attachment: PlasmaJobAttachment = {
+          id: generateId(),
+          plasma_job_id: plasmaJobId,
+          filename: file.name,
+          mime_type: file.type || 'application/octet-stream',
+          size_bytes: file.size,
+          kind: kindMap[ext] ?? 'OTHER',
+          notes: options?.notes ?? null,
+          local_url: URL.createObjectURL(file),
+          created_at: now(),
+          updated_at: now(),
+        };
+        set((state) => ({
+          plasmaAttachments: [...state.plasmaAttachments, attachment],
+        }));
+        return { success: true };
+      },
+
+      removePlasmaAttachment: (attachmentId) => {
+        const att = get().plasmaAttachments.find((a) => a.id === attachmentId);
+        if (att?.local_url) {
+          URL.revokeObjectURL(att.local_url);
+        }
+        set((state) => ({
+          plasmaAttachments: state.plasmaAttachments.filter((a) => a.id !== attachmentId),
+        }));
+      },
+
+      listRemnants: () => get().remnants,
+
+      createRemnant: (payload) => {
+        const timestamp = now();
+        const rem: Remnant = {
+          id: generateId(),
+          label: payload.label,
+          material_type: payload.material_type,
+          thickness: payload.thickness,
+          width: payload.width ?? null,
+          height: payload.height ?? null,
+          notes: payload.notes ?? null,
+          status: payload.status ?? 'AVAILABLE',
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+        set((state) => ({
+          remnants: [...state.remnants, rem],
+        }));
+        return rem;
+      },
+
+      updateRemnant: (id, patch) => {
+        set((state) => ({
+          remnants: state.remnants.map((r) => (r.id === id ? { ...r, ...patch, updated_at: now() } : r)),
+        }));
+      },
+
+      removeRemnant: (id) => {
+        set((state) => ({
+          remnants: state.remnants.filter((r) => r.id !== id),
+        }));
+      },
+
+      consumeRemnant: (id) => {
+        set((state) => ({
+          remnants: state.remnants.map((r) => (r.id === id ? { ...r, status: 'CONSUMED', updated_at: now() } : r)),
+        }));
+      },
+
+      listPlasmaTemplates: () => get().plasmaTemplates,
+
+      getPlasmaTemplate: (templateId) => {
+        const template = get().plasmaTemplates.find((t) => t.id === templateId);
+        if (!template) return null;
+        const lines = get().plasmaTemplateLines.filter((l) => l.plasma_template_id === templateId);
+        return { template, lines };
+      },
+
+      createPlasmaTemplate: (payload) => {
+        const timestamp = now();
+        const template: PlasmaTemplate = {
+          id: generateId(),
+          name: payload.name,
+          description: payload.description ?? null,
+          default_material_type: payload.default_material_type ?? null,
+          default_thickness: payload.default_thickness ?? null,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+        set((state) => ({
+          plasmaTemplates: [...state.plasmaTemplates, template],
+        }));
+        return template;
+      },
+
+      updatePlasmaTemplate: (templateId, patch) => {
+        set((state) => ({
+          plasmaTemplates: state.plasmaTemplates.map((t) =>
+            t.id === templateId ? { ...t, ...patch, updated_at: now() } : t
+          ),
+        }));
+      },
+
+      removePlasmaTemplate: (templateId) => {
+        set((state) => ({
+          plasmaTemplates: state.plasmaTemplates.filter((t) => t.id !== templateId),
+          plasmaTemplateLines: state.plasmaTemplateLines.filter((l) => l.plasma_template_id !== templateId),
+        }));
+      },
+
+      addPlasmaTemplateLine: (templateId, line) => {
+        const timestamp = now();
+        const newLine: PlasmaTemplateLine = {
+          id: generateId(),
+          plasma_template_id: templateId,
+          qty_default: line.qty_default,
+          cut_length_default: line.cut_length_default ?? null,
+          pierce_count_default: line.pierce_count_default ?? null,
+          notes: line.notes ?? null,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+        set((state) => ({
+          plasmaTemplateLines: [...state.plasmaTemplateLines, newLine],
+        }));
+        return newLine;
+      },
+
+      updatePlasmaTemplateLine: (lineId, patch) => {
+        set((state) => ({
+          plasmaTemplateLines: state.plasmaTemplateLines.map((l) =>
+            l.id === lineId ? { ...l, ...patch, updated_at: now() } : l
+          ),
+        }));
+      },
+
+      removePlasmaTemplateLine: (lineId) => {
+        set((state) => ({
+          plasmaTemplateLines: state.plasmaTemplateLines.filter((l) => l.id !== lineId),
+        }));
+      },
+
+      applyPlasmaTemplateToJob: (templateId, plasmaJobId) => {
+        const template = get().plasmaTemplates.find((t) => t.id === templateId);
+        if (!template) return { success: false, error: 'Template not found' };
+        const lines = get().plasmaTemplateLines.filter((l) => l.plasma_template_id === templateId);
+        if (lines.length === 0) return { success: false, error: 'Template has no lines' };
+        const timestamp = now();
+        set((state) => ({
+          plasmaJobLines: [
+            ...state.plasmaJobLines,
+            ...lines.map<PlasmaJobLine>((l) => ({
+              id: generateId(),
+              plasma_job_id: plasmaJobId,
+              qty: l.qty_default,
+              material_type: template.default_material_type ?? null,
+              thickness: template.default_thickness ?? null,
+              cut_length: l.cut_length_default ?? null,
+              pierce_count: l.pierce_count_default ?? null,
+              setup_minutes: null,
+              machine_minutes: null,
+              derived_machine_minutes: null,
+              overrides: {},
+              material_cost: 0,
+              consumables_cost: 0,
+              derived_consumables_cost: null,
+              labor_cost: 0,
+              overhead_cost: 0,
+              sell_price_each: 0,
+              sell_price_total: 0,
+              calc_version: 0,
+              override_machine_minutes: false,
+              override_consumables_cost: false,
+            })),
+          ],
+          plasmaJobs: state.plasmaJobs.map((j) =>
+            j.id === plasmaJobId ? { ...j, updated_at: timestamp } : j
+          ),
+        }));
+        get().recalculatePlasmaJob(plasmaJobId);
+        return { success: true };
       },
 
       // Work Orders
       workOrders: [],
       workOrderPartLines: [],
       workOrderLaborLines: [],
+      workOrderChargeLines: [],
+      plasmaJobs: [],
+      plasmaJobLines: [],
+      plasmaAttachments: [],
+      remnants: [],
+      plasmaTemplates: [],
+      plasmaTemplateLines: [],
 
       createWorkOrder: (customerId, unitId) => {
         const state = get();
@@ -1117,11 +1588,12 @@ export const useShopStore = create<ShopState>()(
           order_number: generateOrderNumber('WO', state.workOrders.length),
           customer_id: customerId,
           unit_id: unitId,
-          status: 'OPEN',
+          status: 'ESTIMATE',
           notes: null,
           tax_rate: taxRate,
           parts_subtotal: 0,
           labor_subtotal: 0,
+          charge_subtotal: 0,
           core_charges_total: 0,
           subtotal: 0,
           tax_amount: 0,
@@ -1501,6 +1973,7 @@ export const useShopStore = create<ShopState>()(
         const order = state.workOrders.find((o) => o.id === orderId);
         if (!order) return { success: false, error: 'Order not found' };
         if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
+        if (order.status === 'ESTIMATE') return { success: false, error: 'Estimate must be converted before starting work' };
         if (order.status === 'IN_PROGRESS' && status === 'IN_PROGRESS') {
           return { success: false, error: 'Order already in progress' };
         }
@@ -1518,6 +1991,7 @@ export const useShopStore = create<ShopState>()(
         const order = state.workOrders.find((o) => o.id === orderId);
         if (!order) return { success: false, error: 'Order not found' };
         if (order.status === 'INVOICED') return { success: false, error: 'Order already invoiced' };
+        if (order.status === 'ESTIMATE') return { success: false, error: 'Order must be open before invoicing' };
 
         // Clock out all active technicians on this order
         const activeEntries = state.timeEntries.filter(
@@ -1548,6 +2022,61 @@ export const useShopStore = create<ShopState>()(
       getWorkOrderLaborLines: (orderId) =>
         get().workOrderLaborLines.filter((l) => l.work_order_id === orderId),
 
+      getWorkOrderChargeLines: (orderId) =>
+        get().workOrderChargeLines.filter((l) => l.work_order_id === orderId),
+
+      addWorkOrderChargeLine: (line) => {
+        if (line.qty <= 0) return null;
+        const timestamp = now();
+        const chargeLine: WorkOrderChargeLine = {
+          ...line,
+          id: line.id ?? generateId(),
+          total_price: line.qty * line.unit_price,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+        set((state) => ({
+          workOrderChargeLines: [
+            ...state.workOrderChargeLines.filter((l) => l.id !== chargeLine.id),
+            chargeLine,
+          ],
+        }));
+        get().recalculateWorkOrderTotals(chargeLine.work_order_id);
+        return chargeLine;
+      },
+
+      updateWorkOrderChargeLine: (id, patch) => {
+        const state = get();
+        const existing = state.workOrderChargeLines.find((l) => l.id === id);
+        if (!existing) return;
+        const qty = patch.qty ?? existing.qty;
+        const unit_price = patch.unit_price ?? existing.unit_price;
+        const updated: WorkOrderChargeLine = {
+          ...existing,
+          ...patch,
+          qty,
+          unit_price,
+          total_price: qty * unit_price,
+          updated_at: now(),
+        };
+        set((state) => ({
+          workOrderChargeLines: state.workOrderChargeLines.map((l) =>
+            l.id === id ? updated : l
+          ),
+        }));
+        get().recalculateWorkOrderTotals(updated.work_order_id);
+      },
+
+      removeWorkOrderChargeLine: (id) => {
+        const state = get();
+        const line = state.workOrderChargeLines.find((l) => l.id === id);
+        if (!line) return;
+        set((state) => ({
+          workOrderChargeLines: state.workOrderChargeLines.filter((l) => l.id !== id),
+        }));
+        get().recalculateWorkOrderTotals(line.work_order_id);
+      },
+
       updateWorkOrderNotes: (orderId, notes) =>
         set((state) => ({
           workOrders: state.workOrders.map((o) =>
@@ -1555,11 +2084,26 @@ export const useShopStore = create<ShopState>()(
           ),
         })),
 
+      woConvertToOpen: (orderId) => {
+        const state = get();
+        const order = state.workOrders.find((o) => o.id === orderId);
+        if (!order) return { success: false, error: 'Order not found' };
+        if (order.status === 'INVOICED') return { success: false, error: 'Cannot convert invoiced order' };
+        if (order.status === 'OPEN' || order.status === 'IN_PROGRESS') return { success: true };
+        set((state) => ({
+          workOrders: state.workOrders.map((o) =>
+            o.id === orderId ? { ...o, status: 'OPEN', updated_at: now() } : o
+          ),
+        }));
+        return { success: true };
+      },
+
       recalculateWorkOrderTotals: (orderId: string) => {
         const state = get();
         const partLines = state.workOrderPartLines.filter((l) => l.work_order_id === orderId);
         const laborLines = state.workOrderLaborLines.filter((l) => l.work_order_id === orderId);
         const timeEntries = state.timeEntries.filter((te) => te.work_order_id === orderId);
+        const chargeLines = state.workOrderChargeLines.filter((l) => l.work_order_id === orderId);
         
         // Parts: warranty items are $0 to customer, include refund lines (they have negative line_total)
         const parts_subtotal = partLines.reduce((sum, l) => {
@@ -1578,6 +2122,8 @@ export const useShopStore = create<ShopState>()(
         
         // Labor: warranty items are $0 to customer
         const labor_subtotal = laborLines.reduce((sum, l) => sum + (l.is_warranty ? 0 : l.line_total), 0);
+
+        const charge_subtotal = chargeLines.reduce((sum, l) => sum + l.total_price, 0);
         
         // Calculate labor cost (internal) from time entries
         let labor_cost = 0;
@@ -1589,7 +2135,7 @@ export const useShopStore = create<ShopState>()(
           }
         }
         
-        const subtotal = parts_subtotal + labor_subtotal + core_charges_total;
+        const subtotal = parts_subtotal + labor_subtotal + charge_subtotal + core_charges_total;
         
         const order = state.workOrders.find((o) => o.id === orderId);
         if (!order) return;
@@ -1602,10 +2148,238 @@ export const useShopStore = create<ShopState>()(
         set((state) => ({
           workOrders: state.workOrders.map((o) =>
             o.id === orderId
-              ? { ...o, parts_subtotal, labor_subtotal, core_charges_total, subtotal, tax_rate, tax_amount, total, labor_cost, updated_at: now() }
+              ? { ...o, parts_subtotal, labor_subtotal, charge_subtotal, core_charges_total, subtotal, tax_rate, tax_amount, total, labor_cost, updated_at: now() }
               : o
           ),
         }));
+      },
+
+      createPlasmaJobForWorkOrder: (workOrderId) => {
+        const state = get();
+        const existing = state.plasmaJobs.find((j) => j.work_order_id === workOrderId);
+        if (existing) return existing;
+        const timestamp = now();
+        const job: PlasmaJob = {
+          id: generateId(),
+          source_type: 'WORK_ORDER',
+          work_order_id: workOrderId,
+          sales_order_id: null,
+          status: 'DRAFT',
+          calculated_at: null,
+          posted_at: null,
+          notes: null,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+        set((state) => ({
+          plasmaJobs: [...state.plasmaJobs, job],
+        }));
+        return job;
+      },
+
+      getPlasmaJobByWorkOrder: (workOrderId) => {
+        const job = get().plasmaJobs.find((j) => j.work_order_id === workOrderId);
+        if (!job) return null;
+        const lines = get().plasmaJobLines.filter((l) => l.plasma_job_id === job.id);
+        return { job, lines };
+      },
+
+      createStandalonePlasmaJob: (payload) => {
+        const timestamp = now();
+        const job: PlasmaJob = {
+          id: generateId(),
+          source_type: 'STANDALONE',
+          work_order_id: null,
+          sales_order_id: payload?.sales_order_id ?? null,
+          status: 'DRAFT',
+          calculated_at: null,
+          posted_at: null,
+          notes: null,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+        set((state) => ({
+          plasmaJobs: [...state.plasmaJobs, job],
+        }));
+        return job;
+      },
+
+      getPlasmaJob: (plasmaJobId) => {
+        const job = get().plasmaJobs.find((j) => j.id === plasmaJobId);
+        if (!job) return null;
+        const lines = get().plasmaJobLines.filter((l) => l.plasma_job_id === job.id);
+        return { job, lines };
+      },
+
+      getPlasmaPrintView: (plasmaJobId) => {
+        const job = get().plasmaJobs.find((j) => j.id === plasmaJobId);
+        if (!job) return null;
+        const lines = get().plasmaJobLines.filter((l) => l.plasma_job_id === plasmaJobId);
+        const workOrder = job.work_order_id ? get().workOrders.find((wo) => wo.id === job.work_order_id) : null;
+        const salesOrder = job.sales_order_id ? get().salesOrders.find((so) => so.id === job.sales_order_id) : null;
+        const customerId = workOrder?.customer_id ?? salesOrder?.customer_id;
+        const customerName = customerId ? get().customers.find((c) => c.id === customerId)?.company_name ?? null : null;
+        const metrics = computePlasmaJobMetrics(lines);
+        const attachments = get().plasmaAttachments.filter((att) => att.plasma_job_id === plasmaJobId);
+        return { job, lines, workOrder, salesOrder, customerName, metrics, attachments };
+      },
+
+      listStandalonePlasmaJobs: () => get().plasmaJobs.filter((j) => j.source_type === 'STANDALONE'),
+
+      linkPlasmaJobToSalesOrder: (plasmaJobId, salesOrderId) => {
+        const state = get();
+        const job = state.plasmaJobs.find((j) => j.id === plasmaJobId);
+        if (!job) return null;
+        const orderExists = state.salesOrders.some((o) => o.id === salesOrderId);
+        if (!orderExists) return null;
+        const updated: PlasmaJob = {
+          ...job,
+          source_type: job.source_type === 'WORK_ORDER' ? job.source_type : 'STANDALONE',
+          sales_order_id: salesOrderId,
+          updated_at: now(),
+        };
+        set((state) => ({
+          plasmaJobs: state.plasmaJobs.map((j) => (j.id === plasmaJobId ? updated : j)),
+        }));
+        return updated;
+      },
+
+      updatePlasmaJob: (id, patch) => {
+        const state = get();
+        const existing = state.plasmaJobs.find((j) => j.id === id);
+        if (!existing) return null;
+        if (existing.status !== 'DRAFT' && existing.status !== 'QUOTED') {
+          return null;
+        }
+        const updated: PlasmaJob = { ...existing, ...patch, updated_at: now() };
+        set((state) => ({
+          plasmaJobs: state.plasmaJobs.map((j) => (j.id === id ? updated : j)),
+        }));
+        return updated;
+      },
+
+      upsertPlasmaJobLine: (jobId, line) => {
+        const state = get();
+        const job = state.plasmaJobs.find((j) => j.id === jobId);
+        if (!job) return null;
+        if (job.status !== 'DRAFT' && job.status !== 'QUOTED') return null;
+        if (job.work_order_id) {
+          const wo = state.workOrders.find((o) => o.id === job.work_order_id);
+          if (wo?.status === 'INVOICED') return null;
+        }
+        if (job.sales_order_id) {
+          const so = state.salesOrders.find((o) => o.id === job.sales_order_id);
+          if (so?.status === 'INVOICED') return null;
+        }
+        const existing = line.id ? state.plasmaJobLines.find((l) => l.id === line.id) : undefined;
+        const baseLine: PlasmaJobLine = existing
+          ? { ...existing, ...line, plasma_job_id: jobId }
+          : {
+              id: line.id ?? generateId(),
+              plasma_job_id: jobId,
+              qty: line.qty ?? 1,
+              material_type: line.material_type ?? null,
+              thickness: line.thickness ?? null,
+              cut_length: line.cut_length ?? null,
+              pierce_count: line.pierce_count ?? null,
+              setup_minutes: line.setup_minutes ?? null,
+              machine_minutes: line.machine_minutes ?? null,
+              overrides: line.overrides,
+              material_cost: 0,
+              consumables_cost: 0,
+              labor_cost: 0,
+              overhead_cost: 0,
+              sell_price_each: 0,
+              sell_price_total: 0,
+              calc_version: 0,
+            };
+        set((state) => ({
+          plasmaJobLines: existing
+            ? state.plasmaJobLines.map((l) => (l.id === baseLine.id ? baseLine : l))
+            : [...state.plasmaJobLines, baseLine],
+        }));
+        get().recalculatePlasmaJob(jobId);
+        return get().plasmaJobLines.find((l) => l.id === baseLine.id) ?? null;
+      },
+
+      deletePlasmaJobLine: (lineId) => {
+        const state = get();
+        const line = state.plasmaJobLines.find((l) => l.id === lineId);
+        if (!line) return;
+        const job = state.plasmaJobs.find((j) => j.id === line.plasma_job_id);
+        if (!job) return;
+        if (job.status !== 'DRAFT' && job.status !== 'QUOTED') return;
+        if (job.work_order_id) {
+          const wo = state.workOrders.find((o) => o.id === job.work_order_id);
+          if (wo?.status === 'INVOICED') return;
+        }
+        if (job.sales_order_id) {
+          const so = state.salesOrders.find((o) => o.id === job.sales_order_id);
+          if (so?.status === 'INVOICED') return;
+        }
+        set((state) => ({
+          plasmaJobLines: state.plasmaJobLines.filter((l) => l.id !== lineId),
+        }));
+        get().recalculatePlasmaJob(line.plasma_job_id);
+      },
+
+      recalculatePlasmaJob: (jobId, settingsOverride) => {
+        const state = get();
+        const job = state.plasmaJobs.find((j) => j.id === jobId);
+        if (!job) return { success: false, error: 'Plasma job not found' };
+        if (job.work_order_id) {
+          const wo = state.workOrders.find((o) => o.id === job.work_order_id);
+          if (wo?.status === 'INVOICED') return { success: false, error: 'Work order is invoiced' };
+        }
+        if (job.sales_order_id) {
+          const so = state.salesOrders.find((o) => o.id === job.sales_order_id);
+          if (so?.status === 'INVOICED') return { success: false, error: 'Sales order is invoiced' };
+        }
+        const lines = state.plasmaJobLines.filter((l) => l.plasma_job_id === jobId);
+        const { lines: pricedLines, totals, warnings } = calculatePlasmaJob(job, lines, {
+          ...plasmaPricingDefaults,
+          ...settingsOverride,
+        });
+        set((state) => ({
+          plasmaJobs: state.plasmaJobs.map((j) =>
+            j.id === jobId ? { ...j, calculated_at: now(), updated_at: now() } : j
+          ),
+          plasmaJobLines: state.plasmaJobLines.map((line) => {
+            const updated = pricedLines.find((l) => l.id === line.id);
+            return updated && line.plasma_job_id === jobId ? updated : line;
+          }),
+        }));
+        return { success: true, totals, warnings: warnings?.map((w) => w.message) };
+      },
+
+      postPlasmaJobToWorkOrder: (plasmaJobId) => {
+        const state = get();
+        const job = state.plasmaJobs.find((j) => j.id === plasmaJobId);
+        if (!job) return { success: false, error: 'Plasma job not found' };
+        if (!job.work_order_id) return { success: false, error: 'Plasma job is not linked to a work order' };
+        const order = state.workOrders.find((o) => o.id === job.work_order_id);
+        if (order?.status === 'INVOICED') return { success: false, error: 'Work order is invoiced' };
+
+        const calculation = job.calculated_at ? { success: true } : get().recalculatePlasmaJob(plasmaJobId);
+        if (!calculation?.success) return calculation;
+        const updatedLines = get().plasmaJobLines.filter((l) => l.plasma_job_id === plasmaJobId);
+        const totalPrice = updatedLines.reduce((sum, line) => sum + line.sell_price_total, 0);
+        const description = `Plasma Job ${job.id}`;
+        upsertPlasmaChargeLine({
+          target: 'WORK_ORDER',
+          orderId: job.work_order_id,
+          plasmaJobId,
+          description,
+          totalPrice,
+        });
+        set((state) => ({
+          plasmaJobs: state.plasmaJobs.map((j) =>
+            j.id === plasmaJobId
+              ? { ...j, status: j.status === 'CUT' ? 'CUT' : 'APPROVED', posted_at: now(), updated_at: now() }
+              : j
+          ),
+        }));
+        return { success: true };
       },
 
       // Purchase Orders
@@ -1615,6 +2389,116 @@ export const useShopStore = create<ShopState>()(
       inventoryAdjustments: [],
       vendorCostHistory: [],
 
+      // Returns
+      returns: [
+        {
+          id: 'return-1',
+          vendor_id: 'vendor-1',
+          purchase_order_id: null,
+          sales_order_id: null,
+          work_order_id: null,
+          status: 'DRAFT',
+          reason: 'Damaged packaging on arrival',
+          rma_number: null,
+          carrier: null,
+          tracking_number: null,
+          shipped_at: null,
+          received_at: null,
+          credited_at: null,
+          credit_amount: null,
+          credit_memo_number: null,
+          credit_memo_amount: null,
+          credit_memo_date: null,
+          reimbursed_amount: null,
+          reimbursed_date: null,
+          reimbursement_reference: null,
+          approved_amount: null,
+          notes: null,
+          created_at: now(),
+          updated_at: now(),
+          is_active: true,
+        },
+      ],
+      returnLines: [
+        {
+          id: 'return-line-1',
+          return_id: 'return-1',
+          part_id: 'part-1',
+          purchase_order_line_id: null,
+          quantity: 1,
+          unit_cost: 45,
+          condition: 'DAMAGED',
+          reason: 'Bent during transit',
+          created_at: now(),
+          updated_at: now(),
+          is_active: true,
+        },
+      ],
+
+      // Warranty
+      warrantyPolicies: [
+        {
+          id: 'policy-1',
+          vendor_id: 'vendor-1',
+          default_labor_rate: 100,
+          labor_coverage_percent: 50,
+          parts_coverage_percent: 100,
+          days_covered: 180,
+          miles_covered: null,
+          requires_rma: true,
+          notes: 'Standard policy',
+          is_active: true,
+          created_at: now(),
+          updated_at: now(),
+        },
+      ],
+      warrantyClaims: [
+        {
+          id: 'claim-1',
+          vendor_id: 'vendor-1',
+          policy_id: 'policy-1',
+          work_order_id: null,
+          sales_order_id: null,
+          purchase_order_id: null,
+          status: 'OPEN',
+          claim_number: 'CLM-001',
+          rma_number: null,
+          submitted_at: null,
+          decided_at: null,
+          paid_at: null,
+          amount_requested: 150,
+          approved_amount: null,
+          credit_memo_number: null,
+          credit_memo_amount: null,
+          credit_memo_date: null,
+          reimbursed_amount: null,
+          reimbursed_date: null,
+          reimbursement_reference: null,
+          reason: 'Defective part',
+          notes: null,
+          is_active: true,
+          created_at: now(),
+          updated_at: now(),
+        },
+      ],
+      warrantyClaimLines: [
+        {
+          id: 'claim-line-1',
+          claim_id: 'claim-1',
+          part_id: 'part-1',
+          labor_line_id: null,
+          description: 'Return defective part',
+          quantity: 1,
+          unit_cost: 150,
+          labor_hours: null,
+          labor_rate: null,
+          amount: 150,
+          is_active: true,
+          created_at: now(),
+          updated_at: now(),
+        },
+      ],
+
       createPurchaseOrder: (vendorId) => {
         const state = get();
         const newOrder: PurchaseOrder = {
@@ -1622,6 +2506,8 @@ export const useShopStore = create<ShopState>()(
           po_number: generateOrderNumber('PO', state.purchaseOrders.length),
           vendor_id: vendorId,
           status: 'OPEN',
+          sales_order_id: null,
+          work_order_id: null,
           notes: null,
           created_at: now(),
           updated_at: now(),
@@ -1820,11 +2706,247 @@ export const useShopStore = create<ShopState>()(
           ),
         })),
 
+      updatePurchaseOrderLinks: (orderId, links) =>
+        set((state) => ({
+          purchaseOrders: state.purchaseOrders.map((o) =>
+            o.id === orderId
+              ? { ...o, sales_order_id: links.sales_order_id, work_order_id: links.work_order_id, updated_at: now() }
+              : o
+          ),
+        })),
+
       getPurchaseOrderLines: (orderId) =>
         get().purchaseOrderLines.filter((l) => l.purchase_order_id === orderId),
 
       getReceivingRecords: (lineId) =>
         get().receivingRecords.filter((r) => r.purchase_order_line_id === lineId),
+
+      // Returns
+      createReturn: (payload) => {
+        if (!payload.vendor_id) return null;
+        const timestamp = now();
+        const newReturn: Return = {
+          id: generateId(),
+          vendor_id: payload.vendor_id,
+          purchase_order_id: payload.purchase_order_id ?? null,
+          sales_order_id: payload.sales_order_id ?? null,
+          work_order_id: payload.work_order_id ?? null,
+          status: 'DRAFT',
+          reason: null,
+          rma_number: null,
+          carrier: null,
+          tracking_number: null,
+          shipped_at: null,
+          received_at: null,
+          credited_at: null,
+          credit_amount: null,
+          notes: null,
+          created_at: timestamp,
+          updated_at: timestamp,
+          is_active: true,
+        };
+        set((state) => ({
+          returns: [...state.returns, newReturn],
+        }));
+        return newReturn;
+      },
+
+      updateReturn: (id, patch) =>
+        set((state) => ({
+          returns: state.returns.map((ret) =>
+            ret.id === id ? { ...ret, ...patch, updated_at: now() } : ret
+          ),
+        })),
+
+      setReturnStatus: (id, status) =>
+        set((state) => ({
+          returns: state.returns.map((ret) =>
+            ret.id === id ? { ...ret, status, updated_at: now() } : ret
+          ),
+        })),
+
+      addReturnLine: (returnId, payload) => {
+        if (payload.quantity <= 0) return null;
+        const timestamp = now();
+        const newLine: ReturnLine = {
+          id: generateId(),
+          return_id: returnId,
+          part_id: payload.part_id,
+          purchase_order_line_id: payload.purchase_order_line_id ?? null,
+          quantity: payload.quantity,
+          unit_cost: payload.unit_cost ?? null,
+          condition: payload.condition,
+          reason: payload.reason ?? null,
+          created_at: timestamp,
+          updated_at: timestamp,
+          is_active: true,
+        };
+        set((state) => ({
+          returnLines: [...state.returnLines, newLine],
+        }));
+        return newLine;
+      },
+
+      updateReturnLine: (lineId, patch) =>
+        set((state) => ({
+          returnLines: state.returnLines.map((line) =>
+            line.id === lineId ? { ...line, ...patch, updated_at: now() } : line
+          ),
+        })),
+
+      removeReturnLine: (lineId) =>
+        set((state) => ({
+          returnLines: state.returnLines.map((line) =>
+            line.id === lineId ? { ...line, is_active: false, updated_at: now() } : line
+          ),
+        })),
+
+      getReturnLines: (returnId) =>
+        get().returnLines.filter((line) => line.return_id === returnId && line.is_active),
+
+      getReturnsByPurchaseOrder: (poId) =>
+        get().returns.filter((ret) => ret.purchase_order_id === poId && ret.is_active),
+
+      // Warranty
+      upsertWarrantyPolicy: (vendorId, patch) => {
+        if (!vendorId) throw new Error('vendor_id required');
+        const state = get();
+        const existing = state.warrantyPolicies.find((p) => p.vendor_id === vendorId && p.is_active);
+        const timestamp = now();
+        if (existing) {
+          const updated: WarrantyPolicy = {
+            ...existing,
+            ...patch,
+            vendor_id: vendorId,
+            updated_at: timestamp,
+          };
+          set((state) => ({
+            warrantyPolicies: state.warrantyPolicies.map((p) => (p.id === existing.id ? updated : p)),
+          }));
+          return updated;
+        }
+        const newPolicy: WarrantyPolicy = {
+          id: generateId(),
+          vendor_id: vendorId,
+          default_labor_rate: patch.default_labor_rate ?? null,
+          labor_coverage_percent: patch.labor_coverage_percent ?? null,
+          parts_coverage_percent: patch.parts_coverage_percent ?? null,
+          days_covered: patch.days_covered ?? null,
+          miles_covered: patch.miles_covered ?? null,
+          requires_rma: patch.requires_rma ?? false,
+          notes: patch.notes ?? null,
+          is_active: true,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+        set((state) => ({
+          warrantyPolicies: [...state.warrantyPolicies, newPolicy],
+        }));
+        return newPolicy;
+      },
+
+      createWarrantyClaim: (payload) => {
+        if (!payload.vendor_id) return null;
+        const timestamp = now();
+        const newClaim: WarrantyClaim = {
+          id: generateId(),
+          vendor_id: payload.vendor_id,
+          policy_id: payload.policy_id ?? null,
+          work_order_id: payload.work_order_id ?? null,
+          sales_order_id: payload.sales_order_id ?? null,
+          purchase_order_id: payload.purchase_order_id ?? null,
+          status: 'OPEN',
+          claim_number: null,
+          rma_number: null,
+          submitted_at: null,
+          decided_at: null,
+          paid_at: null,
+          amount_requested: null,
+          approved_amount: null,
+          reason: null,
+          notes: null,
+          is_active: true,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+        set((state) => ({
+          warrantyClaims: [...state.warrantyClaims, newClaim],
+        }));
+        return newClaim;
+      },
+
+      updateWarrantyClaim: (id, patch) =>
+        set((state) => ({
+          warrantyClaims: state.warrantyClaims.map((c) =>
+            c.id === id ? { ...c, ...patch, updated_at: now() } : c
+          ),
+        })),
+
+      setWarrantyClaimStatus: (id, status) => {
+        const timestamp = now();
+        set((state) => ({
+          warrantyClaims: state.warrantyClaims.map((c) => {
+            if (c.id !== id) return c;
+            const updates: Partial<WarrantyClaim> = { status, updated_at: timestamp };
+            if (status === 'SUBMITTED') updates.submitted_at = timestamp;
+            if (status === 'APPROVED' || status === 'DENIED') updates.decided_at = timestamp;
+            if (status === 'PAID') updates.paid_at = timestamp;
+            if (status === 'CLOSED') updates.decided_at = c.decided_at ?? timestamp;
+            return { ...c, ...updates };
+          }),
+        }));
+      },
+
+      addWarrantyClaimLine: (claimId, payload) => {
+        const claim = get().warrantyClaims.find((c) => c.id === claimId);
+        if (!claim) return null;
+        const timestamp = now();
+        const newLine: WarrantyClaimLine = {
+          id: generateId(),
+          claim_id: claimId,
+          part_id: payload.part_id ?? null,
+          labor_line_id: payload.labor_line_id ?? null,
+          description: payload.description ?? null,
+          quantity: payload.quantity ?? null,
+          unit_cost: payload.unit_cost ?? null,
+          labor_hours: payload.labor_hours ?? null,
+          labor_rate: payload.labor_rate ?? null,
+          amount: payload.amount ?? null,
+          is_active: true,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+        set((state) => ({
+          warrantyClaimLines: [...state.warrantyClaimLines, newLine],
+        }));
+        return newLine;
+      },
+
+      updateWarrantyClaimLine: (lineId, patch) =>
+        set((state) => ({
+          warrantyClaimLines: state.warrantyClaimLines.map((line) =>
+            line.id === lineId ? { ...line, ...patch, updated_at: now() } : line
+          ),
+        })),
+
+      removeWarrantyClaimLine: (lineId) =>
+        set((state) => ({
+          warrantyClaimLines: state.warrantyClaimLines.map((line) =>
+            line.id === lineId ? { ...line, is_active: false, updated_at: now() } : line
+          ),
+        })),
+
+      getWarrantyPolicyByVendor: (vendorId) =>
+        get().warrantyPolicies.find((p) => p.vendor_id === vendorId && p.is_active),
+
+      getClaimsByVendor: (vendorId) =>
+        get().warrantyClaims.filter((c) => c.vendor_id === vendorId && c.is_active),
+
+      getClaimsByWorkOrder: (workOrderId) =>
+        get().warrantyClaims.filter((c) => c.work_order_id === workOrderId && c.is_active),
+
+      getWarrantyClaimLines: (claimId) =>
+        get().warrantyClaimLines.filter((l) => l.claim_id === claimId && l.is_active),
 
       // Cycle Counts
       cycleCountSessions: [],
