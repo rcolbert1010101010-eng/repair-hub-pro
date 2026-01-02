@@ -118,6 +118,7 @@ export default function Scheduling() {
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<'DAY' | 'WEEK'>('DAY');
   const [technicianFilter, setTechnicianFilter] = useState<'ALL' | 'UNASSIGNED' | string>('ALL');
+  const [weekLayout, setWeekLayout] = useState<'LANES' | 'CALENDAR'>('LANES');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formState, setFormState] = useState<FormState>(defaultFormState);
@@ -365,6 +366,197 @@ export default function Scheduling() {
     [scheduleItems, startDate]
   );
 
+  const weekLaneItems = useMemo(
+    () => scheduleItems.filter((item) => weekDayRange.some((day) => sameDay(item.start_at, day))),
+    [scheduleItems, weekDayRange]
+  );
+
+  const renderLaneGrid = (laneSource: ScheduleItem[], showHeatmap: boolean) => (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      {(['unassigned', ...technicians.map((t) => t.id)] as string[])
+        .filter((id) => {
+          if (technicianFilter === 'ALL') return true;
+          if (technicianFilter === 'UNASSIGNED') return id === 'unassigned';
+          return id === technicianFilter;
+        })
+        .map((techId) => {
+          const tech = technicianMap.get(techId) ?? null;
+          const laneItems = laneSource.filter((item) =>
+            techId === 'unassigned' ? !item.technician_id : item.technician_id === techId
+          );
+          const loadMinutes = laneItems.reduce((sum, item) => sum + item.duration_minutes, 0);
+          const overCap = loadMinutes > DAILY_CAPACITY_MINUTES;
+          const loadHours = (loadMinutes / 60).toFixed(1);
+
+          return (
+            <Card key={techId} className="h-full">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-muted-foreground" />
+                    <CardTitle className="text-base">
+                      {techId === 'unassigned' ? 'Unassigned' : tech?.name || 'Technician'}
+                    </CardTitle>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant="outline" className={cn('px-2 py-0.5', overCap ? 'border-destructive text-destructive' : '')}>
+                      Load: {loadHours}h
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => handleOpenNew(techId === 'unassigned' ? null : techId)}
+                      title="Add schedule item"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                    {overCap && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <AlertTriangle className="w-3 h-3 text-destructive" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="font-medium text-destructive">Over capacity</p>
+                          <p className="text-xs text-muted-foreground">Daily capacity is 8h. Adjust schedule.</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
+                </div>
+                {showHeatmap && (
+                  <div className="mt-2 flex items-center gap-1">
+                    {(techWeekLoads.get(techId) ?? Array(7).fill(0)).map((minutes, idx) => {
+                      const percent = Math.min(200, Math.round((minutes / DAILY_CAPACITY_MINUTES) * 100));
+                      const day = weekDayRange[idx];
+                      return (
+                        <Tooltip key={`${techId}-${day.toISOString()}`}>
+                          <TooltipTrigger asChild>
+                            <div
+                              className={cn('h-3 w-6 rounded', getLoadTierClass(percent))}
+                            />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="text-xs font-semibold">
+                              {day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {minutes} min / {DAILY_CAPACITY_MINUTES} min ({percent}%)
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {laneItems.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No scheduled work.</p>
+                )}
+                {laneItems.map((item) => {
+                  const conflicts = conflictDetailsMap.get(item.id) ?? [];
+                  const hasConflict = conflicts.length > 0;
+                  const conflictSummary = conflicts[0] ? formatConflict(conflicts[0]) : null;
+                  return (
+                    <Tooltip key={item.id}>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(item)}
+                          className={cn(
+                            'w-full rounded-lg border p-3 text-left transition hover:border-primary hover:bg-accent',
+                            hasConflict ? 'border-destructive/50 bg-destructive/10 ring-1 ring-destructive/40' : ''
+                          )}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <Badge className={cn('px-2 py-0.5 text-xs', statusStyles[item.status])}>{statusLabels[item.status]}</Badge>
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <Clock className="w-3 h-3" />
+                              <span>{formatTimeRange(item)}</span>
+                              {hasConflict && conflictSummary && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <AlertTriangle className="w-3 h-3 text-destructive" />
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p className="font-medium">{conflictSummary.title}</p>
+                                    <p className="text-xs text-muted-foreground">{conflictSummary.details}</p>
+                                    {conflicts.length > 1 && (
+                                      <p className="text-xs text-muted-foreground">+{conflicts.length - 1} more overlap</p>
+                                    )}
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
+                            </div>
+                          </div>
+                          <div className="mt-2 flex items-center gap-2 text-sm font-semibold">
+                            <ClipboardList className="w-4 h-4 text-primary" />
+                            {item.source_ref_type === 'WORK_ORDER' ? (
+                              <Link
+                                to={`/work-orders/${item.source_ref_id}`}
+                                className="truncate text-primary hover:underline"
+                              >
+                                {getItemLabel(item)}
+                              </Link>
+                            ) : (
+                              <span className="truncate">{getItemLabel(item)}</span>
+                            )}
+                            {item.auto_scheduled && (
+                              <Badge variant="outline" className="ml-1 text-[10px]">
+                                Auto-scheduled
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+                            <Badge variant="outline" className={cn('px-2 py-0.5 text-[11px] font-semibold', item.priority === 1 ? 'border-destructive text-destructive' : '')}>
+                              P{item.priority}
+                            </Badge>
+                            <Separator orientation="vertical" className="h-4" />
+                            <span>{formatTimeRange(item)}</span>
+                            {item.parts_ready && (
+                              <>
+                                <Separator orientation="vertical" className="h-4" />
+                                <span className="text-emerald-600 dark:text-emerald-400">Parts ready</span>
+                              </>
+                            )}
+                            {item.promised_at && (
+                              <>
+                                <Separator orientation="vertical" className="h-4" />
+                                <span>Promised: {new Date(item.promised_at).toLocaleDateString()}</span>
+                              </>
+                            )}
+                          </div>
+                          {item.notes && <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{item.notes}</p>}
+                          {hasConflict && (
+                            <div className="mt-2 flex items-center gap-1 text-xs text-destructive">
+                              <AlertTriangle className="w-3 h-3" />
+                              <span>{conflicts.length} conflict{conflicts.length === 1 ? '' : 's'}</span>
+                            </div>
+                          )}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent className="w-64 space-y-1">
+                        <p className="font-semibold">{getItemLabel(item)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Duration: {(item.duration_minutes / 60).toFixed(1)}h • {formatTimeRange(item)}
+                        </p>
+                        {item.promised_at && (
+                          <p className="text-xs text-muted-foreground">
+                            Promised: {new Date(item.promised_at).toLocaleString()}
+                          </p>
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          );
+        })}
+    </div>
+  );
+
   return (
     <div className="page-container space-y-6">
       <PageHeader
@@ -399,6 +591,22 @@ export default function Scheduling() {
                 </Button>
               ))}
             </div>
+            {viewMode === 'WEEK' && (
+              <div className="flex items-center gap-2 rounded-md border px-2 py-1 text-sm">
+                <span className="text-muted-foreground">Layout</span>
+                {(['LANES', 'CALENDAR'] as const).map((layout) => (
+                  <Button
+                    key={layout}
+                    variant={weekLayout === layout ? 'default' : 'ghost'}
+                    size="sm"
+                    className={weekLayout === layout ? '' : 'bg-transparent'}
+                    onClick={() => setWeekLayout(layout)}
+                  >
+                    {layout === 'LANES' ? 'Lanes' : 'Calendar'}
+                  </Button>
+                ))}
+              </div>
+            )}
             <Button
               onClick={() => {
                 if (technicianFilter === 'ALL') handleOpenNew(undefined);
@@ -447,197 +655,14 @@ export default function Scheduling() {
               Today
             </Button>
           </div>
-        </CardContent>
-      </Card>
+      </CardContent>
+    </Card>
 
-      {viewMode === 'DAY' ? (
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {(['unassigned', ...technicians.map((t) => t.id)] as string[])
-            .filter((id) => {
-              if (technicianFilter === 'ALL') return true;
-              if (technicianFilter === 'UNASSIGNED') return id === 'unassigned';
-              return id === technicianFilter;
-            })
-            .map((techId) => {
-              const tech = technicianMap.get(techId) ?? null;
-              const laneItems = itemsForDate.filter((item) =>
-                techId === 'unassigned' ? !item.technician_id : item.technician_id === techId
-              );
-              const loadMinutes = laneItems.reduce((sum, item) => sum + item.duration_minutes, 0);
-              const overCap = loadMinutes > DAILY_CAPACITY_MINUTES;
-              const loadHours = (loadMinutes / 60).toFixed(1);
+      {viewMode === 'DAY' && renderLaneGrid(itemsForDate, false)}
 
-              return (
-                <Card key={techId} className="h-full">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <User className="w-4 h-4 text-muted-foreground" />
-                        <CardTitle className="text-base">
-                          {techId === 'unassigned' ? 'Unassigned' : tech?.name || 'Technician'}
-                        </CardTitle>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <Badge variant="outline" className={cn('px-2 py-0.5', overCap ? 'border-destructive text-destructive' : '')}>
-                          Load: {loadHours}h
-                        </Badge>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => handleOpenNew(techId === 'unassigned' ? null : techId)}
-                          title="Add schedule item"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </Button>
-                        {overCap && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <AlertTriangle className="w-3 h-3 text-destructive" />
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p className="font-medium text-destructive">Over capacity</p>
-                              <p className="text-xs text-muted-foreground">Daily capacity is 8h. Adjust schedule.</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
-                      </div>
-                    </div>
-                    {viewMode === 'WEEK' && (
-                      <div className="mt-2 flex items-center gap-1">
-                        {(techWeekLoads.get(techId) ?? Array(7).fill(0)).map((minutes, idx) => {
-                          const percent = Math.min(200, Math.round((minutes / DAILY_CAPACITY_MINUTES) * 100));
-                          const day = weekDayRange[idx];
-                          return (
-                            <Tooltip key={`${techId}-${day.toISOString()}`}>
-                              <TooltipTrigger asChild>
-                                <div
-                                  className={cn(
-                                    'h-3 w-6 rounded',
-                                    getLoadTierClass(percent)
-                                  )}
-                                />
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p className="text-xs font-semibold">
-                                  {day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {minutes} min / {DAILY_CAPACITY_MINUTES} min ({percent}%)
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {laneItems.length === 0 && (
-                      <p className="text-sm text-muted-foreground">No scheduled work.</p>
-                    )}
-                    {laneItems.map((item) => {
-                      const conflicts = conflictDetailsMap.get(item.id) ?? [];
-                      const hasConflict = conflicts.length > 0;
-                      const conflictSummary = conflicts[0] ? formatConflict(conflicts[0]) : null;
-                      return (
-                        <Tooltip key={item.id}>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenEdit(item)}
-                              className={cn(
-                                'w-full rounded-lg border p-3 text-left transition hover:border-primary hover:bg-accent',
-                                hasConflict ? 'border-destructive/50 bg-destructive/10 ring-1 ring-destructive/40' : ''
-                              )}
-                            >
-                              <div className="flex items-center justify-between gap-2">
-                                <Badge className={cn('px-2 py-0.5 text-xs', statusStyles[item.status])}>{statusLabels[item.status]}</Badge>
-                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                  <Clock className="w-3 h-3" />
-                                  <span>{formatTimeRange(item)}</span>
-                                  {hasConflict && conflictSummary && (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <AlertTriangle className="w-3 h-3 text-destructive" />
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p className="font-medium">{conflictSummary.title}</p>
-                                        <p className="text-xs text-muted-foreground">{conflictSummary.details}</p>
-                                        {conflicts.length > 1 && (
-                                          <p className="text-xs text-muted-foreground">+{conflicts.length - 1} more overlap</p>
-                                        )}
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="mt-2 flex items-center gap-2 text-sm font-semibold">
-                                <ClipboardList className="w-4 h-4 text-primary" />
-                                {item.source_ref_type === 'WORK_ORDER' ? (
-                                  <Link
-                                    to={`/work-orders/${item.source_ref_id}`}
-                                    className="truncate text-primary hover:underline"
-                                  >
-                                    {getItemLabel(item)}
-                                  </Link>
-                                ) : (
-                                  <span className="truncate">{getItemLabel(item)}</span>
-                                )}
-                                {item.auto_scheduled && (
-                                  <Badge variant="outline" className="ml-1 text-[10px]">
-                                    Auto-scheduled
-                                  </Badge>
-                                )}
-                              </div>
-                              <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                                <Badge variant="outline" className={cn('px-2 py-0.5 text-[11px] font-semibold', item.priority === 1 ? 'border-destructive text-destructive' : '')}>
-                                  P{item.priority}
-                                </Badge>
-                                <Separator orientation="vertical" className="h-4" />
-                                <span>{formatTimeRange(item)}</span>
-                                {item.parts_ready && (
-                                  <>
-                                    <Separator orientation="vertical" className="h-4" />
-                                    <span className="text-emerald-600 dark:text-emerald-400">Parts ready</span>
-                                  </>
-                                )}
-                                {item.promised_at && (
-                                  <>
-                                    <Separator orientation="vertical" className="h-4" />
-                                    <span>Promised: {new Date(item.promised_at).toLocaleDateString()}</span>
-                                  </>
-                                )}
-                              </div>
-                              {item.notes && <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{item.notes}</p>}
-                              {hasConflict && (
-                                <div className="mt-2 flex items-center gap-1 text-xs text-destructive">
-                                  <AlertTriangle className="w-3 h-3" />
-                                  <span>{conflicts.length} conflict{conflicts.length === 1 ? '' : 's'}</span>
-                                </div>
-                              )}
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent className="w-64 space-y-1">
-                                    <p className="font-semibold">{getItemLabel(item)}</p>
-                                    <p className="text-xs text-muted-foreground">
-                                      Duration: {(item.duration_minutes / 60).toFixed(1)}h • {formatTimeRange(item)}
-                                    </p>
-                            {item.promised_at && (
-                              <p className="text-xs text-muted-foreground">
-                                Promised: {new Date(item.promised_at).toLocaleString()}
-                              </p>
-                            )}
-                          </TooltipContent>
-                        </Tooltip>
-                      );
-                    })}
-                  </CardContent>
-                </Card>
-              );
-            })}
-        </div>
-      ) : (
+      {viewMode === 'WEEK' && weekLayout === 'LANES' && renderLaneGrid(weekLaneItems, true)}
+
+      {viewMode === 'WEEK' && weekLayout === 'CALENDAR' && (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {weekDays.map((day, idx) => {
             const itemsForDay = weekItems[idx] ?? [];
@@ -717,7 +742,7 @@ export default function Scheduling() {
                           </button>
                         </TooltipTrigger>
                         <TooltipContent className="w-64 space-y-1">
-                            <p className="font-semibold">{getItemLabel(item)}</p>
+                          <p className="font-semibold">{getItemLabel(item)}</p>
                           <p className="text-xs text-muted-foreground">
                             Duration: {(item.duration_minutes / 60).toFixed(1)}h • {formatTimeRange(item)}
                           </p>
