@@ -342,8 +342,8 @@ export default function Scheduling() {
                 <SelectValue placeholder="All technicians" />
               </SelectTrigger>
               <SelectContent>
-                    <SelectItem value="ALL">All technicians</SelectItem>
-                    <SelectItem value="UNASSIGNED">Unassigned</SelectItem>
+                <SelectItem value="ALL">All technicians</SelectItem>
+                <SelectItem value="UNASSIGNED">Unassigned</SelectItem>
                 {technicians.map((tech) => (
                   <SelectItem key={tech.id} value={tech.id}>
                     {tech.name}

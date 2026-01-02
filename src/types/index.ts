@@ -514,8 +514,8 @@ export interface ScheduleItem {
   id: string;
   source_ref_type: 'WORK_ORDER' | 'BLOCK';
   source_ref_id: string;
-  block_type?: ScheduleBlockType | null;
-  block_title?: string | null;
+  block_type: ScheduleBlockType | null;
+  block_title: string | null;
   technician_id: string | null;
   start_at: string;
   duration_minutes: number;
