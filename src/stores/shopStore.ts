@@ -969,11 +969,13 @@ export const useShopStore = create<ShopState>()(
         const newItem: ScheduleItem = {
           ...item,
           id: item.id ?? generateId(),
-          source_ref_type: 'WORK_ORDER',
+          source_ref_type: item.source_ref_type ?? 'WORK_ORDER',
           technician_id: item.technician_id ?? null,
           promised_at: item.promised_at ?? null,
           notes: item.notes ?? null,
           parts_ready: item.parts_ready ?? false,
+          block_type: item.block_type ?? null,
+          block_title: item.block_title ?? null,
           created_at: timestamp,
           updated_at: timestamp,
         };

@@ -18,7 +18,6 @@ import {
   ListChecks,
   BarChart2,
   Flame,
-  CalendarDays,
   Calendar,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -41,7 +40,6 @@ type NavItem = NavLink | NavGroup;
 const navItems: NavItem[] = [
   { type: 'link', path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { type: 'link', path: '/customers', label: 'Customers', icon: Users },
-  { type: 'link', path: '/scheduling', label: 'Scheduling', icon: Calendar },
   { type: 'link', path: '/sales-orders', label: 'Sales Orders', icon: ShoppingCart },
   {
     type: 'group',
@@ -50,7 +48,7 @@ const navItems: NavItem[] = [
     icon: ClipboardList,
     children: [
       { type: 'link', path: '/work-orders', label: 'Work Orders', icon: Wrench },
-      { type: 'link', path: '/scheduling', label: 'Scheduling', icon: CalendarDays },
+      { type: 'link', path: '/scheduling', label: 'Scheduling', icon: Calendar },
       { type: 'link', path: '/units', label: 'Units', icon: Truck },
       { type: 'link', path: '/technicians', label: 'Technicians', icon: HardHat },
       { type: 'link', path: '/plasma', label: 'Plasma Projects', icon: Flame },

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { CalendarDays, Clock, User, AlertTriangle, Plus, ChevronLeft, ChevronRight, ClipboardList, Wrench, Info } from 'lucide-react';
+import { CalendarDays, Clock, User, AlertTriangle, Plus, ChevronLeft, ChevronRight, ClipboardList, Wrench } from 'lucide-react';
 import { useRepos } from '@/repos';
-import type { ScheduleItem, ScheduleItemStatus } from '@/types';
+import type { ScheduleItem, ScheduleItemStatus, ScheduleBlockType } from '@/types';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -20,6 +20,9 @@ import { cn } from '@/lib/utils';
 const DAILY_CAPACITY_MINUTES = 480;
 
 type FormState = {
+  itemType: 'WORK_ORDER' | 'BLOCK';
+  blockType: ScheduleBlockType;
+  blockTitle: string;
   workOrderId: string;
   technicianId: string;
   start: string;
@@ -86,6 +89,9 @@ const defaultFormState = (): FormState => {
   nextHour.setMinutes(0, 0, 0);
   nextHour.setHours(nextHour.getHours() + 1);
   return {
+    itemType: 'WORK_ORDER',
+    blockType: 'BREAK',
+    blockTitle: '',
     workOrderId: '',
     technicianId: '',
     start: toLocalInput(nextHour),
@@ -110,6 +116,7 @@ export default function Scheduling() {
 
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<'DAY' | 'WEEK'>('DAY');
+  const [technicianFilter, setTechnicianFilter] = useState<'ALL' | 'UNASSIGNED' | string>('ALL');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formState, setFormState] = useState<FormState>(defaultFormState);
@@ -147,9 +154,27 @@ export default function Scheduling() {
     return technicianMap.get(id)?.name ?? 'Unknown tech';
   };
 
+  const getBlockLabel = (item: ScheduleItem) => {
+    const base =
+      item.block_type === 'BREAK'
+        ? 'Break'
+        : item.block_type === 'PTO'
+          ? 'PTO'
+          : item.block_type === 'MEETING'
+            ? 'Meeting'
+            : item.block_type === 'FABRICATION'
+              ? 'Fabrication'
+              : 'Block';
+    const title = item.block_title?.trim();
+    return title ? `${base}: ${title}` : base;
+  };
+
+  const getItemLabel = (item: ScheduleItem) =>
+    item.source_ref_type === 'BLOCK' ? getBlockLabel(item) : getWorkOrderLabel(item.source_ref_id);
+
   const formatConflict = (conflict: ScheduleItem) => {
     const techName = getTechnicianLabel(conflict.technician_id);
-    const woLabel = getWorkOrderLabel(conflict.source_ref_id);
+    const woLabel = getItemLabel(conflict);
     const dateLabel = formatShortDate(new Date(conflict.start_at));
     return {
       title: `Overlap for ${techName}`,
@@ -180,9 +205,23 @@ export default function Scheduling() {
   )}`;
   const currentDayLabel = `${startDate.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}`;
 
-  const handleOpenNew = () => {
+  const prefillStartForDate = (techId?: string | null) => {
+    const start = new Date(startDate);
+    start.setHours(8, 0, 0, 0);
+    return {
+      start: toLocalInput(start),
+      technicianId: techId ?? '',
+    };
+  };
+
+  const handleOpenNew = (techId?: string | null) => {
     setEditingId(null);
-    setFormState(defaultFormState());
+    const prefilled = prefillStartForDate(techId);
+    setFormState((prev) => ({
+      ...defaultFormState(),
+      start: prefilled.start,
+      technicianId: prefilled.technicianId,
+    }));
     setFormError(null);
     setDialogOpen(true);
   };
@@ -190,7 +229,10 @@ export default function Scheduling() {
   const handleOpenEdit = (item: ScheduleItem) => {
     setEditingId(item.id);
     setFormState({
-      workOrderId: item.source_ref_id,
+      itemType: item.source_ref_type,
+      blockType: item.block_type ?? 'BREAK',
+      blockTitle: item.block_title ?? '',
+      workOrderId: item.source_ref_type === 'BLOCK' ? '' : item.source_ref_id,
       technicianId: item.technician_id ?? '',
       start: toLocalInput(item.start_at),
       durationHours: Number((item.duration_minutes / 60).toFixed(2)),
@@ -221,7 +263,8 @@ export default function Scheduling() {
   const dialogConflictSummary = dialogConflicts[0] ? formatConflict(dialogConflicts[0]) : null;
 
   const saveScheduleItem = () => {
-    if (!formState.workOrderId) {
+    const isBlock = formState.itemType === 'BLOCK';
+    if (!isBlock && !formState.workOrderId) {
       setFormError('Work order is required.');
       return;
     }
@@ -231,11 +274,14 @@ export default function Scheduling() {
     }
 
     const priority = Math.min(5, Math.max(1, Math.round(formState.priority))) as ScheduleItem['priority'];
+    const blockRef = formState.blockTitle.trim() || `BLOCK-${new Date(isoStart || Date.now()).toISOString()}`;
 
     const payload: Omit<ScheduleItem, 'id' | 'created_at' | 'updated_at'> & { id?: string } = {
       id: editingId ?? undefined,
-      source_ref_type: 'WORK_ORDER',
-      source_ref_id: formState.workOrderId,
+      source_ref_type: isBlock ? 'BLOCK' : 'WORK_ORDER',
+      source_ref_id: isBlock ? blockRef : formState.workOrderId,
+      block_type: isBlock ? formState.blockType : null,
+      block_title: isBlock ? (formState.blockTitle.trim() || null) : null,
       technician_id: formState.technicianId || null,
       start_at: isoStart,
       duration_minutes: durationMinutes,
@@ -276,6 +322,14 @@ export default function Scheduling() {
     setCurrentDate(today);
   };
 
+  const itemsForDate = useMemo(
+    () =>
+      scheduleItems
+        .filter((item) => sameDay(item.start_at, startDate))
+        .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()),
+    [scheduleItems, startDate]
+  );
+
   return (
     <div className="page-container space-y-6">
       <PageHeader
@@ -283,6 +337,20 @@ export default function Scheduling() {
         subtitle="Plan technician workload for the week."
         actions={
           <div className="flex items-center gap-2">
+            <Select value={technicianFilter} onValueChange={(val) => setTechnicianFilter(val as typeof technicianFilter)}>
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="All technicians" />
+              </SelectTrigger>
+              <SelectContent>
+                    <SelectItem value="ALL">All technicians</SelectItem>
+                    <SelectItem value="UNASSIGNED">Unassigned</SelectItem>
+                {technicians.map((tech) => (
+                  <SelectItem key={tech.id} value={tech.id}>
+                    {tech.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <div className="flex rounded-md border">
               {(['DAY', 'WEEK'] as const).map((mode) => (
                 <Button
@@ -296,7 +364,13 @@ export default function Scheduling() {
                 </Button>
               ))}
             </div>
-            <Button onClick={handleOpenNew}>
+            <Button
+              onClick={() => {
+                if (technicianFilter === 'ALL') handleOpenNew(undefined);
+                else if (technicianFilter === 'UNASSIGNED') handleOpenNew(null);
+                else handleOpenNew(technicianFilter);
+              }}
+            >
               <Plus className="w-4 h-4 mr-2" />
               New Scheduled Item
             </Button>
@@ -341,151 +415,65 @@ export default function Scheduling() {
         </CardContent>
       </Card>
 
-      <div className={cn('grid gap-3 md:gap-4', viewMode === 'WEEK' ? 'md:grid-cols-2 xl:grid-cols-3' : 'md:grid-cols-2 xl:grid-cols-2')}>
-        {(viewMode === 'WEEK' ? weekDays : [startDate]).map((day, idx) => {
-          const itemsForDay = weekItems[idx] ?? [];
-          const itemsByTech = itemsForDay.reduce<Record<string, ScheduleItem[]>>((acc, item) => {
-            const key = item.technician_id || 'unassigned';
-            acc[key] = acc[key] || [];
-            acc[key].push(item);
-            return acc;
-          }, {});
-          const techKeys = Object.keys(itemsByTech);
+      {viewMode === 'DAY' ? (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {(['unassigned', ...technicians.map((t) => t.id)] as string[])
+            .filter((id) => {
+              if (technicianFilter === 'ALL') return true;
+              if (technicianFilter === 'UNASSIGNED') return id === 'unassigned';
+              return id === technicianFilter;
+            })
+            .map((techId) => {
+              const tech = technicianMap.get(techId) ?? null;
+              const laneItems = itemsForDate.filter((item) =>
+                techId === 'unassigned' ? !item.technician_id : item.technician_id === techId
+              );
+              const loadMinutes = laneItems.reduce((sum, item) => sum + item.duration_minutes, 0);
+              const overCap = loadMinutes > DAILY_CAPACITY_MINUTES;
+              const loadHours = (loadMinutes / 60).toFixed(1);
 
-          return (
-            <Card key={day.toISOString()} className="h-full">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-lg">{day.toLocaleDateString(undefined, { weekday: 'long' })}</CardTitle>
-                    <p className="text-sm text-muted-foreground">{formatShortDate(day)}</p>
-                  </div>
-                  <Badge variant="outline" className="text-xs">
-                    {itemsForDay.length} item{itemsForDay.length === 1 ? '' : 's'}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {itemsForDay.length === 0 && (
-                  <p className="text-sm text-muted-foreground">No scheduled work.</p>
-                )}
-                {viewMode === 'DAY'
-                  ? techKeys.map((techId) => {
-                      const groupItems = itemsByTech[techId];
-                      const tech = technicianMap.get(techId) ?? null;
-                      const loadMinutes = groupItems.reduce((sum, item) => sum + item.duration_minutes, 0);
-                      const overCap = loadMinutes > DAILY_CAPACITY_MINUTES;
-                      const loadHours = (loadMinutes / 60).toFixed(1);
-
-                      return (
-                        <div key={techId} className="space-y-2 rounded-lg border p-3">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <User className="w-4 h-4 text-muted-foreground" />
-                              <span className="font-semibold">{tech?.name || 'Unassigned'}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                              <Badge variant="outline" className={cn('px-2 py-0.5', overCap ? 'border-destructive text-destructive' : '')}>
-                                Load: {loadHours}h
-                              </Badge>
-                              {overCap && (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <AlertTriangle className="w-3 h-3 text-destructive" />
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p className="font-medium text-destructive">Over capacity</p>
-                                    <p className="text-xs text-muted-foreground">Daily capacity is 8h. Adjust schedule.</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              )}
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            {groupItems.map((item) => {
-                              const conflicts = conflictDetailsMap.get(item.id) ?? [];
-                              const hasConflict = conflicts.length > 0;
-                              const conflictSummary = conflicts[0] ? formatConflict(conflicts[0]) : null;
-                              return (
-                                <Tooltip key={item.id}>
-                                  <TooltipTrigger asChild>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenEdit(item)}
-                                      className={cn(
-                                        'w-full rounded-lg border p-3 text-left transition hover:border-primary hover:bg-accent',
-                                        hasConflict ? 'border-destructive/50 bg-destructive/10 ring-1 ring-destructive/40' : ''
-                                      )}
-                                    >
-                                      <div className="flex items-center justify-between gap-2">
-                                        <Badge className={cn('px-2 py-0.5 text-xs', statusStyles[item.status])}>{statusLabels[item.status]}</Badge>
-                                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                          <Clock className="w-3 h-3" />
-                                          <span>{formatTimeRange(item)}</span>
-                                          {hasConflict && conflictSummary && (
-                                            <Tooltip>
-                                              <TooltipTrigger asChild>
-                                                <AlertTriangle className="w-3 h-3 text-destructive" />
-                                              </TooltipTrigger>
-                                              <TooltipContent>
-                                                <p className="font-medium">{conflictSummary.title}</p>
-                                                <p className="text-xs text-muted-foreground">{conflictSummary.details}</p>
-                                                {conflicts.length > 1 && (
-                                                  <p className="text-xs text-muted-foreground">+{conflicts.length - 1} more overlap</p>
-                                                )}
-                                              </TooltipContent>
-                                            </Tooltip>
-                                          )}
-                                        </div>
-                                      </div>
-                                      <div className="mt-2 flex items-center gap-2 text-sm font-semibold">
-                                        <ClipboardList className="w-4 h-4 text-primary" />
-                                        <span className="truncate">{getWorkOrderLabel(item.source_ref_id)}</span>
-                                      </div>
-                                      <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                                        <div className="flex items-center gap-1">
-                                          <User className="w-3 h-3" />
-                                          <span>{getTechnicianLabel(item.technician_id)}</span>
-                                        </div>
-                                        <Separator orientation="vertical" className="h-4" />
-                                        <Badge variant="outline" className={cn('px-2 py-0.5 text-[11px] font-semibold', item.priority === 1 ? 'border-destructive text-destructive' : '')}>
-                                          P{item.priority}
-                                        </Badge>
-                                        {item.parts_ready && (
-                                          <>
-                                            <Separator orientation="vertical" className="h-4" />
-                                            <span className="text-emerald-600 dark:text-emerald-400">Parts ready</span>
-                                          </>
-                                        )}
-                                      </div>
-                                      {item.notes && <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{item.notes}</p>}
-                                      {hasConflict && (
-                                        <div className="mt-2 flex items-center gap-1 text-xs text-destructive">
-                                          <AlertTriangle className="w-3 h-3" />
-                                          <span>{conflicts.length} conflict{conflicts.length === 1 ? '' : 's'}</span>
-                                        </div>
-                                      )}
-                                    </button>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="w-64 space-y-1">
-                                    <p className="font-semibold">{getWorkOrderLabel(item.source_ref_id)}</p>
-                                    <p className="text-xs text-muted-foreground">
-                                      Duration: {(item.duration_minutes / 60).toFixed(1)}h • {formatTimeRange(item)}
-                                    </p>
-                                    {item.promised_at && (
-                                      <p className="text-xs text-muted-foreground">
-                                        Promised: {new Date(item.promised_at).toLocaleString()}
-                                      </p>
-                                    )}
-                                  </TooltipContent>
-                                </Tooltip>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })
-                  : itemsForDay.map((item) => {
+              return (
+                <Card key={techId} className="h-full">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <User className="w-4 h-4 text-muted-foreground" />
+                        <CardTitle className="text-base">
+                          {techId === 'unassigned' ? 'Unassigned' : tech?.name || 'Technician'}
+                        </CardTitle>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Badge variant="outline" className={cn('px-2 py-0.5', overCap ? 'border-destructive text-destructive' : '')}>
+                          Load: {loadHours}h
+                        </Badge>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => handleOpenNew(techId === 'unassigned' ? null : techId)}
+                          title="Add schedule item"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </Button>
+                        {overCap && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <AlertTriangle className="w-3 h-3 text-destructive" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p className="font-medium text-destructive">Over capacity</p>
+                              <p className="text-xs text-muted-foreground">Daily capacity is 8h. Adjust schedule.</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {laneItems.length === 0 && (
+                      <p className="text-sm text-muted-foreground">No scheduled work.</p>
+                    )}
+                    {laneItems.map((item) => {
                       const conflicts = conflictDetailsMap.get(item.id) ?? [];
                       const hasConflict = conflicts.length > 0;
                       const conflictSummary = conflicts[0] ? formatConflict(conflicts[0]) : null;
@@ -523,21 +511,24 @@ export default function Scheduling() {
                               </div>
                               <div className="mt-2 flex items-center gap-2 text-sm font-semibold">
                                 <ClipboardList className="w-4 h-4 text-primary" />
-                                <span className="truncate">{getWorkOrderLabel(item.source_ref_id)}</span>
+                                <span className="truncate">{getItemLabel(item)}</span>
                               </div>
                               <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                                <div className="flex items-center gap-1">
-                                  <User className="w-3 h-3" />
-                                  <span>{getTechnicianLabel(item.technician_id)}</span>
-                                </div>
-                                <Separator orientation="vertical" className="h-4" />
                                 <Badge variant="outline" className={cn('px-2 py-0.5 text-[11px] font-semibold', item.priority === 1 ? 'border-destructive text-destructive' : '')}>
                                   P{item.priority}
                                 </Badge>
+                                <Separator orientation="vertical" className="h-4" />
+                                <span>{formatTimeRange(item)}</span>
                                 {item.parts_ready && (
                                   <>
                                     <Separator orientation="vertical" className="h-4" />
                                     <span className="text-emerald-600 dark:text-emerald-400">Parts ready</span>
+                                  </>
+                                )}
+                                {item.promised_at && (
+                                  <>
+                                    <Separator orientation="vertical" className="h-4" />
+                                    <span>Promised: {new Date(item.promised_at).toLocaleDateString()}</span>
                                   </>
                                 )}
                               </div>
@@ -551,10 +542,10 @@ export default function Scheduling() {
                             </button>
                           </TooltipTrigger>
                           <TooltipContent className="w-64 space-y-1">
-                            <p className="font-semibold">{getWorkOrderLabel(item.source_ref_id)}</p>
-                            <p className="text-xs text-muted-foreground">
-                              Duration: {(item.duration_minutes / 60).toFixed(1)}h • {formatTimeRange(item)}
-                            </p>
+                                    <p className="font-semibold">{getItemLabel(item)}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      Duration: {(item.duration_minutes / 60).toFixed(1)}h • {formatTimeRange(item)}
+                                    </p>
                             {item.promised_at && (
                               <p className="text-xs text-muted-foreground">
                                 Promised: {new Date(item.promised_at).toLocaleString()}
@@ -564,11 +555,110 @@ export default function Scheduling() {
                         </Tooltip>
                       );
                     })}
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+        </div>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {weekDays.map((day, idx) => {
+            const itemsForDay = weekItems[idx] ?? [];
+            return (
+              <Card key={day.toISOString()} className="h-full">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-lg">{day.toLocaleDateString(undefined, { weekday: 'long' })}</CardTitle>
+                      <p className="text-sm text-muted-foreground">{formatShortDate(day)}</p>
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      {itemsForDay.length} item{itemsForDay.length === 1 ? '' : 's'}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {itemsForDay.length === 0 && (
+                    <p className="text-sm text-muted-foreground">No scheduled work.</p>
+                  )}
+                  {itemsForDay.map((item) => {
+                    const conflicts = conflictDetailsMap.get(item.id) ?? [];
+                    const hasConflict = conflicts.length > 0;
+                    const conflictSummary = conflicts[0] ? formatConflict(conflicts[0]) : null;
+                    return (
+                      <Tooltip key={item.id}>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(item)}
+                            className={cn(
+                              'w-full rounded-lg border p-3 text-left transition hover:border-primary hover:bg-accent',
+                              hasConflict ? 'border-destructive/50 bg-destructive/10 ring-1 ring-destructive/40' : ''
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <Badge className={cn('px-2 py-0.5 text-xs', statusStyles[item.status])}>{statusLabels[item.status]}</Badge>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <Clock className="w-3 h-3" />
+                                <span>{formatTimeRange(item)}</span>
+                                {hasConflict && conflictSummary && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <AlertTriangle className="w-3 h-3 text-destructive" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p className="font-medium">{conflictSummary.title}</p>
+                                      <p className="text-xs text-muted-foreground">{conflictSummary.details}</p>
+                                      {conflicts.length > 1 && (
+                                        <p className="text-xs text-muted-foreground">+{conflicts.length - 1} more overlap</p>
+                                      )}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
+                              </div>
+                            </div>
+                            <div className="mt-2 flex items-center gap-2 text-sm font-semibold">
+                              <ClipboardList className="w-4 h-4 text-primary" />
+                              <span className="truncate">{getItemLabel(item)}</span>
+                            </div>
+                            <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+                              <Badge variant="outline" className={cn('px-2 py-0.5 text-[11px] font-semibold', item.priority === 1 ? 'border-destructive text-destructive' : '')}>
+                                P{item.priority}
+                              </Badge>
+                              <Separator orientation="vertical" className="h-4" />
+                              <span>{getTechnicianLabel(item.technician_id)}</span>
+                              <Separator orientation="vertical" className="h-4" />
+                              <span>{formatTimeRange(item)}</span>
+                            </div>
+                            {item.notes && <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{item.notes}</p>}
+                            {hasConflict && (
+                              <div className="mt-2 flex items-center gap-1 text-xs text-destructive">
+                                <AlertTriangle className="w-3 h-3" />
+                                <span>{conflicts.length} conflict{conflicts.length === 1 ? '' : 's'}</span>
+                              </div>
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent className="w-64 space-y-1">
+                            <p className="font-semibold">{getItemLabel(item)}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Duration: {(item.duration_minutes / 60).toFixed(1)}h • {formatTimeRange(item)}
+                          </p>
+                          {item.promised_at && (
+                            <p className="text-xs text-muted-foreground">
+                              Promised: {new Date(item.promised_at).toLocaleString()}
+                            </p>
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
       <Card>
         <CardHeader className="pb-3">
@@ -614,7 +704,7 @@ export default function Scheduling() {
                     P{item.priority}
                   </Badge>
                 </div>
-                <div className="mt-2 text-sm font-semibold">{getWorkOrderLabel(item.source_ref_id)}</div>
+                <div className="mt-2 text-sm font-semibold">{getItemLabel(item)}</div>
                 <div className="text-xs text-muted-foreground">
                   {formatTimeRange(item)} • {getTechnicianLabel(item.technician_id)}
                 </div>
@@ -657,7 +747,7 @@ export default function Scheduling() {
                   <ul className="text-sm list-disc list-inside space-y-1">
                     {dialogConflicts.map((conflict) => (
                       <li key={conflict.id}>
-                        {getWorkOrderLabel(conflict.source_ref_id)} — {formatTimeRange(conflict)}
+                        {getItemLabel(conflict)} — {formatTimeRange(conflict)}
                       </li>
                     ))}
                   </ul>
@@ -667,39 +757,89 @@ export default function Scheduling() {
 
             <div className="grid gap-3 md:grid-cols-2">
               <div className="space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <Label>Work Order</Label>
-                  {hasDialogConflicts && dialogConflictSummary && (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <AlertTriangle className="w-4 h-4 text-destructive" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="font-medium">{dialogConflictSummary.title}</p>
-                        <p className="text-xs text-muted-foreground">{dialogConflictSummary.details}</p>
-                        {dialogConflicts.length > 1 && (
-                          <p className="text-xs text-muted-foreground">+{dialogConflicts.length - 1} more overlap</p>
-                        )}
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
-                </div>
+                <Label>Type</Label>
                 <Select
-                  value={formState.workOrderId || undefined}
-                  onValueChange={(val) => setFormState((prev) => ({ ...prev, workOrderId: val }))}
+                  value={formState.itemType}
+                  onValueChange={(val: 'WORK_ORDER' | 'BLOCK') =>
+                    setFormState((prev) => ({ ...prev, itemType: val }))
+                  }
                 >
-                  <SelectTrigger className={cn(hasDialogConflicts ? 'border-destructive/50 bg-destructive/10' : '')}>
-                    <SelectValue placeholder="Select work order" />
+                  <SelectTrigger>
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {workOrders.map((wo) => (
-                      <SelectItem key={wo.id} value={wo.id}>
-                        {getWorkOrderLabel(wo.id)}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="WORK_ORDER">Work Order</SelectItem>
+                    <SelectItem value="BLOCK">Block</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
+              {formState.itemType === 'WORK_ORDER' ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <Label>Work Order</Label>
+                    {hasDialogConflicts && dialogConflictSummary && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <AlertTriangle className="w-4 h-4 text-destructive" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="font-medium">{dialogConflictSummary.title}</p>
+                          <p className="text-xs text-muted-foreground">{dialogConflictSummary.details}</p>
+                          {dialogConflicts.length > 1 && (
+                            <p className="text-xs text-muted-foreground">+{dialogConflicts.length - 1} more overlap</p>
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                  </div>
+                  <Select
+                    value={formState.workOrderId || undefined}
+                    onValueChange={(val) => setFormState((prev) => ({ ...prev, workOrderId: val }))}
+                  >
+                    <SelectTrigger className={cn(hasDialogConflicts ? 'border-destructive/50 bg-destructive/10' : '')}>
+                      <SelectValue placeholder="Select work order" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {workOrders.map((wo) => (
+                        <SelectItem key={wo.id} value={wo.id}>
+                          {getWorkOrderLabel(wo.id)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <Label>Block Type</Label>
+                    <Select
+                      value={formState.blockType}
+                      onValueChange={(val: ScheduleBlockType) =>
+                        setFormState((prev) => ({ ...prev, blockType: val }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="BREAK">Break</SelectItem>
+                        <SelectItem value="PTO">PTO</SelectItem>
+                        <SelectItem value="MEETING">Meeting</SelectItem>
+                        <SelectItem value="FABRICATION">Fabrication</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Block Title</Label>
+                    <Input
+                      value={formState.blockTitle}
+                      onChange={(e) => setFormState((prev) => ({ ...prev, blockTitle: e.target.value }))}
+                      placeholder="Optional description (e.g., Team meeting)"
+                    />
+                  </div>
+                </>
+              )}
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <Label>Technician</Label>
