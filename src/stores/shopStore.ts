@@ -183,6 +183,7 @@ interface ShopState {
   woUpdateStatus: (orderId: string, status: 'IN_PROGRESS') => { success: boolean; error?: string };
   woInvoice: (orderId: string) => { success: boolean; error?: string };
   updateWorkOrderNotes: (orderId: string, notes: string | null) => void;
+  updateWorkOrderPromisedAt?: (orderId: string, promisedAt: string | null) => void;
   getWorkOrderPartLines: (orderId: string) => WorkOrderPartLine[];
   getWorkOrderLaborLines: (orderId: string) => WorkOrderLaborLine[];
   recalculateSalesOrderTotals: (orderId: string) => void;
@@ -193,6 +194,7 @@ interface ShopState {
   updateWorkOrderChargeLine: (id: string, patch: Partial<WorkOrderChargeLine>) => void;
   removeWorkOrderChargeLine: (id: string) => void;
   postPlasmaJobToWorkOrder: (plasmaJobId: string) => { success: boolean; error?: string };
+  updateWorkOrderTechnician?: (orderId: string, technicianId: string | null) => void;
   postFabJobToWorkOrder: (fabJobId: string) => { success: boolean; error?: string };
 
   // Fabrication
@@ -2209,6 +2211,20 @@ export const useShopStore = create<ShopState>()(
         }));
         get().recalculateWorkOrderTotals(line.work_order_id);
       },
+
+      updateWorkOrderTechnician: (orderId, technicianId) =>
+        set((state) => ({
+          workOrders: state.workOrders.map((o) =>
+            o.id === orderId ? { ...o, technician_id: technicianId, updated_at: now() } : o
+          ),
+        })),
+
+      updateWorkOrderPromisedAt: (orderId, promisedAt) =>
+        set((state) => ({
+          workOrders: state.workOrders.map((o) =>
+            o.id === orderId ? { ...o, promised_at: promisedAt, updated_at: now() } : o
+          ),
+        })),
 
       updateWorkOrderNotes: (orderId, notes) =>
         set((state) => ({

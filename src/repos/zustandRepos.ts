@@ -312,7 +312,26 @@ export const zustandRepos: Repos = {
       return useShopStore.getState().createScheduleItem(item);
     },
     update(id, patch) {
-      return useShopStore.getState().updateScheduleItem(id, patch);
+      const updated = useShopStore.getState().updateScheduleItem(id, patch);
+      if (updated && updated.source_ref_type === 'WORK_ORDER') {
+        const technician_id =
+          patch.technician_id !== undefined ? patch.technician_id : updated.technician_id;
+        if (technician_id !== undefined) {
+          const state = useShopStore.getState();
+          const workOrder = state.workOrders.find((wo) => wo.id === updated.source_ref_id);
+          if (workOrder && (workOrder as any).technician_id !== technician_id && state.updateWorkOrderTechnician) {
+            state.updateWorkOrderTechnician(workOrder.id, technician_id);
+          }
+        }
+        if (patch.start_at) {
+          const state = useShopStore.getState();
+          const workOrder = state.workOrders.find((wo) => wo.id === updated.source_ref_id);
+          if (workOrder && workOrder.status !== 'INVOICED' && state.updateWorkOrderPromisedAt) {
+            state.updateWorkOrderPromisedAt(workOrder.id, patch.start_at);
+          }
+        }
+      }
+      return updated;
     },
     remove(id) {
       return useShopStore.getState().removeScheduleItem(id);
