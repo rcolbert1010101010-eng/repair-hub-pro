@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { MainLayout } from "@/components/layout/MainLayout";
 import Dashboard from "@/pages/Dashboard";
@@ -38,6 +38,7 @@ import PlasmaProjectDetail from "@/pages/PlasmaProjectDetail";
 import PlasmaPrint from "@/pages/PlasmaPrint";
 import PlasmaTemplates from "@/pages/PlasmaTemplates";
 import PlasmaTemplateDetail from "@/pages/PlasmaTemplateDetail";
+import Scheduling from "@/pages/Scheduling";
 
 const queryClient = new QueryClient();
 
@@ -50,7 +51,8 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route element={<MainLayout />}>
-              <Route path="/" element={<Dashboard />} />
+              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/customers" element={<Customers />} />
               <Route path="/customers/:id" element={<CustomerDetail />} />
               <Route path="/units" element={<Units />} />
@@ -70,6 +72,7 @@ const App = () => (
               <Route path="/plasma/templates/:id" element={<PlasmaTemplateDetail />} />
               <Route path="/work-orders" element={<WorkOrders />} />
               <Route path="/work-orders/:id" element={<WorkOrderDetail />} />
+              <Route path="/scheduling" element={<Scheduling />} />
               <Route path="/purchase-orders" element={<PurchaseOrders />} />
               <Route path="/purchase-orders/:id" element={<PurchaseOrderDetail />} />
               <Route path="/returns" element={<Returns />} />

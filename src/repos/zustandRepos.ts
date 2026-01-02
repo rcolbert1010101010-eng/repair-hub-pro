@@ -132,6 +132,26 @@ export const zustandRepos: Repos = {
       return useShopStore.getState().getTimeEntriesByWorkOrder(workOrderId);
     },
   },
+  scheduling: {
+    list() {
+      return useShopStore.getState().listScheduleItems();
+    },
+    getByWorkOrder(workOrderId) {
+      return useShopStore.getState().getScheduleItemsByWorkOrder(workOrderId);
+    },
+    create(item) {
+      return useShopStore.getState().createScheduleItem(item);
+    },
+    update(id, patch) {
+      return useShopStore.getState().updateScheduleItem(id, patch);
+    },
+    remove(id) {
+      return useShopStore.getState().removeScheduleItem(id);
+    },
+    detectConflicts(item) {
+      return useShopStore.getState().detectScheduleConflicts(item);
+    },
+  },
   vendorCostHistory: {
     get vendorCostHistory() {
       return useShopStore.getState().vendorCostHistory;
@@ -420,6 +440,35 @@ export const zustandRepos: Repos = {
     },
     getCycleCountLines(sessionId) {
       return useShopStore.getState().getCycleCountLines(sessionId);
+    },
+  },
+  fabrication: {
+    get fabJobs() {
+      return useShopStore.getState().fabJobs;
+    },
+    get fabJobLines() {
+      return useShopStore.getState().fabJobLines;
+    },
+    createForWorkOrder(workOrderId) {
+      return useShopStore.getState().createFabJobForWorkOrder(workOrderId);
+    },
+    getByWorkOrder(workOrderId) {
+      return useShopStore.getState().getFabJobByWorkOrder(workOrderId);
+    },
+    updateJob(id, patch) {
+      return useShopStore.getState().updateFabJob(id, patch);
+    },
+    upsertLine(jobId, line) {
+      return useShopStore.getState().upsertFabJobLine(jobId, line);
+    },
+    deleteLine(lineId) {
+      return useShopStore.getState().deleteFabJobLine(lineId);
+    },
+    recalculate(fabJobId, settingsOverride) {
+      return useShopStore.getState().recalculateFabJob(fabJobId, settingsOverride);
+    },
+    postToWorkOrder(fabJobId) {
+      return useShopStore.getState().postFabJobToWorkOrder(fabJobId);
     },
   },
   plasma: {

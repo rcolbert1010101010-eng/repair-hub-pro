@@ -272,6 +272,58 @@ export interface SalesOrderChargeLine {
   updated_at: string;
 }
 
+// Fabrication Jobs
+export type FabJobSourceType = 'STANDALONE' | 'WORK_ORDER';
+export type FabOperationType = 'PRESS_BRAKE' | 'WELD';
+export type FabJobStatus = 'DRAFT' | 'QUOTED' | 'APPROVED' | 'IN_PROGRESS' | 'COMPLETED' | 'VOID';
+
+export interface FabJob {
+  id: string;
+  source_type: FabJobSourceType;
+  work_order_id?: string | null;
+  sales_order_id?: string | null;
+  status: FabJobStatus;
+  notes?: string | null;
+  posted_at?: string | null;
+  posted_by?: string | null;
+  calculated_at?: string | null;
+  calc_version: number;
+  created_at: string;
+  updated_at: string;
+  warnings?: string[] | null;
+}
+
+export interface FabJobLine {
+  id: string;
+  fab_job_id: string;
+  operation_type: FabOperationType;
+  qty: number;
+  description?: string | null;
+  notes?: string | null;
+  material_type?: string | null;
+  thickness?: number | null;
+  bends_count?: number | null;
+  bend_length?: number | null;
+  setup_minutes?: number | null;
+  machine_minutes?: number | null;
+  derived_machine_minutes?: number | null;
+  tooling?: string | null;
+  tonnage_estimate?: number | null;
+  weld_process?: 'MIG' | 'TIG' | 'STICK' | 'FLUX' | null;
+  weld_length?: number | null;
+  weld_type?: 'FILLET' | 'BUTT' | null;
+  position?: string | null;
+  override_machine_minutes?: boolean;
+  override_consumables_cost?: boolean;
+  override_labor_cost?: boolean;
+  consumables_cost: number;
+  labor_cost: number;
+  overhead_cost: number;
+  sell_price_each: number;
+  sell_price_total: number;
+  calc_version: number;
+}
+
 // Plasma Jobs
 export type PlasmaJobSourceType = 'STANDALONE' | 'WORK_ORDER';
 export type PlasmaJobStatus = 'DRAFT' | 'QUOTED' | 'APPROVED' | 'CUT' | 'COMPLETED' | 'VOID';
@@ -375,7 +427,7 @@ export interface PlasmaJobAttachment {
 // Work Order Status
 export type WorkOrderStatus = 'ESTIMATE' | 'OPEN' | 'IN_PROGRESS' | 'INVOICED';
 
-export type WorkOrderChargeSourceType = 'PLASMA_JOB' | 'MANUAL' | 'SALES_ORDER';
+export type WorkOrderChargeSourceType = 'PLASMA_JOB' | 'FAB_JOB' | 'MANUAL' | 'SALES_ORDER';
 
 export interface WorkOrderChargeLine {
   id: string;
@@ -449,6 +501,25 @@ export interface WorkOrderLaborLine {
   line_total: number;
   is_warranty: boolean;
   technician_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Scheduling
+export type ScheduleItemStatus = 'ON_TRACK' | 'AT_RISK' | 'LATE' | 'IN_PROGRESS' | 'WAITING_APPROVAL' | 'WAITING_PARTS' | 'QA';
+
+export interface ScheduleItem {
+  id: string;
+  source_ref_type: 'WORK_ORDER';
+  source_ref_id: string;
+  technician_id: string | null;
+  start_at: string;
+  duration_minutes: number;
+  priority: 1 | 2 | 3 | 4 | 5;
+  promised_at: string | null;
+  parts_ready: boolean;
+  status: ScheduleItemStatus;
+  notes: string | null;
   created_at: string;
   updated_at: string;
 }

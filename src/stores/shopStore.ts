@@ -30,6 +30,8 @@ import type {
   WarrantyClaim,
   WarrantyClaimLine,
   WarrantyClaimStatus,
+  FabJob,
+  FabJobLine,
   PlasmaJob,
   PlasmaJobLine,
   WorkOrderChargeLine,
@@ -38,7 +40,9 @@ import type {
   SalesOrderChargeSourceType,
   PlasmaJobAttachment,
   PlasmaJobAttachmentKind,
+  ScheduleItem,
 } from '@/types';
+import { calculateFabJob, fabricationPricingDefaults, type FabricationPricingSettings } from '@/services/fabricationPricingService';
 import { calculatePlasmaJob, plasmaPricingDefaults, type PlasmaPricingSettings } from '@/services/plasmaPricingService';
 import { computePlasmaJobMetrics } from '@/services/plasmaJobSummary';
 
@@ -125,6 +129,19 @@ interface ShopState {
   getActiveTimeEntry: (technicianId: string) => TimeEntry | undefined;
   getTimeEntriesByWorkOrder: (workOrderId: string) => TimeEntry[];
 
+  // Scheduling
+  scheduleItems: ScheduleItem[];
+  listScheduleItems: () => ScheduleItem[];
+  getScheduleItemsByWorkOrder: (workOrderId: string) => ScheduleItem[];
+  createScheduleItem: (item: Omit<ScheduleItem, 'id' | 'created_at' | 'updated_at'> & { id?: string }) => ScheduleItem;
+  updateScheduleItem: (id: string, patch: Partial<ScheduleItem>) => ScheduleItem | null;
+  removeScheduleItem: (id: string) => void;
+  detectScheduleConflicts: (
+    item?:
+      | Pick<ScheduleItem, 'technician_id' | 'start_at' | 'duration_minutes'> & { id?: string | null }
+      | string
+  ) => ScheduleItem[];
+
   // Sales Orders
   salesOrders: SalesOrder[];
   salesOrderLines: SalesOrderLine[];
@@ -176,6 +193,20 @@ interface ShopState {
   updateWorkOrderChargeLine: (id: string, patch: Partial<WorkOrderChargeLine>) => void;
   removeWorkOrderChargeLine: (id: string) => void;
   postPlasmaJobToWorkOrder: (plasmaJobId: string) => { success: boolean; error?: string };
+  postFabJobToWorkOrder: (fabJobId: string) => { success: boolean; error?: string };
+
+  // Fabrication
+  fabJobs: FabJob[];
+  fabJobLines: FabJobLine[];
+  createFabJobForWorkOrder: (workOrderId: string) => FabJob;
+  getFabJobByWorkOrder: (workOrderId: string) => { job: FabJob; lines: FabJobLine[] } | null;
+  updateFabJob: (id: string, patch: Partial<FabJob>) => FabJob | null;
+  upsertFabJobLine: (jobId: string, line: Partial<FabJobLine>) => FabJobLine | null;
+  deleteFabJobLine: (lineId: string) => void;
+  recalculateFabJob: (
+    jobId: string,
+    settingsOverride?: Partial<FabricationPricingSettings>
+  ) => { success: boolean; error?: string; warnings?: string[] };
 
   // Plasma
   plasmaJobs: PlasmaJob[];
@@ -441,6 +472,30 @@ export const useShopStore = create<ShopState>()(
           }
           get().recalculateSalesOrderTotals(params.orderId);
         }
+      };
+
+      const upsertFabChargeLine = (params: { orderId: string; fabJobId: string; description: string; totalPrice: number }) => {
+        const existingCharge = get().workOrderChargeLines.find(
+          (cl) =>
+            cl.work_order_id === params.orderId &&
+            cl.source_ref_type === 'FAB_JOB' &&
+            cl.source_ref_id === params.fabJobId
+        );
+        const payload = {
+          work_order_id: params.orderId,
+          description: params.description,
+          qty: 1,
+          unit_price: params.totalPrice,
+          total_price: params.totalPrice,
+          source_ref_type: 'FAB_JOB' as WorkOrderChargeSourceType,
+          source_ref_id: params.fabJobId,
+        };
+        if (existingCharge) {
+          get().updateWorkOrderChargeLine(existingCharge.id, payload);
+        } else {
+          get().addWorkOrderChargeLine(payload);
+        }
+        get().recalculateWorkOrderTotals(params.orderId);
       };
 
       const createPOsForNegativeInventory = (
@@ -900,6 +955,79 @@ export const useShopStore = create<ShopState>()(
 
       getTimeEntriesByWorkOrder: (workOrderId) =>
         get().timeEntries.filter((te) => te.work_order_id === workOrderId),
+
+      // Scheduling
+      scheduleItems: [],
+
+      listScheduleItems: () => get().scheduleItems,
+
+      getScheduleItemsByWorkOrder: (workOrderId) =>
+        get().scheduleItems.filter((item) => item.source_ref_id === workOrderId),
+
+      createScheduleItem: (item) => {
+        const timestamp = now();
+        const newItem: ScheduleItem = {
+          ...item,
+          id: item.id ?? generateId(),
+          source_ref_type: 'WORK_ORDER',
+          technician_id: item.technician_id ?? null,
+          promised_at: item.promised_at ?? null,
+          notes: item.notes ?? null,
+          parts_ready: item.parts_ready ?? false,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+        set((state) => ({
+          scheduleItems: [...state.scheduleItems, newItem],
+        }));
+        return newItem;
+      },
+
+      updateScheduleItem: (id, patch) => {
+        let updated: ScheduleItem | null = null;
+        const timestamp = now();
+        set((state) => ({
+          scheduleItems: state.scheduleItems.map((item) => {
+            if (item.id !== id) return item;
+            updated = { ...item, ...patch, updated_at: timestamp };
+            return updated;
+          }),
+        }));
+        return updated;
+      },
+
+      removeScheduleItem: (id) =>
+        set((state) => ({
+          scheduleItems: state.scheduleItems.filter((item) => item.id !== id),
+        })),
+
+      detectScheduleConflicts: (itemInput) => {
+        const state = get();
+        if (!itemInput) return [];
+        const candidate =
+          typeof itemInput === 'string'
+            ? state.scheduleItems.find((item) => item.id === itemInput)
+            : itemInput.id
+              ? {
+                  ...state.scheduleItems.find((item) => item.id === itemInput.id),
+                  ...itemInput,
+                }
+              : itemInput;
+
+        if (!candidate || !candidate.technician_id) return [];
+
+        const startMs = new Date(candidate.start_at).getTime();
+        const endMs = startMs + candidate.duration_minutes * 60000;
+        if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return [];
+
+        return state.scheduleItems.filter((item) => {
+          if (item.technician_id !== candidate.technician_id) return false;
+          if (candidate.id && item.id === candidate.id) return false;
+          const itemStart = new Date(item.start_at).getTime();
+          const itemEnd = itemStart + item.duration_minutes * 60000;
+          return startMs < itemEnd && endMs > itemStart;
+        });
+      },
 
       // Sales Orders
       salesOrders: [],
@@ -1572,6 +1700,8 @@ export const useShopStore = create<ShopState>()(
       workOrderPartLines: [],
       workOrderLaborLines: [],
       workOrderChargeLines: [],
+      fabJobs: [],
+      fabJobLines: [],
       plasmaJobs: [],
       plasmaJobLines: [],
       plasmaAttachments: [],
@@ -2152,6 +2282,195 @@ export const useShopStore = create<ShopState>()(
               : o
           ),
         }));
+      },
+
+      createFabJobForWorkOrder: (workOrderId) => {
+        const state = get();
+        const existing = state.fabJobs.find((j) => j.work_order_id === workOrderId);
+        if (existing) return existing;
+        const timestamp = now();
+        const job: FabJob = {
+          id: generateId(),
+          source_type: 'WORK_ORDER',
+          work_order_id: workOrderId,
+          sales_order_id: null,
+          status: 'DRAFT',
+          notes: null,
+          posted_at: null,
+          posted_by: null,
+          calculated_at: null,
+          calc_version: 0,
+          created_at: timestamp,
+          updated_at: timestamp,
+          warnings: [],
+        };
+        set((state) => ({
+          fabJobs: [...state.fabJobs, job],
+        }));
+        return job;
+      },
+
+      getFabJobByWorkOrder: (workOrderId) => {
+        const job = get().fabJobs.find((j) => j.work_order_id === workOrderId);
+        if (!job) return null;
+        const lines = get().fabJobLines.filter((l) => l.fab_job_id === job.id);
+        return { job, lines };
+      },
+
+      updateFabJob: (id, patch) => {
+        const state = get();
+        const existing = state.fabJobs.find((j) => j.id === id);
+        if (!existing) return null;
+        if (existing.status !== 'DRAFT' && existing.status !== 'QUOTED' && existing.status !== 'APPROVED') {
+          return null;
+        }
+        const updated: FabJob = { ...existing, ...patch, updated_at: now() };
+        set((state) => ({
+          fabJobs: state.fabJobs.map((j) => (j.id === id ? updated : j)),
+        }));
+        return updated;
+      },
+
+      upsertFabJobLine: (jobId, line) => {
+        const state = get();
+        const job = state.fabJobs.find((j) => j.id === jobId);
+        if (!job) return null;
+        if (job.status !== 'DRAFT' && job.status !== 'QUOTED' && job.status !== 'APPROVED') return null;
+        if (job.work_order_id) {
+          const wo = state.workOrders.find((o) => o.id === job.work_order_id);
+          if (wo?.status === 'INVOICED') return null;
+        }
+        if (job.sales_order_id) {
+          const so = state.salesOrders.find((o) => o.id === job.sales_order_id);
+          if (so?.status === 'INVOICED') return null;
+        }
+        const existing = line.id ? state.fabJobLines.find((l) => l.id === line.id) : undefined;
+        const baseLine: FabJobLine = existing
+          ? { ...existing, ...line, fab_job_id: jobId }
+          : {
+              id: line.id ?? generateId(),
+              fab_job_id: jobId,
+              operation_type: line.operation_type ?? 'PRESS_BRAKE',
+              qty: line.qty ?? 1,
+              description: line.description ?? null,
+              notes: line.notes ?? null,
+              material_type: line.material_type ?? null,
+              thickness: line.thickness ?? null,
+              bends_count: line.bends_count ?? null,
+              bend_length: line.bend_length ?? null,
+              setup_minutes: line.setup_minutes ?? null,
+              machine_minutes: line.machine_minutes ?? null,
+              derived_machine_minutes: null,
+              tooling: line.tooling ?? null,
+              tonnage_estimate: line.tonnage_estimate ?? null,
+              weld_process: line.weld_process ?? null,
+              weld_length: line.weld_length ?? null,
+              weld_type: line.weld_type ?? null,
+              position: line.position ?? null,
+              override_machine_minutes: line.override_machine_minutes ?? false,
+              override_consumables_cost: line.override_consumables_cost ?? false,
+              override_labor_cost: line.override_labor_cost ?? false,
+              consumables_cost: line.consumables_cost ?? 0,
+              labor_cost: line.labor_cost ?? 0,
+              overhead_cost: line.overhead_cost ?? 0,
+              sell_price_each: line.sell_price_each ?? 0,
+              sell_price_total: line.sell_price_total ?? 0,
+              calc_version: 0,
+            };
+        set((state) => ({
+          fabJobLines: existing
+            ? state.fabJobLines.map((l) => (l.id === baseLine.id ? baseLine : l))
+            : [...state.fabJobLines, baseLine],
+        }));
+        get().recalculateFabJob(jobId);
+        return get().fabJobLines.find((l) => l.id === baseLine.id) ?? null;
+      },
+
+      deleteFabJobLine: (lineId) => {
+        const state = get();
+        const line = state.fabJobLines.find((l) => l.id === lineId);
+        if (!line) return;
+        const job = state.fabJobs.find((j) => j.id === line.fab_job_id);
+        if (!job) return;
+        if (job.status !== 'DRAFT' && job.status !== 'QUOTED' && job.status !== 'APPROVED') return;
+        if (job.work_order_id) {
+          const wo = state.workOrders.find((o) => o.id === job.work_order_id);
+          if (wo?.status === 'INVOICED') return;
+        }
+        set((state) => ({
+          fabJobLines: state.fabJobLines.filter((l) => l.id !== lineId),
+        }));
+        get().recalculateFabJob(line.fab_job_id);
+      },
+
+      recalculateFabJob: (jobId, settingsOverride) => {
+        const state = get();
+        const job = state.fabJobs.find((j) => j.id === jobId);
+        if (!job) return { success: false, error: 'Fabrication job not found' };
+        if (job.work_order_id) {
+          const wo = state.workOrders.find((o) => o.id === job.work_order_id);
+          if (wo?.status === 'INVOICED') return { success: false, error: 'Work order is invoiced' };
+        }
+        const lines = state.fabJobLines.filter((l) => l.fab_job_id === jobId);
+        const mergedSettings: Partial<FabricationPricingSettings> = { ...fabricationPricingDefaults, ...settingsOverride };
+        const { lines: pricedLines, warnings } = calculateFabJob(job, lines, mergedSettings);
+        const calcVersion = mergedSettings.calcVersion ?? fabricationPricingDefaults.calcVersion;
+        set((state) => ({
+          fabJobs: state.fabJobs.map((j) =>
+            j.id === jobId
+              ? {
+                  ...j,
+                  calculated_at: now(),
+                  calc_version: calcVersion,
+                  warnings,
+                  updated_at: now(),
+                }
+              : j
+          ),
+          fabJobLines: state.fabJobLines.map((line) => {
+            const updated = pricedLines.find((l) => l.id === line.id);
+            return updated && line.fab_job_id === jobId ? updated : line;
+          }),
+        }));
+        return { success: true, warnings };
+      },
+
+      postFabJobToWorkOrder: (fabJobId) => {
+        const state = get();
+        const job = state.fabJobs.find((j) => j.id === fabJobId);
+        if (!job) return { success: false, error: 'Fabrication job not found' };
+        if (!job.work_order_id) return { success: false, error: 'Fabrication job is not linked to a work order' };
+        const order = state.workOrders.find((o) => o.id === job.work_order_id);
+        if (order?.status === 'INVOICED') return { success: false, error: 'Work order is invoiced' };
+        if (job.status === 'VOID') return { success: false, error: 'Fabrication job is voided' };
+
+        const calculation = job.calculated_at ? { success: true } : get().recalculateFabJob(fabJobId);
+        if (!calculation?.success) return calculation;
+        const updatedLines = get().fabJobLines.filter((l) => l.fab_job_id === fabJobId);
+        const totalPrice = updatedLines.reduce((sum, line) => sum + (line.sell_price_total ?? 0), 0);
+        const description = `Fabrication Job ${job.id}`;
+        upsertFabChargeLine({
+          orderId: job.work_order_id,
+          fabJobId,
+          description,
+          totalPrice,
+        });
+        set((state) => ({
+          fabJobs: state.fabJobs.map((j) =>
+            j.id === fabJobId
+              ? {
+                  ...j,
+                  status: 'APPROVED',
+                  posted_at: now(),
+                  posted_by: 'system',
+                  updated_at: now(),
+                  calculated_at: j.calculated_at ?? now(),
+                  calc_version: j.calc_version ?? fabricationPricingDefaults.calcVersion,
+                }
+              : j
+          ),
+        }));
+        return { success: true };
       },
 
       createPlasmaJobForWorkOrder: (workOrderId) => {

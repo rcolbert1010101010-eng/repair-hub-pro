@@ -26,6 +26,8 @@ import type {
   WarrantyClaim,
   WarrantyClaimLine,
   WarrantyClaimStatus,
+  FabJob,
+  FabJobLine,
   WorkOrderChargeLine,
   PlasmaJob,
   PlasmaJobLine,
@@ -34,7 +36,9 @@ import type {
   PlasmaTemplateLine,
   Remnant,
   SalesOrderChargeLine,
+  ScheduleItem,
 } from '@/types';
+import type { FabricationPricingSettings } from '@/services/fabricationPricingService';
 import type { PlasmaPricingSettings } from '@/services/plasmaPricingService';
 
 export interface SettingsRepo {
@@ -156,6 +160,21 @@ export interface WorkOrdersRepo {
   recalculateWorkOrderTotals: (orderId: string) => void;
 }
 
+export interface FabricationRepo {
+  fabJobs: FabJob[];
+  fabJobLines: FabJobLine[];
+  createForWorkOrder: (workOrderId: string) => FabJob;
+  getByWorkOrder: (workOrderId: string) => { job: FabJob; lines: FabJobLine[] } | null;
+  updateJob: (id: string, patch: Partial<FabJob>) => FabJob | null;
+  upsertLine: (jobId: string, line: Partial<FabJobLine>) => FabJobLine | null;
+  deleteLine: (lineId: string) => void;
+  recalculate: (
+    fabJobId: string,
+    settingsOverride?: Partial<FabricationPricingSettings>
+  ) => { success: boolean; error?: string; warnings?: string[] };
+  postToWorkOrder: (fabJobId: string) => { success: boolean; error?: string };
+}
+
 export interface PlasmaRepo {
   plasmaJobs: PlasmaJob[];
   plasmaJobLines: PlasmaJobLine[];
@@ -272,6 +291,19 @@ export interface CycleCountsRepo {
   getCycleCountLines: (sessionId: string) => CycleCountLine[];
 }
 
+export interface SchedulingRepo {
+  list: () => ScheduleItem[];
+  getByWorkOrder: (workOrderId: string) => ScheduleItem[];
+  create: (item: Omit<ScheduleItem, 'id' | 'created_at' | 'updated_at'> & { id?: string }) => ScheduleItem;
+  update: (id: string, patch: Partial<ScheduleItem>) => ScheduleItem | null;
+  remove: (id: string) => void;
+  detectConflicts: (
+    item?:
+      | Pick<ScheduleItem, 'technician_id' | 'start_at' | 'duration_minutes'> & { id?: string | null }
+      | string
+  ) => ScheduleItem[];
+}
+
 export interface Repos {
   settings: SettingsRepo;
   customers: CustomersRepo;
@@ -289,5 +321,7 @@ export interface Repos {
   cycleCounts: CycleCountsRepo;
   returns: ReturnsRepo;
   warranty: WarrantyRepo;
+  fabrication: FabricationRepo;
   plasma: PlasmaRepo;
+  scheduling: SchedulingRepo;
 }
