@@ -3,25 +3,113 @@ import type { ScheduleItem, WorkOrder } from '@/types';
 
 const SCHEDULABLE_WORK_ORDER_STATUSES: WorkOrder['status'][] = ['OPEN', 'IN_PROGRESS'];
 
+const parseTimeString = (time: string | undefined) => {
+  if (!time) return { hours: 8, minutes: 0 };
+  const [h, m] = time.split(':').map((p) => parseInt(p, 10));
+  return {
+    hours: Number.isFinite(h) ? h : 8,
+    minutes: Number.isFinite(m) ? m : 0,
+  };
+};
+
 const getPromisedAt = (workOrder: WorkOrder) => (workOrder as any).promised_at ?? null;
 const getTechnicianId = (workOrder: WorkOrder) => (workOrder as any).technician_id ?? null;
 const getWorkOrderPriority = (workOrder: WorkOrder) => (workOrder as any).priority;
 
-const getStartAtForWorkOrder = (promisedAt: string | null) => {
-  if (promisedAt) {
-    const promisedDate = new Date(promisedAt);
-    if (!Number.isNaN(promisedDate.getTime())) {
-      promisedDate.setHours(8, 0, 0, 0);
-      return promisedDate.toISOString();
+const getLaborDurationMinutes = (workOrder: WorkOrder, state: ReturnType<typeof useShopStore.getState>) => {
+  const lines = state.workOrderLaborLines.filter((l) => l.work_order_id === workOrder.id);
+  if (lines.length === 0) return null;
+  const minutes = lines.reduce((sum, line) => sum + Math.max(0, line.hours || 0) * 60, 0);
+  if (!Number.isFinite(minutes) || minutes <= 0) return null;
+  return Math.min(480, Math.max(30, Math.round(minutes)));
+};
+
+const getDefaultDurationMinutes = (workOrder: WorkOrder, state: ReturnType<typeof useShopStore.getState>) => {
+  const laborDuration = getLaborDurationMinutes(workOrder, state);
+  if (laborDuration) return laborDuration;
+  return 120;
+};
+
+const isWeekend = (date: Date) => {
+  const day = date.getDay();
+  return day === 0 || day === 6;
+};
+
+const nextBusinessDay = (date: Date) => {
+  const d = new Date(date);
+  do {
+    d.setDate(d.getDate() + 1);
+  } while (isWeekend(d));
+  d.setHours(0, 0, 0, 0);
+  return d;
+};
+
+const getStartAtForWorkOrder = (
+  workOrder: WorkOrder,
+  durationMinutes: number,
+  state: ReturnType<typeof useShopStore.getState>
+) => {
+  const promisedAt = getPromisedAt(workOrder);
+  const techId = getTechnicianId(workOrder);
+  const settings = state.settings as any;
+  const { hours: startHour, minutes: startMinute } = parseTimeString(settings?.shop_hours_start ?? '08:00');
+  const { hours: endHour, minutes: endMinute } = parseTimeString(settings?.shop_hours_end ?? '17:00');
+
+  const buildDayStart = (base: Date) => {
+    const d = new Date(base);
+    d.setHours(startHour, startMinute, 0, 0);
+    return d;
+  };
+  const buildDayEnd = (base: Date) => {
+    const d = new Date(base);
+    d.setHours(endHour, endMinute, 0, 0);
+    return d;
+  };
+
+  let candidate = promisedAt ? new Date(promisedAt) : nextBusinessDay(new Date());
+  if (Number.isNaN(candidate.getTime())) candidate = nextBusinessDay(new Date());
+  candidate = isWeekend(candidate) ? nextBusinessDay(candidate) : candidate;
+  candidate.setHours(startHour, startMinute, 0, 0);
+
+  if (!techId) return candidate.toISOString();
+
+  const horizon = 10;
+  for (let i = 0; i < horizon; i++) {
+    const dayStart = buildDayStart(candidate);
+    const dayEnd = buildDayEnd(candidate);
+    const items = state.scheduleItems
+      .filter((item) => item.technician_id === techId)
+      .filter((item) => {
+        const start = new Date(item.start_at);
+        return (
+          start.getFullYear() === candidate.getFullYear() &&
+          start.getMonth() === candidate.getMonth() &&
+          start.getDate() === candidate.getDate()
+        );
+      })
+      .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime());
+
+    let slotStart = dayStart;
+    for (const item of items) {
+      const itemStart = new Date(item.start_at);
+      const itemEnd = new Date(itemStart.getTime() + item.duration_minutes * 60000);
+      if (slotStart.getTime() + durationMinutes * 60000 <= itemStart.getTime()) {
+        if (slotStart.getTime() + durationMinutes * 60000 <= dayEnd.getTime()) {
+          return slotStart.toISOString();
+        }
+      }
+      if (itemEnd.getTime() > slotStart.getTime()) {
+        slotStart = itemEnd;
+      }
+      if (slotStart.getTime() + durationMinutes * 60000 > dayEnd.getTime()) break;
     }
+    if (slotStart.getTime() + durationMinutes * 60000 <= dayEnd.getTime()) {
+      return slotStart.toISOString();
+    }
+    candidate = nextBusinessDay(candidate);
   }
-  const next = new Date();
-  next.setDate(next.getDate() + 1);
-  while (next.getDay() === 0 || next.getDay() === 6) {
-    next.setDate(next.getDate() + 1);
-  }
-  next.setHours(8, 0, 0, 0);
-  return next.toISOString();
+
+  return candidate.toISOString();
 };
 
 const ensureScheduleItemForWorkOrder = (workOrder: WorkOrder): ScheduleItem | null => {
@@ -59,14 +147,17 @@ const ensureScheduleItemForWorkOrder = (workOrder: WorkOrder): ScheduleItem | nu
       ? (Math.round(woPriority) as ScheduleItem['priority'])
       : 3;
 
+  const duration_minutes = getDefaultDurationMinutes(workOrder, state);
+  const start_at = getStartAtForWorkOrder(workOrder, duration_minutes, state);
+
   const newItem: Omit<ScheduleItem, 'id' | 'created_at' | 'updated_at'> = {
     source_ref_type: 'WORK_ORDER',
     source_ref_id: workOrder.id,
     block_type: null,
     block_title: null,
     technician_id: getTechnicianId(workOrder),
-    start_at: getStartAtForWorkOrder(promised_at),
-    duration_minutes: 120,
+    start_at,
+    duration_minutes,
     priority,
     promised_at,
     parts_ready: false,
