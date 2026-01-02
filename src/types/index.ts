@@ -516,6 +516,7 @@ export interface ScheduleItem {
   source_ref_id: string;
   block_type: ScheduleBlockType | null;
   block_title: string | null;
+  auto_scheduled: boolean;
   technician_id: string | null;
   start_at: string;
   duration_minutes: number;

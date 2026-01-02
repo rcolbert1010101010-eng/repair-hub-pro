@@ -102,6 +102,7 @@ export default function WorkOrderDetail() {
   const fabricationRepo = repos.fabrication;
   const plasmaRepo = repos.plasma;
   const workOrderRepo = repos.workOrders;
+  const schedulingRepo = repos.scheduling;
 
   const isNew = id === 'new';
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
@@ -943,7 +944,25 @@ export default function WorkOrderDetail() {
                 >
                   Convert to Work Order
                 </Button>
-              ) : (
+              ) : !schedulingRepo
+                  .list()
+                  .some((s) => s.source_ref_type === 'WORK_ORDER' && s.source_ref_id === currentOrder.id) &&
+                ['OPEN', 'IN_PROGRESS'].includes(currentOrder.status) ? (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const res = schedulingRepo.ensureScheduleItemForWorkOrder(currentOrder);
+                      if (!res) {
+                        toast({ title: 'Not scheduled', description: 'Could not create schedule item', variant: 'destructive' });
+                        return;
+                      }
+                      toast({ title: 'Pushed to Scheduling', description: 'Work order added to schedule' });
+                      // navigate('/scheduling'); // optional navigation
+                    }}
+                  >
+                    Push to Scheduling
+                  </Button>
+                ) : (
                 <Button onClick={() => setShowInvoiceDialog(true)}>
                   <FileCheck className="w-4 h-4 mr-2" />
                   Invoice

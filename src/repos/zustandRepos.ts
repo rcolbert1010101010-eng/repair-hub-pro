@@ -155,6 +155,7 @@ const ensureScheduleItemForWorkOrder = (workOrder: WorkOrder): ScheduleItem | nu
     source_ref_id: workOrder.id,
     block_type: null,
     block_title: null,
+    auto_scheduled: true,
     technician_id: getTechnicianId(workOrder),
     start_at,
     duration_minutes,

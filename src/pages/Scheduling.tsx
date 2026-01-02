@@ -16,6 +16,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { Link } from 'react-router-dom';
 
 const DAILY_CAPACITY_MINUTES = 480;
 
@@ -511,7 +512,21 @@ export default function Scheduling() {
                               </div>
                               <div className="mt-2 flex items-center gap-2 text-sm font-semibold">
                                 <ClipboardList className="w-4 h-4 text-primary" />
-                                <span className="truncate">{getItemLabel(item)}</span>
+                                {item.source_ref_type === 'WORK_ORDER' ? (
+                                  <Link
+                                    to={`/work-orders/${item.source_ref_id}`}
+                                    className="truncate text-primary hover:underline"
+                                  >
+                                    {getItemLabel(item)}
+                                  </Link>
+                                ) : (
+                                  <span className="truncate">{getItemLabel(item)}</span>
+                                )}
+                                {item.auto_scheduled && (
+                                  <Badge variant="outline" className="ml-1 text-[10px]">
+                                    Auto-scheduled
+                                  </Badge>
+                                )}
                               </div>
                               <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
                                 <Badge variant="outline" className={cn('px-2 py-0.5 text-[11px] font-semibold', item.priority === 1 ? 'border-destructive text-destructive' : '')}>
