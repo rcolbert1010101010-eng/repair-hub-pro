@@ -16,9 +16,12 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 const DAILY_CAPACITY_MINUTES = 480;
+const DAY_START_HOUR = 8;
+const DAY_END_HOUR = 17;
+const DAY_MINUTES = (DAY_END_HOUR - DAY_START_HOUR) * 60;
 
 type FormState = {
   itemType: 'WORK_ORDER' | 'BLOCK';
@@ -106,6 +109,7 @@ const defaultFormState = (): FormState => {
 };
 
 export default function Scheduling() {
+  const navigate = useNavigate();
   const repos = useRepos();
   const schedulingRepo = repos.scheduling;
   const { workOrders } = repos.workOrders;
@@ -117,8 +121,9 @@ export default function Scheduling() {
 
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<'DAY' | 'WEEK'>('DAY');
+  const [dayLayout, setDayLayout] = useState<'LANES' | 'GANTT'>('LANES');
   const [technicianFilter, setTechnicianFilter] = useState<'ALL' | 'UNASSIGNED' | string>('ALL');
-  const [weekLayout, setWeekLayout] = useState<'LANES' | 'CALENDAR'>('LANES');
+  const [weekLayout, setWeekLayout] = useState<'LANES' | 'CALENDAR' | 'GANTT'>('LANES');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formState, setFormState] = useState<FormState>(defaultFormState);
@@ -371,6 +376,41 @@ export default function Scheduling() {
     [scheduleItems, weekDayRange]
   );
 
+  const dayGanttMap = useMemo(() => {
+    const map = new Map<string, ScheduleItem[]>();
+    scheduleItems.forEach((item) => {
+      const start = new Date(item.start_at);
+      if (!sameDay(item.start_at, startDate)) return;
+      const key = item.technician_id ?? 'unassigned';
+      const arr = map.get(key) ?? [];
+      arr.push(item);
+      map.set(key, arr);
+    });
+    map.forEach((arr) => arr.sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()));
+    return map;
+  }, [scheduleItems, startDate]);
+
+  const weekGanttMap = useMemo(() => {
+    const map = new Map<string, ScheduleItem[]>();
+    const base = getWeekStart(startDate);
+    const baseMidnight = new Date(base);
+    baseMidnight.setHours(0, 0, 0, 0);
+    scheduleItems.forEach((item) => {
+      const start = new Date(item.start_at);
+      const startMidnight = new Date(start);
+      startMidnight.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((startMidnight.getTime() - baseMidnight.getTime()) / 86400000);
+      if (diffDays < 0 || diffDays > 6) return;
+      const techKey = item.technician_id ?? 'unassigned';
+      const key = `${techKey}-${diffDays}`;
+      const arr = map.get(key) ?? [];
+      arr.push(item);
+      map.set(key, arr);
+    });
+    map.forEach((arr) => arr.sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()));
+    return map;
+  }, [scheduleItems, startDate]);
+
   const renderLaneGrid = (laneSource: ScheduleItem[], showHeatmap: boolean) => (
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
       {(['unassigned', ...technicians.map((t) => t.id)] as string[])
@@ -591,10 +631,26 @@ export default function Scheduling() {
                 </Button>
               ))}
             </div>
+            {viewMode === 'DAY' && (
+              <div className="flex items-center gap-2 rounded-md border px-2 py-1 text-sm">
+                <span className="text-muted-foreground">Layout</span>
+                {(['LANES', 'GANTT'] as const).map((layout) => (
+                  <Button
+                    key={layout}
+                    variant={dayLayout === layout ? 'default' : 'ghost'}
+                    size="sm"
+                    className={dayLayout === layout ? '' : 'bg-transparent'}
+                    onClick={() => setDayLayout(layout)}
+                  >
+                    {layout === 'LANES' ? 'Lanes' : 'Gantt'}
+                  </Button>
+                ))}
+              </div>
+            )}
             {viewMode === 'WEEK' && (
               <div className="flex items-center gap-2 rounded-md border px-2 py-1 text-sm">
                 <span className="text-muted-foreground">Layout</span>
-                {(['LANES', 'CALENDAR'] as const).map((layout) => (
+                {(['LANES', 'CALENDAR', 'GANTT'] as const).map((layout) => (
                   <Button
                     key={layout}
                     variant={weekLayout === layout ? 'default' : 'ghost'}
@@ -602,7 +658,7 @@ export default function Scheduling() {
                     className={weekLayout === layout ? '' : 'bg-transparent'}
                     onClick={() => setWeekLayout(layout)}
                   >
-                    {layout === 'LANES' ? 'Lanes' : 'Calendar'}
+                    {layout === 'LANES' ? 'Lanes' : layout === 'CALENDAR' ? 'Calendar' : 'Gantt'}
                   </Button>
                 ))}
               </div>
@@ -658,7 +714,125 @@ export default function Scheduling() {
       </CardContent>
     </Card>
 
-      {viewMode === 'DAY' && renderLaneGrid(itemsForDate, false)}
+      {viewMode === 'DAY' && dayLayout === 'LANES' && renderLaneGrid(itemsForDate, false)}
+
+      {viewMode === 'DAY' && dayLayout === 'GANTT' && (
+        <div className="overflow-x-auto rounded-lg border">
+          <div className="grid grid-cols-[180px_minmax(0,1fr)] border-b bg-muted/50 px-3 py-2 text-xs font-semibold text-muted-foreground">
+            <div>Technician</div>
+            <div className="text-center">
+              {startDate.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}
+            </div>
+          </div>
+          {(['unassigned', ...technicians.map((t) => t.id)] as string[])
+            .filter((id) => {
+              if (technicianFilter === 'ALL') return true;
+              if (technicianFilter === 'UNASSIGNED') return id === 'unassigned';
+              return id === technicianFilter;
+            })
+            .map((techId) => {
+              const tech = technicianMap.get(techId) ?? null;
+              const cellItems = dayGanttMap.get(techId) ?? [];
+              const dayStart = new Date(startDate);
+              dayStart.setHours(DAY_START_HOUR, 0, 0, 0);
+
+              return (
+                <div
+                  key={`day-gantt-row-${techId}`}
+                  className="grid grid-cols-[180px_minmax(0,1fr)] border-b last:border-b-0"
+                >
+                  <div className="flex items-center gap-2 border-r px-3 py-3 text-sm font-medium">
+                    <User className="w-4 h-4 text-muted-foreground" />
+                    <span>{techId === 'unassigned' ? 'Unassigned' : tech?.name || 'Technician'}</span>
+                  </div>
+                  <div className="relative h-24 overflow-hidden px-2 py-2">
+                    <div className="absolute inset-0 rounded bg-muted/30" />
+                    {cellItems.map((item, barIdx) => {
+                      const start = new Date(item.start_at);
+                      const startMinutes = (start.getTime() - dayStart.getTime()) / 60000;
+                      const unclampedEnd = startMinutes + item.duration_minutes;
+                      const clampedStart = Math.min(Math.max(startMinutes, 0), DAY_MINUTES);
+                      const clampedEnd = Math.min(Math.max(unclampedEnd, 0), DAY_MINUTES);
+                      if (clampedEnd <= 0 || clampedStart >= DAY_MINUTES) return null;
+                      const widthMinutes = Math.max(5, clampedEnd - clampedStart);
+                      const leftPercent = (clampedStart / DAY_MINUTES) * 100;
+                      const widthPercent = (widthMinutes / DAY_MINUTES) * 100;
+                      const conflicts = conflictDetailsMap.get(item.id) ?? [];
+                      const hasConflict = conflicts.length > 0;
+                      const conflictSummary = conflicts[0] ? formatConflict(conflicts[0]) : null;
+                      const barClasses = cn(
+                        'absolute rounded border px-2 py-1 text-[11px] leading-tight shadow-sm transition hover:shadow',
+                        item.source_ref_type === 'BLOCK'
+                          ? 'bg-muted text-foreground border-muted-foreground/30'
+                          : 'bg-primary/10 text-primary border-primary/30',
+                        hasConflict ? 'ring-1 ring-destructive/60 border-destructive/50' : ''
+                      );
+
+                      const handleBarClick = () => {
+                        if (item.source_ref_type === 'WORK_ORDER') {
+                          navigate(`/work-orders/${item.source_ref_id}`);
+                        } else {
+                          handleOpenEdit(item);
+                        }
+                      };
+
+                      return (
+                        <Tooltip key={`day-gantt-bar-${item.id}-${barIdx}`}>
+                          <TooltipTrigger asChild>
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={handleBarClick}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  handleBarClick();
+                                }
+                              }}
+                              className={barClasses}
+                              style={{
+                                left: `${leftPercent}%`,
+                                width: `${widthPercent}%`,
+                                top: barIdx * 26,
+                              }}
+                            >
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="truncate font-medium">{getItemLabel(item)}</span>
+                                {hasConflict && (
+                                  <AlertTriangle className="w-3 h-3 shrink-0 text-destructive" />
+                                )}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground">
+                                {formatTimeRange(item)} • {(item.duration_minutes / 60).toFixed(1)}h
+                              </div>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent className="w-64 space-y-1">
+                            <p className="font-semibold">{getItemLabel(item)}</p>
+                            <p className="text-xs text-muted-foreground">{formatTimeRange(item)}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Duration: {(item.duration_minutes / 60).toFixed(1)}h
+                            </p>
+                            {item.promised_at && (
+                              <p className="text-xs text-muted-foreground">
+                                Promised: {new Date(item.promised_at).toLocaleString()}
+                              </p>
+                            )}
+                            {hasConflict && conflictSummary && (
+                              <p className="text-xs text-destructive">
+                                {conflictSummary.title} ({conflicts.length})
+                              </p>
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      )}
 
       {viewMode === 'WEEK' && weekLayout === 'LANES' && renderLaneGrid(weekLaneItems, true)}
 
@@ -759,6 +933,129 @@ export default function Scheduling() {
               </Card>
             );
           })}
+        </div>
+      )}
+
+      {viewMode === 'WEEK' && weekLayout === 'GANTT' && (
+        <div className="overflow-x-auto rounded-lg border">
+          <div className="grid grid-cols-[180px_repeat(7,minmax(0,1fr))] border-b bg-muted/50 px-3 py-2 text-xs font-semibold text-muted-foreground">
+            <div>Technician</div>
+            {weekDayRange.map((day) => (
+              <div key={`gantt-head-${day.toISOString()}`} className="text-center">
+                {day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+              </div>
+            ))}
+          </div>
+          {(['unassigned', ...technicians.map((t) => t.id)] as string[])
+            .filter((id) => {
+              if (technicianFilter === 'ALL') return true;
+              if (technicianFilter === 'UNASSIGNED') return id === 'unassigned';
+              return id === technicianFilter;
+            })
+            .map((techId) => {
+              const tech = technicianMap.get(techId) ?? null;
+              return (
+                <div
+                  key={`gantt-row-${techId}`}
+                  className="grid grid-cols-[180px_repeat(7,minmax(0,1fr))] border-b last:border-b-0"
+                >
+                  <div className="flex items-center gap-2 border-r px-3 py-3 text-sm font-medium">
+                    <User className="w-4 h-4 text-muted-foreground" />
+                    <span>{techId === 'unassigned' ? 'Unassigned' : tech?.name || 'Technician'}</span>
+                  </div>
+                  {weekDayRange.map((day, dayIdx) => {
+                    const dayStart = new Date(day);
+                    dayStart.setHours(DAY_START_HOUR, 0, 0, 0);
+                    const cellItems = weekGanttMap.get(`${techId}-${dayIdx}`) ?? [];
+                    return (
+                      <div key={`gantt-cell-${techId}-${day.toISOString()}`} className="relative h-24 overflow-hidden px-2 py-2">
+                        <div className="absolute inset-0 rounded bg-muted/30" />
+                        {cellItems.map((item, barIdx) => {
+                          const start = new Date(item.start_at);
+                          const startMinutes = (start.getTime() - dayStart.getTime()) / 60000;
+                          const unclampedEnd = startMinutes + item.duration_minutes;
+                          const clampedStart = Math.min(Math.max(startMinutes, 0), DAY_MINUTES);
+                          const clampedEnd = Math.min(Math.max(unclampedEnd, 0), DAY_MINUTES);
+                          if (clampedEnd <= 0 || clampedStart >= DAY_MINUTES) return null;
+                          const widthMinutes = Math.max(5, clampedEnd - clampedStart);
+                          const leftPercent = (clampedStart / DAY_MINUTES) * 100;
+                          const widthPercent = (widthMinutes / DAY_MINUTES) * 100;
+                          const conflicts = conflictDetailsMap.get(item.id) ?? [];
+                          const hasConflict = conflicts.length > 0;
+                          const conflictSummary = conflicts[0] ? formatConflict(conflicts[0]) : null;
+                          const barClasses = cn(
+                            'absolute rounded border px-2 py-1 text-[11px] leading-tight shadow-sm transition hover:shadow',
+                            item.source_ref_type === 'BLOCK'
+                              ? 'bg-muted text-foreground border-muted-foreground/30'
+                              : 'bg-primary/10 text-primary border-primary/30',
+                            hasConflict ? 'ring-1 ring-destructive/60 border-destructive/50' : ''
+                          );
+
+                          const handleBarClick = () => {
+                            if (item.source_ref_type === 'WORK_ORDER') {
+                              navigate(`/work-orders/${item.source_ref_id}`);
+                            } else {
+                              handleOpenEdit(item);
+                            }
+                          };
+
+                          return (
+                            <Tooltip key={`gantt-bar-${item.id}-${barIdx}`}>
+                              <TooltipTrigger asChild>
+                                <div
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={handleBarClick}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault();
+                                      handleBarClick();
+                                    }
+                                  }}
+                                  className={barClasses}
+                                  style={{
+                                    left: `${leftPercent}%`,
+                                    width: `${widthPercent}%`,
+                                    top: barIdx * 26,
+                                  }}
+                                >
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="truncate font-medium">{getItemLabel(item)}</span>
+                                    {hasConflict && (
+                                      <AlertTriangle className="w-3 h-3 shrink-0 text-destructive" />
+                                    )}
+                                  </div>
+                                  <div className="text-[10px] text-muted-foreground">
+                                    {formatTimeRange(item)} • {(item.duration_minutes / 60).toFixed(1)}h
+                                  </div>
+                                </div>
+                              </TooltipTrigger>
+                              <TooltipContent className="w-64 space-y-1">
+                                <p className="font-semibold">{getItemLabel(item)}</p>
+                                <p className="text-xs text-muted-foreground">{formatTimeRange(item)}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Duration: {(item.duration_minutes / 60).toFixed(1)}h
+                                </p>
+                                {item.promised_at && (
+                                  <p className="text-xs text-muted-foreground">
+                                    Promised: {new Date(item.promised_at).toLocaleString()}
+                                  </p>
+                                )}
+                                {hasConflict && conflictSummary && (
+                                  <p className="text-xs text-destructive">
+                                    {conflictSummary.title} ({conflicts.length})
+                                  </p>
+                                )}
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
         </div>
       )}
 
