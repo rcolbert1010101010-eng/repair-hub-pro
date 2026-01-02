@@ -933,7 +933,7 @@ export default function WorkOrderDetail() {
                 <Button
                   variant="default"
                   onClick={() => {
-                    const result = woConvertToOpen(currentOrder.id);
+                    const result = workOrderRepo.woConvertToOpen(currentOrder.id);
                     if (!result.success) {
                       toast({ title: 'Error', description: result.error, variant: 'destructive' });
                     } else {
