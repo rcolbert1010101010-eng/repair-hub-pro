@@ -1,4 +1,81 @@
 import { useShopStore } from '@/stores/shopStore';
+import type { ScheduleItem, WorkOrder } from '@/types';
+
+const SCHEDULABLE_WORK_ORDER_STATUSES: WorkOrder['status'][] = ['OPEN', 'IN_PROGRESS'];
+
+const getPromisedAt = (workOrder: WorkOrder) => (workOrder as any).promised_at ?? null;
+const getTechnicianId = (workOrder: WorkOrder) => (workOrder as any).technician_id ?? null;
+const getWorkOrderPriority = (workOrder: WorkOrder) => (workOrder as any).priority;
+
+const getStartAtForWorkOrder = (promisedAt: string | null) => {
+  if (promisedAt) {
+    const promisedDate = new Date(promisedAt);
+    if (!Number.isNaN(promisedDate.getTime())) {
+      promisedDate.setHours(8, 0, 0, 0);
+      return promisedDate.toISOString();
+    }
+  }
+  const next = new Date();
+  next.setDate(next.getDate() + 1);
+  while (next.getDay() === 0 || next.getDay() === 6) {
+    next.setDate(next.getDate() + 1);
+  }
+  next.setHours(8, 0, 0, 0);
+  return next.toISOString();
+};
+
+const ensureScheduleItemForWorkOrder = (workOrder: WorkOrder): ScheduleItem | null => {
+  if (!SCHEDULABLE_WORK_ORDER_STATUSES.includes(workOrder.status)) return null;
+
+  const state = useShopStore.getState();
+  const existing = state.scheduleItems.find(
+    (item) => item.source_ref_type === 'WORK_ORDER' && item.source_ref_id === workOrder.id
+  );
+
+  const promised_at = getPromisedAt(workOrder);
+  const woPriority = getWorkOrderPriority(workOrder);
+
+  if (existing) {
+    const updates: Partial<ScheduleItem> = {};
+    if (promised_at && existing.promised_at !== promised_at) {
+      updates.promised_at = promised_at;
+    }
+    if (
+      existing.priority === 3 &&
+      typeof woPriority === 'number' &&
+      woPriority >= 1 &&
+      woPriority <= 5
+    ) {
+      updates.priority = Math.round(woPriority) as ScheduleItem['priority'];
+    }
+    if (Object.keys(updates).length > 0) {
+      return state.updateScheduleItem(existing.id, updates) ?? existing;
+    }
+    return existing;
+  }
+
+  const priority =
+    typeof woPriority === 'number' && woPriority >= 1 && woPriority <= 5
+      ? (Math.round(woPriority) as ScheduleItem['priority'])
+      : 3;
+
+  const newItem: Omit<ScheduleItem, 'id' | 'created_at' | 'updated_at'> = {
+    source_ref_type: 'WORK_ORDER',
+    source_ref_id: workOrder.id,
+    block_type: null,
+    block_title: null,
+    technician_id: getTechnicianId(workOrder),
+    start_at: getStartAtForWorkOrder(promised_at),
+    duration_minutes: 120,
+    priority,
+    promised_at,
+    parts_ready: false,
+    status: 'ON_TRACK',
+    notes: null,
+  };
+
+  return state.createScheduleItem(newItem);
+};
 
 import type { Repos } from './repos';
 
@@ -151,6 +228,9 @@ export const zustandRepos: Repos = {
     detectConflicts(item) {
       return useShopStore.getState().detectScheduleConflicts(item);
     },
+    ensureScheduleItemForWorkOrder(workOrder) {
+      return ensureScheduleItemForWorkOrder(workOrder);
+    },
   },
   vendorCostHistory: {
     get vendorCostHistory() {
@@ -230,7 +310,9 @@ export const zustandRepos: Repos = {
       return useShopStore.getState().workOrderChargeLines;
     },
     createWorkOrder(customerId, unitId) {
-      return useShopStore.getState().createWorkOrder(customerId, unitId);
+      const wo = useShopStore.getState().createWorkOrder(customerId, unitId);
+      ensureScheduleItemForWorkOrder(wo);
+      return wo;
     },
     woAddPartLine(orderId, partId, qty) {
       return useShopStore.getState().woAddPartLine(orderId, partId, qty);
@@ -263,10 +345,20 @@ export const zustandRepos: Repos = {
       return useShopStore.getState().woToggleLaborWarranty(lineId);
     },
     woUpdateStatus(orderId, status) {
-      return useShopStore.getState().woUpdateStatus(orderId, status);
+      const result = useShopStore.getState().woUpdateStatus(orderId, status);
+      if (result.success) {
+        const updated = useShopStore.getState().workOrders.find((o) => o.id === orderId);
+        if (updated) ensureScheduleItemForWorkOrder(updated);
+      }
+      return result;
     },
     woConvertToOpen(orderId) {
-      return useShopStore.getState().woConvertToOpen(orderId);
+      const result = useShopStore.getState().woConvertToOpen(orderId);
+      if (result.success) {
+        const updated = useShopStore.getState().workOrders.find((o) => o.id === orderId);
+        if (updated) ensureScheduleItemForWorkOrder(updated);
+      }
+      return result;
     },
     woInvoice(orderId) {
       return useShopStore.getState().woInvoice(orderId);
