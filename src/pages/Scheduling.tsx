@@ -205,6 +205,40 @@ export default function Scheduling() {
     new Date(new Date(getWeekStart(startDate)).setDate(getWeekStart(startDate).getDate() + 6))
   )}`;
   const currentDayLabel = `${startDate.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}`;
+  const weekDayRange = useMemo(() => {
+    const base = getWeekStart(startDate);
+    return Array.from({ length: 7 }, (_, idx) => {
+      const d = new Date(base);
+      d.setDate(base.getDate() + idx);
+      return d;
+    });
+  }, [startDate]);
+
+  const techWeekLoads = useMemo(() => {
+    const map = new Map<string, number[]>();
+    const base = getWeekStart(startDate);
+    const baseMidnight = new Date(base);
+    baseMidnight.setHours(0, 0, 0, 0);
+    scheduleItems.forEach((item) => {
+      const start = new Date(item.start_at);
+      const startMidnight = new Date(start);
+      startMidnight.setHours(0, 0, 0, 0);
+      const diffDays = Math.round((startMidnight.getTime() - baseMidnight.getTime()) / 86400000);
+      if (diffDays < 0 || diffDays > 6) return;
+      const key = item.technician_id ?? 'unassigned';
+      const arr = map.get(key) ?? Array(7).fill(0);
+      arr[diffDays] += item.duration_minutes;
+      map.set(key, arr);
+    });
+    return map;
+  }, [scheduleItems, startDate]);
+
+  const getLoadTierClass = (percent: number) => {
+    if (percent === 0) return 'bg-muted';
+    if (percent < 50) return 'bg-accent/40';
+    if (percent < 100) return 'bg-accent';
+    return 'bg-destructive';
+  };
 
   const prefillStartForDate = (techId?: string | null) => {
     const start = new Date(startDate);
@@ -469,6 +503,34 @@ export default function Scheduling() {
                         )}
                       </div>
                     </div>
+                    {viewMode === 'WEEK' && (
+                      <div className="mt-2 flex items-center gap-1">
+                        {(techWeekLoads.get(techId) ?? Array(7).fill(0)).map((minutes, idx) => {
+                          const percent = Math.min(200, Math.round((minutes / DAILY_CAPACITY_MINUTES) * 100));
+                          const day = weekDayRange[idx];
+                          return (
+                            <Tooltip key={`${techId}-${day.toISOString()}`}>
+                              <TooltipTrigger asChild>
+                                <div
+                                  className={cn(
+                                    'h-3 w-6 rounded',
+                                    getLoadTierClass(percent)
+                                  )}
+                                />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p className="text-xs font-semibold">
+                                  {day.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {minutes} min / {DAILY_CAPACITY_MINUTES} min ({percent}%)
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        })}
+                      </div>
+                    )}
                   </CardHeader>
                   <CardContent className="space-y-2">
                     {laneItems.length === 0 && (
