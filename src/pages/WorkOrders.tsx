@@ -3,39 +3,129 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import type { WorkOrder } from '@/types';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { useMemo, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
+
+type WorkOrderRow = WorkOrder & { customer_name: string; unit_label: string; is_active?: boolean };
 
 export default function WorkOrders() {
   const navigate = useNavigate();
-  const { workOrders, customers, units } = useShopStore();
+  const repos = useRepos();
+  const { workOrders } = repos.workOrders;
+  const { customers } = repos.customers;
+  const { units } = repos.units;
+  const schedulingRepo = repos.scheduling;
+  const scheduleItems = schedulingRepo.list();
+  const [statusFilter, setStatusFilter] = useState<'open' | 'estimate' | 'invoiced' | 'deleted'>('open');
+  const [showUnscheduledOnly, setShowUnscheduledOnly] = useState(false);
 
-  const columns: Column<WorkOrder>[] = [
+  const scheduledWorkOrderIds = useMemo(
+    () =>
+      new Set(
+        scheduleItems
+          .filter((s) => s.source_ref_type === 'WORK_ORDER')
+          .map((s) => s.source_ref_id)
+      ),
+    [scheduleItems]
+  );
+
+  const tableData = useMemo<WorkOrderRow[]>(() => {
+    return workOrders.map((order) => {
+      const customer = customers.find((c) => c.id === order.customer_id);
+      const unit = units.find((u) => u.id === order.unit_id);
+      const unitParts = [unit?.year, unit?.make, unit?.model].filter(Boolean).join(' ');
+      const unitLabel = unit?.unit_name || unitParts || unit?.vin || '-';
+
+      return {
+        ...order,
+        customer_name: customer?.company_name || '-',
+        unit_label: unitLabel,
+      };
+    });
+  }, [customers, units, workOrders]);
+
+  const columns: Column<WorkOrderRow>[] = [
     { key: 'order_number', header: 'Order #', sortable: true, className: 'font-mono' },
     {
-      key: 'customer_id',
+      key: 'customer_name',
       header: 'Customer',
       sortable: true,
-      render: (item) => {
-        const customer = customers.find((c) => c.id === item.customer_id);
-        return customer?.company_name || '-';
-      },
+      render: (item) => item.customer_name || '-',
     },
     {
-      key: 'unit_id',
+      key: 'unit_label',
       header: 'Unit',
       sortable: true,
-      render: (item) => {
-        const unit = units.find((u) => u.id === item.unit_id);
-        return unit?.unit_name || '-';
-      },
+      render: (item) => item.unit_label || '-',
     },
     {
       key: 'status',
       header: 'Status',
       sortable: true,
       render: (item) => <StatusBadge status={item.status} />,
+    },
+    {
+      key: 'scheduled',
+      header: 'Schedule',
+      render: (item) => (
+        <div className="flex items-center gap-2">
+          {scheduledWorkOrderIds.has(item.id) ? (
+            <Badge variant="secondary">Scheduled</Badge>
+          ) : (
+            <Badge variant="destructive">Unscheduled</Badge>
+          )}
+          {!scheduledWorkOrderIds.has(item.id) ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={(e) => {
+                e.stopPropagation();
+                const existing = schedulingRepo.getByWorkOrder(item.id)[0];
+                if (existing) {
+                  navigate(`/scheduling?focusScheduleItemId=${existing.id}`);
+                  return;
+                }
+                const start = new Date();
+                start.setMinutes(0, 0, 0);
+                start.setHours(start.getHours() + 1);
+                const created = schedulingRepo.create({
+                  source_ref_type: 'WORK_ORDER',
+                  source_ref_id: item.id,
+                  block_type: null,
+                  block_title: null,
+                  technician_id: null,
+                  start_at: start.toISOString(),
+                  duration_minutes: 60,
+                  priority: 3,
+                  promised_at: null,
+                  parts_ready: false,
+                  status: 'ON_TRACK',
+                  notes: null,
+                  auto_scheduled: false,
+                });
+                navigate(`/scheduling?focusScheduleItemId=${created.id}`);
+              }}
+            >
+              Schedule
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={(e) => {
+                e.stopPropagation();
+                const existing = schedulingRepo.getByWorkOrder(item.id)[0];
+                if (existing) navigate(`/scheduling?focusScheduleItemId=${existing.id}`);
+              }}
+            >
+              View
+            </Button>
+          )}
+        </div>
+      ),
     },
     {
       key: 'total',
@@ -52,6 +142,33 @@ export default function WorkOrders() {
     },
   ];
 
+  const filteredTableData = useMemo(() => {
+    let statusFiltered = tableData.filter((order) => {
+      switch (statusFilter) {
+        case 'open':
+          return order.is_active !== false && (order.status === 'OPEN' || order.status === 'IN_PROGRESS');
+        case 'estimate':
+          return order.is_active !== false && order.status === 'ESTIMATE';
+        case 'invoiced':
+          return order.is_active !== false && order.status === 'INVOICED';
+        case 'deleted':
+          return order.is_active === false;
+        default:
+          return true;
+      }
+    });
+
+    if (statusFilter === 'deleted') {
+      statusFiltered = statusFiltered.map((order) => ({ ...order, is_active: true }));
+    }
+
+    if (showUnscheduledOnly) {
+      statusFiltered = statusFiltered.filter((order) => !scheduledWorkOrderIds.has(order.id));
+    }
+
+    return statusFiltered;
+  }, [scheduledWorkOrderIds, showUnscheduledOnly, statusFilter, tableData]);
+
   return (
     <div className="page-container">
       <PageHeader
@@ -65,11 +182,34 @@ export default function WorkOrders() {
         }
       />
 
+      <div className="flex justify-end gap-2 mb-4">
+        {(['open', 'estimate', 'invoiced', 'deleted'] as const).map((filter) => (
+          <Button
+            key={filter}
+            variant={statusFilter === filter ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setStatusFilter(filter)}
+          >
+            {filter === 'open' && 'Open'}
+            {filter === 'estimate' && 'Estimates'}
+            {filter === 'invoiced' && 'Invoiced'}
+            {filter === 'deleted' && 'Deleted'}
+          </Button>
+        ))}
+        <Button
+          variant={showUnscheduledOnly ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setShowUnscheduledOnly((prev) => !prev)}
+        >
+          {showUnscheduledOnly ? 'All' : 'Unscheduled only'}
+        </Button>
+      </div>
+
       <DataTable
-        data={workOrders}
+        data={filteredTableData}
         columns={columns}
-        searchKeys={['order_number']}
-        searchPlaceholder="Search orders..."
+        searchKeys={['order_number', 'customer_name', 'unit_label']}
+        searchPlaceholder="Search work orders..."
         onRowClick={(order) => navigate(`/work-orders/${order.id}`)}
         showActiveFilter={false}
         emptyMessage="No work orders found. Create your first work order to get started."

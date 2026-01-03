@@ -4,7 +4,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import type { PartCategory } from '@/types';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,7 @@ import { useToast } from '@/hooks/use-toast';
 
 export default function Categories() {
   const navigate = useNavigate();
-  const { categories, addCategory, updateCategory, deactivateCategory } = useShopStore();
+  const { categories, addCategory, updateCategory, deactivateCategory } = useRepos().categories;
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({

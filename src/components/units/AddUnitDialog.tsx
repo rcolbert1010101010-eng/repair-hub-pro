@@ -13,12 +13,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { useShopStore } from '@/stores/shopStore';
 import { useToast } from '@/hooks/use-toast';
 import { Save } from 'lucide-react';
+import type { Unit } from '@/types';
 
 interface AddUnitDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   customerId: string;
   customerName: string;
+  onUnitCreated?: (unit: Unit) => void;
 }
 
 export function AddUnitDialog({
@@ -26,6 +28,7 @@ export function AddUnitDialog({
   onOpenChange,
   customerId,
   customerName,
+  onUnitCreated,
 }: AddUnitDialogProps) {
   const { units, addUnit } = useShopStore();
   const { toast } = useToast();
@@ -106,12 +109,16 @@ export function AddUnitDialog({
       notes: formData.notes.trim() || null,
     };
 
-    addUnit(unitData);
+    const newUnit = addUnit(unitData);
 
     toast({
       title: 'Unit Created',
       description: `${formData.unit_name} has been added to ${customerName}`,
     });
+
+    if (onUnitCreated) {
+      onUnitCreated(newUnit);
+    }
 
     resetForm();
     onOpenChange(false);

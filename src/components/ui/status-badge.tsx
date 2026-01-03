@@ -10,6 +10,7 @@ interface StatusBadgeProps {
 }
 
 const statusStyles: Record<Status, string> = {
+  ESTIMATE: 'status-badge status-open',
   OPEN: 'status-badge status-open',
   IN_PROGRESS: 'status-badge status-in-progress',
   INVOICED: 'status-badge status-invoiced',
@@ -17,6 +18,7 @@ const statusStyles: Record<Status, string> = {
 };
 
 const statusLabels: Record<Status, string> = {
+  ESTIMATE: 'Estimate',
   OPEN: 'Open',
   IN_PROGRESS: 'In Progress',
   INVOICED: 'Invoiced',

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,38 +32,51 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { useShopStore } from '@/stores/shopStore';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
-import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Shield, RotateCcw } from 'lucide-react';
+import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Shield, RotateCcw, Check, Pencil, X as XIcon } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
-import { PrintSalesOrder } from '@/components/print/PrintInvoice';
+import { PrintSalesOrder, PrintSalesOrderPickList } from '@/components/print/PrintInvoice';
+import { calcPartPriceForLevel } from '@/domain/pricing/partPricing';
+import { getPurchaseOrderDerivedStatus } from '@/services/purchaseOrderStatus';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { PurchaseOrderPreviewDialog } from '@/components/purchase-orders/PurchaseOrderPreviewDialog';
 
 export default function SalesOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const repos = useRepos();
   const {
     salesOrders,
-    customers,
-    units,
-    parts,
-    settings,
     getSalesOrderLines,
     createSalesOrder,
     soAddPartLine,
     soUpdatePartQty,
+    soUpdateLineUnitPrice,
     soRemovePartLine,
     soToggleWarranty,
     soToggleCoreReturned,
     soMarkCoreReturned,
+    soConvertToOpen,
     soInvoice,
     updateSalesOrderNotes,
-    addCustomer,
-  } = useShopStore();
+  } = repos.salesOrders;
+  const { purchaseOrders, purchaseOrderLines } = repos.purchaseOrders;
+  const { customers, addCustomer } = repos.customers;
+  const { units } = repos.units;
+  const { parts, addPart } = repos.parts;
+  const { vendors } = repos.vendors;
+  const { categories } = repos.categories;
+  const { settings } = repos.settings;
   const { toast } = useToast();
 
+  const unitFromQuery = searchParams.get('unit_id') || '';
+  const NONE_UNIT = '__NONE__';
   const isNew = id === 'new';
-  const [selectedCustomerId, setSelectedCustomerId] = useState('');
-  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState(searchParams.get('customer_id') || '');
+  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(unitFromQuery || null);
   const [order, setOrder] = useState(() => {
     if (!isNew) return salesOrders.find((o) => o.id === id);
     return null;
@@ -72,17 +85,31 @@ export default function SalesOrderDetail() {
   const [addPartDialogOpen, setAddPartDialogOpen] = useState(false);
   const [selectedPartId, setSelectedPartId] = useState('');
   const [partQty, setPartQty] = useState('1');
+  const [newPartDialogOpen, setNewPartDialogOpen] = useState(false);
+  const [newPartData, setNewPartData] = useState({
+    part_number: '',
+    description: '',
+    vendor_id: '',
+    category_id: '',
+    cost: '',
+    selling_price: '',
+  });
 
   const [quickAddCustomerOpen, setQuickAddCustomerOpen] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
+  const [editingPriceLineId, setEditingPriceLineId] = useState<string | null>(null);
+  const [priceDraft, setPriceDraft] = useState<string>('');
   
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState('');
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
   const [showCoreReturnDialog, setShowCoreReturnDialog] = useState(false);
   const [coreReturnLineId, setCoreReturnLineId] = useState<string | null>(null);
+  const [printMode, setPrintMode] = useState<'invoice' | 'picklist'>('invoice');
 
-  const currentOrder = order || salesOrders.find((o) => o.id === id);
+  const currentOrder = salesOrders.find((o) => o.id === id) || order;
+  const customer = customers.find((c) => c.id === (currentOrder?.customer_id || selectedCustomerId));
+  const unit = units.find((u) => u.id === (currentOrder?.unit_id || selectedUnitId));
 
   const activeCustomers = customers.filter((c) => c.is_active);
   const customerUnits = useMemo(() => {
@@ -90,8 +117,12 @@ export default function SalesOrderDetail() {
     return units.filter((u) => u.customer_id === selectedCustomerId && u.is_active);
   }, [selectedCustomerId, units]);
   const activeParts = parts.filter((p) => p.is_active);
+  const activeVendors = vendors.filter((v) => v.is_active);
+  const activeCategories = categories.filter((c) => c.is_active);
 
   const isInvoiced = currentOrder?.status === 'INVOICED';
+  const isEstimate = currentOrder?.status === 'ESTIMATE';
+  const isCustomerOnHold = Boolean(customer?.credit_hold);
 
   if (!isNew && !currentOrder) {
     return (
@@ -147,6 +178,14 @@ export default function SalesOrderDetail() {
 
   const handleInvoice = () => {
     if (!currentOrder) return;
+    if (isCustomerOnHold) {
+      toast({
+        title: 'Credit Hold',
+        description: 'Cannot invoice while customer is on credit hold.',
+        variant: 'destructive',
+      });
+      return;
+    }
     const result = soInvoice(currentOrder.id);
     if (result.success) {
       toast({ title: 'Order Invoiced' });
@@ -158,7 +197,7 @@ export default function SalesOrderDetail() {
 
   const handleQuickAddCustomer = () => {
     if (!newCustomerName.trim()) return;
-    const newCustomer = addCustomer({
+    const result = addCustomer({
       company_name: newCustomerName.trim(),
       contact_name: null,
       phone: null,
@@ -166,10 +205,87 @@ export default function SalesOrderDetail() {
       address: null,
       notes: null,
     });
-    setSelectedCustomerId(newCustomer.id);
+    if (!result.success || !result.customer) {
+      toast({ title: 'Unable to add customer', description: result.error, variant: 'destructive' });
+      return;
+    }
+    setSelectedCustomerId(result.customer.id);
     setQuickAddCustomerOpen(false);
     setNewCustomerName('');
     toast({ title: 'Customer Added' });
+  };
+
+  const handleQuickAddPart = () => {
+    if (!newPartData.part_number.trim()) {
+      toast({
+        title: 'Validation Error',
+        description: 'Part number is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!newPartData.vendor_id) {
+      toast({
+        title: 'Validation Error',
+        description: 'Vendor is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!newPartData.category_id) {
+      toast({
+        title: 'Validation Error',
+        description: 'Category is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const exists = parts.some(
+      (p) => (p.part_number || '').toLowerCase() === newPartData.part_number.trim().toLowerCase()
+    );
+    if (exists) {
+      toast({
+        title: 'Validation Error',
+        description: 'A part with this number already exists',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const partNumber = newPartData.part_number.trim().toUpperCase();
+    const newPart = addPart({
+      part_number: partNumber,
+      description: newPartData.description.trim() || null,
+      vendor_id: newPartData.vendor_id,
+      category_id: newPartData.category_id,
+      cost: parseFloat(newPartData.cost) || 0,
+      selling_price: parseFloat(newPartData.selling_price) || 0,
+      quantity_on_hand: 0,
+      core_required: false,
+      core_charge: 0,
+      min_qty: null,
+      max_qty: null,
+      bin_location: null,
+      model: null,
+      serial_number: null,
+      barcode: null,
+    });
+
+    toast({
+      title: 'Part Created',
+      description: `${partNumber} has been added`,
+    });
+    setNewPartDialogOpen(false);
+    setNewPartData({
+      part_number: '',
+      description: '',
+      vendor_id: '',
+      category_id: '',
+      cost: '',
+      selling_price: '',
+    });
+    setSelectedPartId(newPart.id);
   };
 
   const handleEditNotes = () => {
@@ -189,6 +305,20 @@ export default function SalesOrderDetail() {
     setShowCoreReturnDialog(true);
   };
 
+  const handleConvertToOpen = () => {
+    if (!currentOrder) return;
+    const result = soConvertToOpen(currentOrder.id);
+    if (result.success) {
+      setOrder(null);
+      toast({
+        title: 'Order Converted',
+        description: 'Estimate converted to sales order',
+      });
+    } else {
+      toast({ title: 'Error', description: result.error, variant: 'destructive' });
+    }
+  };
+
   const confirmMarkCoreReturned = () => {
     if (!coreReturnLineId) return;
     const result = soMarkCoreReturned(coreReturnLineId);
@@ -201,9 +331,29 @@ export default function SalesOrderDetail() {
     setCoreReturnLineId(null);
   };
 
-  const customer = customers.find((c) => c.id === (currentOrder?.customer_id || selectedCustomerId));
-  const unit = units.find((u) => u.id === (currentOrder?.unit_id || selectedUnitId));
   const orderLines = currentOrder ? getSalesOrderLines(currentOrder.id) : [];
+  const poLinesByPo = useMemo(() => {
+    return purchaseOrderLines.reduce<Record<string, typeof purchaseOrderLines>>((acc, line) => {
+      acc[line.purchase_order_id] = acc[line.purchase_order_id] || [];
+      acc[line.purchase_order_id].push(line);
+      return acc;
+    }, {});
+  }, [purchaseOrderLines]);
+  const linkedPurchaseOrders = useMemo(() => {
+    if (!currentOrder) return [];
+    return purchaseOrders
+      .filter((po) => po.sales_order_id === currentOrder.id)
+      .map((po) => ({
+        ...po,
+        derivedStatus: getPurchaseOrderDerivedStatus(po, poLinesByPo[po.id] || []),
+      }));
+  }, [currentOrder, poLinesByPo, purchaseOrders]);
+  const priceLevelLabel =
+    customer?.price_level === 'WHOLESALE'
+      ? 'Wholesale'
+      : customer?.price_level === 'FLEET'
+      ? 'Fleet'
+      : 'Retail';
   
   // Separate part lines and refund lines for display
   const partLines = orderLines.filter((l) => !l.is_core_refund_line);
@@ -222,7 +372,9 @@ export default function SalesOrderDetail() {
               <div className="flex gap-2">
                 <Select value={selectedCustomerId} onValueChange={(v) => {
                   setSelectedCustomerId(v);
-                  setSelectedUnitId(null);
+                  if (!unitFromQuery) {
+                    setSelectedUnitId(null);
+                  }
                 }}>
                   <SelectTrigger className="flex-1">
                     <SelectValue placeholder="Select customer" />
@@ -242,11 +394,16 @@ export default function SalesOrderDetail() {
             {selectedCustomerId && selectedCustomerId !== 'walkin' && customerUnits.length > 0 && (
               <div>
                 <Label>Unit (optional)</Label>
-                <Select value={selectedUnitId || ''} onValueChange={setSelectedUnitId}>
-                  <SelectTrigger>
+                <Select
+                  value={selectedUnitId || NONE_UNIT}
+                  onValueChange={(v) => setSelectedUnitId(v === NONE_UNIT ? null : v)}
+                  disabled={!!unitFromQuery}
+                >
+                  <SelectTrigger disabled={!!unitFromQuery}>
                     <SelectValue placeholder="Select unit (optional)" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value={NONE_UNIT}>No unit</SelectItem>
                     {customerUnits.map((u) => (
                       <SelectItem key={u.id} value={u.id}>
                         {u.unit_name} {u.vin && `(${u.vin})`}
@@ -283,7 +440,13 @@ export default function SalesOrderDetail() {
     <div className="page-container">
       <PageHeader
         title={currentOrder?.order_number || 'Sales Order'}
-        subtitle={currentOrder?.status === 'INVOICED' ? 'Invoiced' : 'Open'}
+        subtitle={
+          currentOrder?.status === 'INVOICED'
+            ? 'Invoiced'
+            : currentOrder?.status === 'ESTIMATE'
+            ? 'Estimate'
+            : 'Open'
+        }
         backTo="/sales-orders"
         actions={
           !isInvoiced ? (
@@ -292,19 +455,53 @@ export default function SalesOrderDetail() {
                 <Printer className="w-4 h-4 mr-2" />
                 Print
               </Button>
-              <Button onClick={() => setShowInvoiceDialog(true)}>
-                <FileCheck className="w-4 h-4 mr-2" />
-                Invoice
+              <Button variant="outline" onClick={() => {
+                setPrintMode('picklist');
+                setTimeout(() => window.print(), 0);
+              }}>
+                <Printer className="w-4 h-4 mr-2" />
+                Pick List
               </Button>
+              {isEstimate ? (
+                <Button onClick={handleConvertToOpen}>
+                  <Save className="w-4 h-4 mr-2" />
+                  Convert to Sales Order
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => setShowInvoiceDialog(true)}
+                  disabled={isCustomerOnHold}
+                  title={isCustomerOnHold ? 'Customer is on credit hold' : undefined}
+                >
+                  <FileCheck className="w-4 h-4 mr-2" />
+                  Invoice
+                </Button>
+              )}
             </>
           ) : (
-            <Button variant="outline" onClick={() => window.print()}>
-              <Printer className="w-4 h-4 mr-2" />
-              Print
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => window.print()}>
+                <Printer className="w-4 h-4 mr-2" />
+                Print
+              </Button>
+              <Button variant="outline" onClick={() => {
+                setPrintMode('picklist');
+                setTimeout(() => window.print(), 0);
+              }}>
+                <Printer className="w-4 h-4 mr-2" />
+                Pick List
+              </Button>
+            </div>
           )
         }
       />
+
+      {isCustomerOnHold && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertTitle>Customer is on Credit Hold</AlertTitle>
+          <AlertDescription>{customer?.credit_hold_reason || 'Resolve hold before invoicing.'}</AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 no-print">
         {/* Order Info */}
@@ -314,6 +511,10 @@ export default function SalesOrderDetail() {
             <div>
               <span className="text-muted-foreground">Customer:</span>
               <p className="font-medium">{customer?.company_name || '-'}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Price Level:</span>
+              <p className="font-medium">{customer ? priceLevelLabel : 'Retail'}</p>
             </div>
             {unit && (
               <div>
@@ -332,6 +533,31 @@ export default function SalesOrderDetail() {
                 <p className="font-medium">{new Date(currentOrder.invoiced_at).toLocaleString()}</p>
               </div>
             )}
+            <div className="pt-2 border-t border-border space-y-2">
+              <p className="text-sm font-medium">Purchase Orders</p>
+              {linkedPurchaseOrders.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No purchase orders linked.</p>
+              ) : (
+                <div className="space-y-2">
+                  {linkedPurchaseOrders.map((po) => (
+                    <div key={po.id} className="flex items-center justify-between gap-2 text-sm">
+                      <div className="space-y-1">
+                        <p className="font-medium">{po.po_number || po.id}</p>
+                        <StatusBadge status={po.derivedStatus} />
+                      </div>
+                      <PurchaseOrderPreviewDialog
+                        poId={po.id}
+                        trigger={
+                          <Button variant="outline" size="sm">
+                            View PO
+                          </Button>
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           
           {/* Notes Section */}
@@ -421,7 +647,73 @@ export default function SalesOrderDetail() {
                             <Input type="number" min="1" value={line.quantity} onChange={(e) => handleUpdateQty(line.id, parseInt(e.target.value) || 0)} className="w-16 text-right" />
                           )}
                         </TableCell>
-                        <TableCell className="text-right">${line.unit_price.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">
+                          {isInvoiced ? (
+                            `$${line.unit_price.toFixed(2)}`
+                          ) : editingPriceLineId === line.id ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={priceDraft}
+                                onChange={(e) => setPriceDraft(e.target.value)}
+                                className="w-24 h-8 text-right"
+                              />
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => {
+                                  const parsed = parseFloat(priceDraft);
+                                  const result = soUpdateLineUnitPrice(line.id, parsed);
+                                  if (!result.success) {
+                                    toast({ title: 'Error', description: result.error, variant: 'destructive' });
+                                    return;
+                                  }
+                                  setEditingPriceLineId(null);
+                                  setPriceDraft('');
+                                }}
+                              >
+                                <Check className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditingPriceLineId(null);
+                                  setPriceDraft('');
+                                }}
+                              >
+                                <XIcon className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const suggested = part ? calcPartPriceForLevel(part, settings, customer?.price_level ?? 'RETAIL') : null;
+                                  if (suggested != null) {
+                                    setPriceDraft(suggested.toFixed(2));
+                                  }
+                                }}
+                              >
+                                Reset
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-2">
+                              <span>${line.unit_price.toFixed(2)}</span>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => {
+                                  setEditingPriceLineId(line.id);
+                                  setPriceDraft(line.unit_price.toFixed(2));
+                                }}
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right font-medium">
                           {line.is_warranty ? <span className="text-muted-foreground">$0.00</span> : `$${line.line_total.toFixed(2)}`}
                         </TableCell>
@@ -468,7 +760,14 @@ export default function SalesOrderDetail() {
 
       {/* Print Invoice */}
       {currentOrder && (
-        <PrintSalesOrder order={currentOrder} lines={orderLines} customer={customer} unit={unit} parts={parts} shopName={settings.shop_name} />
+        <>
+          {printMode === 'invoice' && (
+            <PrintSalesOrder order={currentOrder} lines={orderLines} customer={customer} unit={unit} parts={parts} shopName={settings.shop_name} />
+          )}
+          {printMode === 'picklist' && (
+            <PrintSalesOrderPickList order={currentOrder} lines={orderLines} customer={customer} unit={unit} parts={parts} shopName={settings.shop_name} />
+          )}
+        </>
       )}
 
       {/* Add Part Dialog */}
@@ -476,18 +775,113 @@ export default function SalesOrderDetail() {
         <div className="space-y-4">
           <div>
             <Label>Part *</Label>
-            <Select value={selectedPartId} onValueChange={setSelectedPartId}>
-              <SelectTrigger><SelectValue placeholder="Select part" /></SelectTrigger>
-              <SelectContent>
-                {activeParts.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>{p.part_number} - {p.description} (${p.selling_price.toFixed(2)})</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex gap-2">
+              <Select value={selectedPartId} onValueChange={setSelectedPartId}>
+                <SelectTrigger className="flex-1"><SelectValue placeholder="Select part" /></SelectTrigger>
+                <SelectContent>
+                  {activeParts.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.part_number} - {p.description} (${p.selling_price.toFixed(2)})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" onClick={() => setNewPartDialogOpen(true)}>
+                New Part
+              </Button>
+            </div>
           </div>
           <div>
             <Label>Quantity</Label>
             <Input type="number" min="1" value={partQty} onChange={(e) => setPartQty(e.target.value)} />
+          </div>
+        </div>
+      </QuickAddDialog>
+
+      {/* Quick Add Part Dialog */}
+      <QuickAddDialog
+        open={newPartDialogOpen}
+        onOpenChange={setNewPartDialogOpen}
+        title="New Part"
+        onSave={handleQuickAddPart}
+        onCancel={() => setNewPartDialogOpen(false)}
+      >
+        <div className="space-y-3">
+          <div>
+            <Label>Part Number *</Label>
+            <Input
+              value={newPartData.part_number}
+              onChange={(e) => setNewPartData({ ...newPartData, part_number: e.target.value.toUpperCase() })}
+              placeholder="e.g., BRK-001"
+              className="font-mono"
+            />
+          </div>
+          <div>
+            <Label>Description</Label>
+            <Textarea
+              value={newPartData.description}
+              onChange={(e) => setNewPartData({ ...newPartData, description: e.target.value })}
+              rows={2}
+              placeholder="Part description"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Vendor *</Label>
+              <Select
+                value={newPartData.vendor_id}
+                onValueChange={(value) => setNewPartData({ ...newPartData, vendor_id: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select vendor" />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeVendors.map((vendor) => (
+                    <SelectItem key={vendor.id} value={vendor.id}>
+                      {vendor.vendor_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Category *</Label>
+              <Select
+                value={newPartData.category_id}
+                onValueChange={(value) => setNewPartData({ ...newPartData, category_id: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeCategories.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.category_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Cost</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={newPartData.cost}
+                onChange={(e) => setNewPartData({ ...newPartData, cost: e.target.value })}
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <Label>Selling Price</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={newPartData.selling_price}
+                onChange={(e) => setNewPartData({ ...newPartData, selling_price: e.target.value })}
+                placeholder="0.00"
+              />
+            </div>
           </div>
         </div>
       </QuickAddDialog>

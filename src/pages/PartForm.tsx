@@ -12,24 +12,37 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, X, Trash2, Edit, Plus } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
+import { calcPartPriceForLevel, getPartCostBasis } from '@/domain/pricing/partPricing';
+import type { Part } from '@/types';
 
 export default function PartForm() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const repos = useRepos();
   const {
     parts,
-    vendors,
-    categories,
     addPart,
     updatePart,
+    updatePartWithQohAdjustment,
     deactivatePart,
-    addVendor,
-    addCategory,
-  } = useShopStore();
+  } = repos.parts;
+  const {
+    kitComponents,
+    addKitComponent,
+    updateKitComponentQuantity,
+    removeKitComponent,
+  } = repos.kitComponents;
+  const { vendors } = repos.vendors;
+  const { categories } = repos.categories;
+  const { addVendor } = repos.vendors;
+  const { addCategory } = repos.categories;
+  const { vendorCostHistory } = repos.vendorCostHistory;
+  const { purchaseOrders, purchaseOrderLines } = repos.purchaseOrders;
+  const { settings } = repos.settings;
   const { toast } = useToast();
 
   const isNew = id === 'new';
@@ -46,6 +59,13 @@ export default function PartForm() {
     quantity_on_hand: part?.quantity_on_hand?.toString() || '0',
     core_required: part?.core_required || false,
     core_charge: part?.core_charge?.toString() || '0',
+    barcode: part?.barcode || '',
+    is_kit: part?.is_kit ?? false,
+    min_qty: part?.min_qty?.toString() || '',
+    max_qty: part?.max_qty?.toString() || '',
+    bin_location: part?.bin_location ?? '',
+    model: part?.model ?? '',
+    serial_number: part?.serial_number ?? '',
   });
 
   // Quick add dialogs
@@ -53,9 +73,72 @@ export default function PartForm() {
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [newVendorName, setNewVendorName] = useState('');
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [adjustReason, setAdjustReason] = useState('');
+  const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
+  const [pendingPartData, setPendingPartData] = useState<null | typeof formData>(null);
+  const [newComponentId, setNewComponentId] = useState('');
+  const [newComponentQty, setNewComponentQty] = useState('1');
 
   const activeVendors = vendors.filter((v) => v.is_active);
   const activeCategories = categories.filter((c) => c.is_active);
+  const partCostHistory = vendorCostHistory
+    .filter((h) => h.part_id === id)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, 15);
+
+  const tempPartForPricing: Part = part || {
+    id: 'temp',
+    part_number: formData.part_number,
+    description: formData.description || null,
+    vendor_id: formData.vendor_id,
+    category_id: formData.category_id,
+    cost: parseFloat(formData.cost) || 0,
+    selling_price: parseFloat(formData.selling_price) || 0,
+    quantity_on_hand: parseInt(formData.quantity_on_hand) || 0,
+    core_required: part?.core_required ?? false,
+    core_charge: parseFloat(formData.core_charge) || 0,
+    min_qty: formData.min_qty === '' ? null : (Number.isFinite(parseInt(formData.min_qty)) ? parseInt(formData.min_qty) : null),
+    max_qty: formData.max_qty === '' ? null : (Number.isFinite(parseInt(formData.max_qty)) ? parseInt(formData.max_qty) : null),
+    bin_location: formData.bin_location.trim() || null,
+    last_cost: part?.last_cost ?? null,
+    avg_cost: part?.avg_cost ?? null,
+    model: part?.model ?? null,
+    serial_number: part?.serial_number ?? null,
+    barcode: part?.barcode ?? (formData.barcode.trim() ? formData.barcode.trim() : null),
+    is_kit: part?.is_kit ?? formData.is_kit ?? false,
+    is_active: true,
+    created_at: '',
+    updated_at: '',
+  };
+
+  const costBasis = getPartCostBasis(tempPartForPricing);
+  const suggestedRetail = calcPartPriceForLevel(tempPartForPricing, settings, 'RETAIL');
+  const suggestedFleet = calcPartPriceForLevel(tempPartForPricing, settings, 'FLEET');
+  const suggestedWholesale = calcPartPriceForLevel(tempPartForPricing, settings, 'WHOLESALE');
+  const poLinesForPart = part
+    ? purchaseOrderLines
+        .map((line) => {
+          const po = purchaseOrders.find((p) => p.id === line.purchase_order_id);
+          return { line, po };
+        })
+        .filter(({ line, po }) => po && po.status === 'OPEN' && line.part_id === part.id)
+    : [];
+  const poLinesWithOutstanding = poLinesForPart
+    .map(({ line, po }) => {
+      const outstanding = (line.ordered_quantity ?? 0) - (line.received_quantity ?? 0);
+      return { line, po: po!, outstanding: Math.max(0, outstanding) };
+    })
+    .filter((entry) => entry.outstanding > 0);
+  const totalOnOrder = poLinesWithOutstanding.reduce((sum, entry) => sum + entry.outstanding, 0);
+  const poLinesSorted = poLinesWithOutstanding.sort(
+    (a, b) => new Date(b.po.created_at).getTime() - new Date(a.po.created_at).getTime()
+  );
+  const kitComponentsForPart = part
+    ? kitComponents.filter((component) => component.kit_part_id === part.id && component.is_active)
+    : [];
+  const availableComponentParts = parts.filter(
+    (p) => p.is_active && p.id !== part?.id && !p.is_kit
+  );
 
   if (!isNew && !part) {
     return (
@@ -99,6 +182,13 @@ export default function PartForm() {
       quantity_on_hand: parseInt(formData.quantity_on_hand) || 0,
       core_required: formData.core_required,
       core_charge: parseFloat(formData.core_charge) || 0,
+      barcode: formData.barcode.trim() ? formData.barcode.trim() : null,
+      is_kit: formData.is_kit,
+      min_qty: formData.min_qty === '' ? null : (Number.isFinite(parseInt(formData.min_qty)) ? parseInt(formData.min_qty) : null),
+      max_qty: formData.max_qty === '' ? null : (Number.isFinite(parseInt(formData.max_qty)) ? parseInt(formData.max_qty) : null),
+      bin_location: formData.bin_location.trim() || null,
+      model: formData.model.trim() || null,
+      serial_number: formData.serial_number.trim() || null,
     };
 
     if (isNew) {
@@ -106,6 +196,12 @@ export default function PartForm() {
       toast({ title: 'Part Created', description: `${formData.part_number} has been added` });
       navigate(`/inventory/${newPart.id}`);
     } else {
+      const qohChanged = part && part.quantity_on_hand !== partData.quantity_on_hand;
+      if (qohChanged) {
+        setPendingPartData(formData);
+        setAdjustDialogOpen(true);
+        return;
+      }
       updatePart(id!, partData);
       toast({ title: 'Part Updated', description: 'Changes have been saved' });
       setEditing(false);
@@ -142,6 +238,89 @@ export default function PartForm() {
     setCategoryDialogOpen(false);
     setNewCategoryName('');
     toast({ title: 'Category Added', description: `${newCategory.category_name} has been created` });
+  };
+
+  const handleAddKitComponent = () => {
+    if (!editing) return;
+    if (!formData.is_kit) return;
+    if (!part) {
+      toast({ title: 'Save Part First', description: 'Save the part before adding kit components', variant: 'destructive' });
+      return;
+    }
+    if (!newComponentId) {
+      toast({ title: 'Validation Error', description: 'Select a component part to add', variant: 'destructive' });
+      return;
+    }
+    const quantity = parseFloat(newComponentQty);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      toast({ title: 'Validation Error', description: 'Quantity must be greater than 0', variant: 'destructive' });
+      return;
+    }
+
+    const existing = kitComponents.find(
+      (component) =>
+        component.kit_part_id === part.id &&
+        component.component_part_id === newComponentId &&
+        component.is_active
+    );
+
+    if (existing) {
+      updateKitComponentQuantity(existing.id, quantity);
+      toast({ title: 'Component Updated', description: 'Quantity has been updated' });
+    } else {
+      addKitComponent({
+        kit_part_id: part.id,
+        component_part_id: newComponentId,
+        quantity,
+      });
+      toast({ title: 'Component Added', description: 'Component added to kit' });
+    }
+
+    setNewComponentId('');
+    setNewComponentQty('1');
+  };
+
+  const handleUpdateKitComponentQty = (componentId: string, value: string) => {
+    if (!editing) return;
+    const quantity = parseFloat(value);
+    if (!Number.isFinite(quantity) || quantity <= 0) return;
+    updateKitComponentQuantity(componentId, quantity);
+  };
+
+  const handleRemoveKitComponent = (componentId: string) => {
+    if (!editing) return;
+    removeKitComponent(componentId);
+    toast({ title: 'Component Removed', description: 'Component removed from kit' });
+  };
+
+  const handleConfirmAdjustment = () => {
+    if (!pendingPartData || !part) return;
+    if (!adjustReason.trim()) {
+      toast({ title: 'Validation Error', description: 'Reason is required', variant: 'destructive' });
+      return;
+    }
+    const partData = {
+      part_number: pendingPartData.part_number.trim().toUpperCase(),
+      description: pendingPartData.description.trim() || null,
+      vendor_id: pendingPartData.vendor_id,
+      category_id: pendingPartData.category_id,
+      cost: parseFloat(pendingPartData.cost) || 0,
+      selling_price: parseFloat(pendingPartData.selling_price) || 0,
+      quantity_on_hand: parseInt(pendingPartData.quantity_on_hand) || 0,
+      core_required: pendingPartData.core_required,
+      core_charge: parseFloat(pendingPartData.core_charge) || 0,
+      barcode: pendingPartData.barcode.trim() ? pendingPartData.barcode.trim() : null,
+      is_kit: pendingPartData.is_kit,
+      min_qty: pendingPartData.min_qty === '' ? null : (Number.isFinite(parseInt(pendingPartData.min_qty)) ? parseInt(pendingPartData.min_qty) : null),
+      max_qty: pendingPartData.max_qty === '' ? null : (Number.isFinite(parseInt(pendingPartData.max_qty)) ? parseInt(pendingPartData.max_qty) : null),
+      bin_location: pendingPartData.bin_location.trim() || null,
+    };
+    updatePartWithQohAdjustment(id!, partData, { reason: adjustReason.trim(), adjusted_by: 'system' });
+    toast({ title: 'Part Updated', description: 'Changes have been saved' });
+    setAdjustDialogOpen(false);
+    setAdjustReason('');
+    setPendingPartData(null);
+    setEditing(false);
   };
 
   return (
@@ -196,12 +375,64 @@ export default function PartForm() {
               />
             </div>
             <div>
+              <Label htmlFor="barcode">Barcode</Label>
+              <Input
+                id="barcode"
+                value={formData.barcode}
+                onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+                disabled={!editing}
+                placeholder="Scan or enter barcode"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
               <Label htmlFor="quantity_on_hand">Quantity on Hand</Label>
               <Input
                 id="quantity_on_hand"
                 type="number"
                 value={formData.quantity_on_hand}
                 onChange={(e) => setFormData({ ...formData, quantity_on_hand: e.target.value })}
+                disabled={!editing}
+              />
+            </div>
+            <div>
+              <Label htmlFor="model">Model</Label>
+              <Input
+                id="model"
+                value={formData.model}
+                onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                disabled={!editing}
+              />
+            </div>
+            <div>
+              <Label htmlFor="serial_number">Serial Number</Label>
+              <Input
+                id="serial_number"
+                value={formData.serial_number}
+                onChange={(e) => setFormData({ ...formData, serial_number: e.target.value })}
+                disabled={!editing}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="min_qty">Min Qty</Label>
+              <Input
+                id="min_qty"
+                type="number"
+                value={formData.min_qty}
+                onChange={(e) => setFormData({ ...formData, min_qty: e.target.value })}
+                disabled={!editing}
+              />
+            </div>
+            <div>
+              <Label htmlFor="max_qty">Max Qty</Label>
+              <Input
+                id="max_qty"
+                type="number"
+                value={formData.max_qty}
+                onChange={(e) => setFormData({ ...formData, max_qty: e.target.value })}
                 disabled={!editing}
               />
             </div>
@@ -217,6 +448,18 @@ export default function PartForm() {
               rows={2}
               placeholder="Part description"
             />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="bin_location">Bin Location</Label>
+              <Input
+                id="bin_location"
+                value={formData.bin_location}
+                onChange={(e) => setFormData({ ...formData, bin_location: e.target.value })}
+                disabled={!editing}
+                placeholder="e.g., Aisle 3 - Bin 12"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -274,6 +517,117 @@ export default function PartForm() {
             </div>
           </div>
 
+          <div className="border border-border rounded-lg p-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="is_kit"
+                  checked={formData.is_kit}
+                  onChange={(e) => setFormData({ ...formData, is_kit: e.target.checked })}
+                  disabled={!editing}
+                  className="h-4 w-4 rounded border-input"
+                />
+                <Label htmlFor="is_kit" className="font-medium">Kit</Label>
+              </div>
+              {formData.is_kit && isNew && (
+                <span className="text-xs text-muted-foreground">Save the part to manage components</span>
+              )}
+            </div>
+            {formData.is_kit && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-3 items-end">
+                  <div className="col-span-2">
+                    <Label htmlFor="component_part_id">Add Component</Label>
+                    <Select
+                      value={newComponentId}
+                      onValueChange={setNewComponentId}
+                      disabled={!editing || isNew}
+                    >
+                      <SelectTrigger id="component_part_id">
+                        <SelectValue placeholder="Select part" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableComponentParts.map((componentPart) => (
+                          <SelectItem key={componentPart.id} value={componentPart.id}>
+                            {componentPart.part_number} — {componentPart.description || 'No description'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="component_qty">Qty</Label>
+                    <Input
+                      id="component_qty"
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={newComponentQty}
+                      onChange={(e) => setNewComponentQty(e.target.value)}
+                      disabled={!editing || isNew}
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleAddKitComponent}
+                    disabled={!editing || isNew}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Component
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {kitComponentsForPart.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No components added yet.</p>
+                  ) : (
+                    kitComponentsForPart.map((component) => {
+                      const componentPart = parts.find((p) => p.id === component.component_part_id);
+                      return (
+                        <div
+                          key={component.id}
+                          className="flex items-center justify-between rounded-md border border-border px-3 py-2"
+                        >
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium">
+                              {componentPart?.part_number || 'Component'}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {componentPart?.description || 'No description'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={component.quantity}
+                              onChange={(e) => handleUpdateKitComponentQty(component.id, e.target.value)}
+                              disabled={!editing}
+                              className="w-20"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleRemoveKitComponent(component.id)}
+                              disabled={!editing}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label htmlFor="cost">Cost</Label>
@@ -300,6 +654,148 @@ export default function PartForm() {
               />
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Last Cost</Label>
+              <Input
+                value={part?.last_cost != null ? part.last_cost.toFixed(2) : '—'}
+                disabled
+                placeholder="N/A"
+              />
+            </div>
+            <div>
+              <Label>Avg Cost</Label>
+              <Input
+                value={part?.avg_cost != null ? part.avg_cost.toFixed(2) : '—'}
+                disabled
+                placeholder="N/A"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Suggested Basis</Label>
+              <Input
+                value={
+                  costBasis.basis != null
+                    ? `$${costBasis.basis.toFixed(2)} (${costBasis.source.replace('_', ' ')})`
+                    : '—'
+                }
+                disabled
+              />
+            </div>
+            {editing && (
+              <div className="flex items-end justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    if (suggestedRetail != null) {
+                      setFormData({ ...formData, selling_price: suggestedRetail.toFixed(2) });
+                    }
+                  }}
+                >
+                  Apply Retail Suggested
+                </Button>
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <Label>Retail Suggested</Label>
+              <Input value={suggestedRetail != null ? suggestedRetail.toFixed(2) : '—'} disabled />
+            </div>
+            <div>
+              <Label>Fleet Suggested</Label>
+              <Input value={suggestedFleet != null ? suggestedFleet.toFixed(2) : '—'} disabled />
+            </div>
+            <div>
+              <Label>Wholesale Suggested</Label>
+              <Input value={suggestedWholesale != null ? suggestedWholesale.toFixed(2) : '—'} disabled />
+            </div>
+          </div>
+
+          {!isNew && (
+            <div className="border border-border rounded-lg p-4 space-y-3">
+              <h3 className="text-sm font-semibold">Cost History</h3>
+              {partCostHistory.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No cost history yet.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-muted-foreground">
+                      <th className="py-1">Date</th>
+                      <th className="py-1">Vendor</th>
+                      <th className="py-1 text-right">Unit Cost</th>
+                      <th className="py-1 text-right">Qty</th>
+                      <th className="py-1">Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {partCostHistory.map((entry) => {
+                      const vendor = vendors.find((v) => v.id === entry.vendor_id);
+                      return (
+                        <tr key={entry.id} className="border-t border-border/60">
+                          <td className="py-1">{new Date(entry.created_at).toLocaleDateString()}</td>
+                          <td className="py-1">{vendor?.vendor_name || '—'}</td>
+                          <td className="py-1 text-right">${entry.unit_cost.toFixed(2)}</td>
+                          <td className="py-1 text-right">{entry.quantity ?? '—'}</td>
+                          <td className="py-1 uppercase text-xs text-muted-foreground">{entry.source}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {!isNew && (
+            <div className="border border-border rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">On Order</h3>
+                <span className="text-sm font-medium">
+                  {totalOnOrder > 0 ? 'Yes' : 'No'} (Qty: {totalOnOrder})
+                </span>
+              </div>
+              {poLinesSorted.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No open purchase orders for this part.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-muted-foreground">
+                      <th className="py-1">PO</th>
+                      <th className="py-1">Vendor</th>
+                      <th className="py-1 text-right">Qty On Order</th>
+                      <th className="py-1">Status</th>
+                      <th className="py-1">Created</th>
+                      <th className="py-1"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {poLinesSorted.slice(0, 15).map(({ line, po, outstanding }) => {
+                      const vendor = vendors.find((v) => v.id === po.vendor_id);
+                      return (
+                        <tr key={line.id} className="border-t border-border/60">
+                          <td className="py-1 font-mono">{po.po_number || po.id}</td>
+                          <td className="py-1">{vendor?.vendor_name || '—'}</td>
+                          <td className="py-1 text-right">{outstanding}</td>
+                          <td className="py-1">{po.status}</td>
+                          <td className="py-1">{new Date(po.created_at).toLocaleDateString()}</td>
+                          <td className="py-1 text-right">
+                            <Button variant="link" size="sm" onClick={() => navigate(`/purchase-orders/${po.id}`)}>
+                              View
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
 
           {/* Core Charge Section */}
           <div className="border border-border rounded-lg p-4 space-y-4">
@@ -369,6 +865,36 @@ export default function PartForm() {
             value={newCategoryName}
             onChange={(e) => setNewCategoryName(e.target.value)}
             placeholder="Enter category name"
+          />
+        </div>
+      </QuickAddDialog>
+
+      {/* Inventory Adjustment Reason Dialog */}
+      <QuickAddDialog
+        open={adjustDialogOpen}
+        onOpenChange={(open) => {
+          setAdjustDialogOpen(open);
+          if (!open) {
+            setAdjustReason('');
+            setPendingPartData(null);
+          }
+        }}
+        title="Inventory Adjustment"
+        onSave={handleConfirmAdjustment}
+        onCancel={() => {
+          setAdjustDialogOpen(false);
+          setAdjustReason('');
+          setPendingPartData(null);
+        }}
+      >
+        <div>
+          <Label htmlFor="adjust_reason">Reason *</Label>
+          <Textarea
+            id="adjust_reason"
+            value={adjustReason}
+            onChange={(e) => setAdjustReason(e.target.value)}
+            placeholder="Provide a reason for the quantity change"
+            rows={3}
           />
         </div>
       </QuickAddDialog>

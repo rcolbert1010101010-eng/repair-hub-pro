@@ -10,6 +10,25 @@ interface PrintSalesOrderProps {
 }
 
 export function PrintSalesOrder({ order, lines, customer, unit, parts, shopName }: PrintSalesOrderProps) {
+  const pickListItems = lines
+    .map((line) => {
+      const part = parts.find((p) => p.id === line.part_id);
+      return {
+        id: line.id,
+        quantity: line.quantity,
+        partNumber: part?.part_number || '-',
+        description: part?.description || '-',
+        bin: part?.bin_location || '—',
+      };
+    })
+    .sort((a, b) => {
+      const binA = a.bin === '—' ? 'ZZZ' : a.bin;
+      const binB = b.bin === '—' ? 'ZZZ' : b.bin;
+      if (binA.localeCompare(binB) !== 0) return binA.localeCompare(binB);
+      if (a.partNumber.localeCompare(b.partNumber) !== 0) return a.partNumber.localeCompare(b.partNumber);
+      return a.description.localeCompare(b.description);
+    });
+
   return (
     <div className="print-invoice hidden print:block bg-white text-black p-8 min-h-screen">
       {/* Header */}
@@ -52,12 +71,46 @@ export function PrintSalesOrder({ order, lines, customer, unit, parts, shopName 
         )}
       </div>
 
+      {/* Pick List */}
+      {pickListItems.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-700 uppercase mb-2">Pick List</h3>
+          <table className="w-full mb-4">
+            <tbody>
+              {pickListItems.reduce<JSX.Element[]>((rows, item, index) => {
+                const prev = pickListItems[index - 1];
+                const isNewBin = !prev || prev.bin !== item.bin;
+                if (isNewBin) {
+                  rows.push(
+                    <tr key={`bin-${item.bin}-${index}`} className="bg-gray-100">
+                      <td colSpan={4} className="py-1 px-2 text-xs font-semibold text-gray-700">
+                        Bin: {item.bin}
+                      </td>
+                    </tr>
+                  );
+                }
+                rows.push(
+                  <tr key={item.id} className="border-b border-gray-200">
+                    <td className="py-1 px-2 text-sm text-right w-16">{item.quantity}</td>
+                    <td className="py-1 px-2 text-sm font-mono">{item.partNumber}</td>
+                    <td className="py-1 px-2 text-sm">{item.description}</td>
+                    <td className="py-1 px-2 text-sm">{item.bin}</td>
+                  </tr>
+                );
+                return rows;
+              }, [])}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* Line Items */}
       <table className="w-full mb-8">
         <thead>
           <tr className="border-b-2 border-gray-300">
             <th className="text-left py-2 text-sm font-semibold text-gray-700">Part #</th>
             <th className="text-left py-2 text-sm font-semibold text-gray-700">Description</th>
+            <th className="text-left py-2 text-sm font-semibold text-gray-700">Bin</th>
             <th className="text-right py-2 text-sm font-semibold text-gray-700">Qty</th>
             <th className="text-right py-2 text-sm font-semibold text-gray-700">Unit Price</th>
             <th className="text-right py-2 text-sm font-semibold text-gray-700">Total</th>
@@ -70,6 +123,7 @@ export function PrintSalesOrder({ order, lines, customer, unit, parts, shopName 
               <tr key={line.id} className="border-b border-gray-200">
                 <td className="py-2 font-mono text-sm">{part?.part_number || '-'}</td>
                 <td className="py-2 text-sm">{part?.description || '-'}</td>
+                <td className="py-2 text-sm">{part?.bin_location || '—'}</td>
                 <td className="py-2 text-right text-sm">{line.quantity}</td>
                 <td className="py-2 text-right text-sm">${line.unit_price.toFixed(2)}</td>
                 <td className="py-2 text-right text-sm font-medium">${line.line_total.toFixed(2)}</td>
@@ -124,6 +178,25 @@ interface PrintWorkOrderProps {
 }
 
 export function PrintWorkOrder({ order, partLines, laborLines, customer, unit, parts, shopName }: PrintWorkOrderProps) {
+  const pickListItems = partLines
+    .map((line) => {
+      const part = parts.find((p) => p.id === line.part_id);
+      return {
+        id: line.id,
+        quantity: line.quantity,
+        partNumber: part?.part_number || '-',
+        description: part?.description || '-',
+        bin: part?.bin_location || '—',
+      };
+    })
+    .sort((a, b) => {
+      const binA = a.bin === '—' ? 'ZZZ' : a.bin;
+      const binB = b.bin === '—' ? 'ZZZ' : b.bin;
+      if (binA.localeCompare(binB) !== 0) return binA.localeCompare(binB);
+      if (a.partNumber.localeCompare(b.partNumber) !== 0) return a.partNumber.localeCompare(b.partNumber);
+      return a.description.localeCompare(b.description);
+    });
+
   return (
     <div className="print-invoice hidden print:block bg-white text-black p-8 min-h-screen">
       {/* Header */}
@@ -197,11 +270,43 @@ export function PrintWorkOrder({ order, partLines, laborLines, customer, unit, p
       {partLines.length > 0 && (
         <>
           <h2 className="text-sm font-semibold text-gray-700 uppercase mb-2">Parts</h2>
+          {pickListItems.length > 0 && (
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold text-gray-700 uppercase mb-2">Pick List</h3>
+              <table className="w-full mb-2">
+                <tbody>
+                  {pickListItems.reduce<JSX.Element[]>((rows, item, index) => {
+                    const prev = pickListItems[index - 1];
+                    const isNewBin = !prev || prev.bin !== item.bin;
+                    if (isNewBin) {
+                      rows.push(
+                        <tr key={`bin-${item.bin}-${index}`} className="bg-gray-100">
+                          <td colSpan={4} className="py-1 px-2 text-xs font-semibold text-gray-700">
+                            Bin: {item.bin}
+                          </td>
+                        </tr>
+                      );
+                    }
+                    rows.push(
+                      <tr key={item.id} className="border-b border-gray-200">
+                        <td className="py-1 px-2 text-sm text-right w-16">{item.quantity}</td>
+                        <td className="py-1 px-2 text-sm font-mono">{item.partNumber}</td>
+                        <td className="py-1 px-2 text-sm">{item.description}</td>
+                        <td className="py-1 px-2 text-sm">{item.bin}</td>
+                      </tr>
+                    );
+                    return rows;
+                  }, [])}
+                </tbody>
+              </table>
+            </div>
+          )}
           <table className="w-full mb-6">
             <thead>
               <tr className="border-b-2 border-gray-300">
                 <th className="text-left py-2 text-sm font-semibold text-gray-700">Part #</th>
                 <th className="text-left py-2 text-sm font-semibold text-gray-700">Description</th>
+                <th className="text-left py-2 text-sm font-semibold text-gray-700">Bin</th>
                 <th className="text-right py-2 text-sm font-semibold text-gray-700">Qty</th>
                 <th className="text-right py-2 text-sm font-semibold text-gray-700">Unit Price</th>
                 <th className="text-right py-2 text-sm font-semibold text-gray-700">Total</th>
@@ -214,6 +319,7 @@ export function PrintWorkOrder({ order, partLines, laborLines, customer, unit, p
                   <tr key={line.id} className="border-b border-gray-200">
                     <td className="py-2 font-mono text-sm">{part?.part_number || '-'}</td>
                     <td className="py-2 text-sm">{part?.description || '-'}</td>
+                    <td className="py-2 text-sm">{part?.bin_location || '—'}</td>
                     <td className="py-2 text-right text-sm">{line.quantity}</td>
                     <td className="py-2 text-right text-sm">${line.unit_price.toFixed(2)}</td>
                     <td className="py-2 text-right text-sm font-medium">${line.line_total.toFixed(2)}</td>
@@ -263,6 +369,138 @@ export function PrintWorkOrder({ order, partLines, laborLines, customer, unit, p
       <div className="mt-12 pt-4 border-t border-gray-200 text-center text-gray-500 text-sm">
         <p>Thank you for your business!</p>
       </div>
+    </div>
+  );
+}
+
+export function PrintSalesOrderPickList(props: PrintSalesOrderProps) {
+  const { order, lines, customer, parts, shopName } = props;
+  const pickListItems = lines
+    .map((line) => {
+      const part = parts.find((p) => p.id === line.part_id);
+      return {
+        id: line.id,
+        quantity: line.quantity,
+        partNumber: part?.part_number || '-',
+        description: part?.description || '-',
+        bin: part?.bin_location || '—',
+      };
+    })
+    .sort((a, b) => {
+      const binA = a.bin === '—' ? 'ZZZ' : a.bin;
+      const binB = b.bin === '—' ? 'ZZZ' : b.bin;
+      if (binA.localeCompare(binB) !== 0) return binA.localeCompare(binB);
+      if (a.partNumber.localeCompare(b.partNumber) !== 0) return a.partNumber.localeCompare(b.partNumber);
+      return a.description.localeCompare(b.description);
+    });
+
+  if (pickListItems.length === 0) return null;
+
+  return (
+    <div className="print-invoice hidden print:block bg-white text-black p-8 min-h-screen">
+      <div className="flex justify-between items-start mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">{shopName}</h1>
+          <p className="text-gray-600 mt-1">Sales Order Pick List</p>
+        </div>
+        <div className="text-right">
+          <p className="text-xl font-mono font-bold">{order.order_number}</p>
+          <p className="text-gray-600">{new Date(order.created_at).toLocaleDateString()}</p>
+          {customer && <p className="text-sm text-gray-600">{customer.company_name}</p>}
+        </div>
+      </div>
+      <table className="w-full mb-4">
+        <tbody>
+          {pickListItems.reduce<JSX.Element[]>((rows, item, index) => {
+            const prev = pickListItems[index - 1];
+            const isNewBin = !prev || prev.bin !== item.bin;
+            if (isNewBin) {
+              rows.push(
+                <tr key={`bin-${item.bin}-${index}`} className="bg-gray-100">
+                  <td colSpan={4} className="py-1 px-2 text-xs font-semibold text-gray-700">
+                    Bin: {item.bin}
+                  </td>
+                </tr>
+              );
+            }
+            rows.push(
+              <tr key={item.id} className="border-b border-gray-200">
+                <td className="py-1 px-2 text-sm text-right w-16">{item.quantity}</td>
+                <td className="py-1 px-2 text-sm font-mono">{item.partNumber}</td>
+                <td className="py-1 px-2 text-sm">{item.description}</td>
+                <td className="py-1 px-2 text-sm">{item.bin}</td>
+              </tr>
+            );
+            return rows;
+          }, [])}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function PrintWorkOrderPickList(props: PrintWorkOrderProps) {
+  const { order, partLines, customer, parts, shopName } = props;
+  const pickListItems = partLines
+    .map((line) => {
+      const part = parts.find((p) => p.id === line.part_id);
+      return {
+        id: line.id,
+        quantity: line.quantity,
+        partNumber: part?.part_number || '-',
+        description: part?.description || '-',
+        bin: part?.bin_location || '—',
+      };
+    })
+    .sort((a, b) => {
+      const binA = a.bin === '—' ? 'ZZZ' : a.bin;
+      const binB = b.bin === '—' ? 'ZZZ' : b.bin;
+      if (binA.localeCompare(binB) !== 0) return binA.localeCompare(binB);
+      if (a.partNumber.localeCompare(b.partNumber) !== 0) return a.partNumber.localeCompare(b.partNumber);
+      return a.description.localeCompare(b.description);
+    });
+
+  if (pickListItems.length === 0) return null;
+
+  return (
+    <div className="print-invoice hidden print:block bg-white text-black p-8 min-h-screen">
+      <div className="flex justify-between items-start mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">{shopName}</h1>
+          <p className="text-gray-600 mt-1">Work Order Pick List</p>
+        </div>
+        <div className="text-right">
+          <p className="text-xl font-mono font-bold">{order.order_number}</p>
+          <p className="text-gray-600">{new Date(order.created_at).toLocaleDateString()}</p>
+          {customer && <p className="text-sm text-gray-600">{customer.company_name}</p>}
+        </div>
+      </div>
+      <table className="w-full mb-4">
+        <tbody>
+          {pickListItems.reduce<JSX.Element[]>((rows, item, index) => {
+            const prev = pickListItems[index - 1];
+            const isNewBin = !prev || prev.bin !== item.bin;
+            if (isNewBin) {
+              rows.push(
+                <tr key={`bin-${item.bin}-${index}`} className="bg-gray-100">
+                  <td colSpan={4} className="py-1 px-2 text-xs font-semibold text-gray-700">
+                    Bin: {item.bin}
+                  </td>
+                </tr>
+              );
+            }
+            rows.push(
+              <tr key={item.id} className="border-b border-gray-200">
+                <td className="py-1 px-2 text-sm text-right w-16">{item.quantity}</td>
+                <td className="py-1 px-2 text-sm font-mono">{item.partNumber}</td>
+                <td className="py-1 px-2 text-sm">{item.description}</td>
+                <td className="py-1 px-2 text-sm">{item.bin}</td>
+              </tr>
+            );
+            return rows;
+          }, [])}
+        </tbody>
+      </table>
     </div>
   );
 }
