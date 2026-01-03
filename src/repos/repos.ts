@@ -1,6 +1,7 @@
 import type {
   SystemSettings,
   Customer,
+  CustomerContact,
   Unit,
   Vendor,
   PartCategory,
@@ -48,9 +49,30 @@ export interface SettingsRepo {
 
 export interface CustomersRepo {
   customers: Customer[];
-  addCustomer: (customer: Omit<Customer, 'id' | 'is_active' | 'created_at' | 'updated_at'>) => Customer;
-  updateCustomer: (id: string, customer: Partial<Customer>) => void;
+  addCustomer: (
+    customer: Omit<Customer, 'id' | 'is_active' | 'created_at' | 'updated_at'>
+  ) => { success: boolean; customer?: Customer; error?: string };
+  updateCustomer: (
+    id: string,
+    customer: Partial<Customer>
+  ) => { success: boolean; customer?: Customer; error?: string };
   deactivateCustomer: (id: string) => boolean;
+  isCustomerOnCreditHold?: (customerId: string) => boolean;
+}
+
+export interface CustomerContactsRepo {
+  customerContacts: CustomerContact[];
+  getCustomerContacts: (customerId: string) => CustomerContact[];
+  createCustomerContact: (
+    customerId: string,
+    contact: Omit<CustomerContact, 'id' | 'customer_id' | 'created_at' | 'updated_at'>
+  ) => { success: boolean; contact?: CustomerContact; error?: string };
+  updateCustomerContact: (
+    contactId: string,
+    patch: Partial<Omit<CustomerContact, 'id' | 'customer_id' | 'created_at' | 'updated_at'>>
+  ) => { success: boolean; contact?: CustomerContact; error?: string };
+  deleteCustomerContact: (contactId: string) => boolean;
+  setPrimaryCustomerContact: (customerId: string, contactId: string) => void;
 }
 
 export interface UnitsRepo {
@@ -308,6 +330,7 @@ export interface SchedulingRepo {
 export interface Repos {
   settings: SettingsRepo;
   customers: CustomersRepo;
+  customerContacts: CustomerContactsRepo;
   units: UnitsRepo;
   vendors: VendorsRepo;
   categories: CategoriesRepo;

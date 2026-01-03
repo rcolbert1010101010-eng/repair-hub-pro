@@ -16,6 +16,7 @@ const apiBackedRepos: Repos = {
   ...zustandRepos,
   settings: settingsRepoApi,
   customers: customersRepoApi,
+  customerContacts: zustandRepos.customerContacts,
   units: unitsRepoApi,
   vendors: vendorsRepoApi,
   categories: categoriesRepoApi,

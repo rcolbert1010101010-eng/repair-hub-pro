@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,6 +60,7 @@ import type { FabJobLine, PlasmaJobLine } from '@/types';
 export default function WorkOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const {
     workOrders,
     customers,
@@ -105,7 +106,7 @@ export default function WorkOrderDetail() {
   const schedulingRepo = repos.scheduling;
 
   const isNew = id === 'new';
-  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState(searchParams.get('customer_id') || '');
   const [selectedUnitId, setSelectedUnitId] = useState('');
   const [order, setOrder] = useState(() => {
     if (!isNew) return workOrders.find((o) => o.id === id);
@@ -451,6 +452,14 @@ export default function WorkOrderDetail() {
 
   const handleInvoice = () => {
     if (!currentOrder) return;
+    if (isCustomerOnHold) {
+      toast({
+        title: 'Credit Hold',
+        description: 'Cannot invoice while customer is on credit hold.',
+        variant: 'destructive',
+      });
+      return;
+    }
     const result = woInvoice(currentOrder.id);
     if (result.success) {
       toast({ title: 'Order Invoiced', description: 'Work order has been invoiced and locked' });
@@ -462,7 +471,7 @@ export default function WorkOrderDetail() {
 
   const handleQuickAddCustomer = () => {
     if (!newCustomerName.trim()) return;
-    const newCustomer = addCustomer({
+    const result = addCustomer({
       company_name: newCustomerName.trim(),
       contact_name: null,
       phone: null,
@@ -470,7 +479,11 @@ export default function WorkOrderDetail() {
       address: null,
       notes: null,
     });
-    setSelectedCustomerId(newCustomer.id);
+    if (!result.success || !result.customer) {
+      toast({ title: 'Unable to add customer', description: result.error, variant: 'destructive' });
+      return;
+    }
+    setSelectedCustomerId(result.customer.id);
     setQuickAddCustomerOpen(false);
     setNewCustomerName('');
     toast({ title: 'Customer Added' });
@@ -723,6 +736,7 @@ export default function WorkOrderDetail() {
   };
 
   const customer = customers.find((c) => c.id === (currentOrder?.customer_id || selectedCustomerId));
+  const isCustomerOnHold = Boolean(customer?.credit_hold);
   const unit = units.find((u) => u.id === (currentOrder?.unit_id || selectedUnitId));
   const allPartLines = currentOrder ? getWorkOrderPartLines(currentOrder.id) : [];
   const laborLines = currentOrder ? getWorkOrderLaborLines(currentOrder.id) : [];
@@ -969,7 +983,11 @@ export default function WorkOrderDetail() {
                   View in Scheduling
                 </Button>
               ) : (
-                <Button onClick={() => setShowInvoiceDialog(true)}>
+                <Button
+                  onClick={() => setShowInvoiceDialog(true)}
+                  disabled={isCustomerOnHold}
+                  title={isCustomerOnHold ? 'Customer is on credit hold' : undefined}
+                >
                   <FileCheck className="w-4 h-4 mr-2" />
                   Invoice
                 </Button>
@@ -1004,6 +1022,13 @@ export default function WorkOrderDetail() {
           )
         }
       />
+
+      {isCustomerOnHold && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertTitle>Customer is on Credit Hold</AlertTitle>
+          <AlertDescription>{customer?.credit_hold_reason || 'Resolve hold before invoicing.'}</AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 no-print">
         {/* Order Info */}

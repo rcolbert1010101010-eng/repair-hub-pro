@@ -1,9 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { calcPartPriceForLevel } from '@/domain/pricing/partPricing';
+import { normalizePhone } from '@/lib/utils';
 import type {
   SystemSettings,
   Customer,
+  CustomerContact,
   Unit,
   Vendor,
   PartCategory,
@@ -41,6 +43,7 @@ import type {
   PlasmaJobAttachment,
   PlasmaJobAttachmentKind,
   ScheduleItem,
+  PreferredContactMethod,
 } from '@/types';
 import { calculateFabJob, fabricationPricingDefaults, type FabricationPricingSettings } from '@/services/fabricationPricingService';
 import { calculatePlasmaJob, plasmaPricingDefaults, type PlasmaPricingSettings } from '@/services/plasmaPricingService';
@@ -82,9 +85,26 @@ interface ShopState {
 
   // Customers
   customers: Customer[];
-  addCustomer: (customer: Omit<Customer, 'id' | 'is_active' | 'created_at' | 'updated_at'>) => Customer;
-  updateCustomer: (id: string, customer: Partial<Customer>) => void;
+  addCustomer: (
+    customer: Omit<Customer, 'id' | 'is_active' | 'created_at' | 'updated_at'>
+  ) => { success: boolean; customer?: Customer; error?: string };
+  updateCustomer: (id: string, customer: Partial<Customer>) => { success: boolean; customer?: Customer; error?: string };
   deactivateCustomer: (id: string) => boolean;
+  isCustomerOnCreditHold: (customerId: string) => boolean;
+
+  // Customer Contacts
+  customerContacts: CustomerContact[];
+  getCustomerContacts: (customerId: string) => CustomerContact[];
+  createCustomerContact: (
+    customerId: string,
+    contact: Omit<CustomerContact, 'id' | 'customer_id' | 'created_at' | 'updated_at'>
+  ) => { success: boolean; contact?: CustomerContact; error?: string };
+  updateCustomerContact: (
+    contactId: string,
+    patch: Partial<Omit<CustomerContact, 'id' | 'customer_id' | 'created_at' | 'updated_at'>>
+  ) => { success: boolean; contact?: CustomerContact; error?: string };
+  deleteCustomerContact: (contactId: string) => boolean;
+  setPrimaryCustomerContact: (customerId: string, contactId: string) => void;
 
   // Units
   units: Unit[];
@@ -388,6 +408,33 @@ const SAMPLE_CUSTOMERS: Customer[] = [
   { id: 'cust-4', company_name: 'Central Delivery Co', contact_name: 'Lisa Brown', phone: '555-444-4444', email: 'lisa@centraldelivery.com', address: '321 Main St, San Antonio, TX 78201', notes: 'COD only', price_level: 'WHOLESALE', is_tax_exempt: false, tax_rate_override: null, is_active: true, created_at: staticDate, updated_at: staticDate },
 ];
 
+const SAMPLE_CUSTOMER_CONTACTS: CustomerContact[] = [
+  {
+    id: 'contact-1',
+    customer_id: 'cust-1',
+    name: 'John Smith',
+    role: 'Fleet Manager',
+    phone: '555-111-1111',
+    email: 'john@abctrucking.com',
+    is_primary: true,
+    preferred_method: 'PHONE',
+    created_at: staticDate,
+    updated_at: staticDate,
+  },
+  {
+    id: 'contact-2',
+    customer_id: 'cust-2',
+    name: 'Sarah Johnson',
+    role: 'Operations',
+    phone: '555-222-2222',
+    email: 'sarah@metrologistics.com',
+    is_primary: true,
+    preferred_method: 'EMAIL',
+    created_at: staticDate,
+    updated_at: staticDate,
+  },
+];
+
 // Sample Units
 const SAMPLE_UNITS: Unit[] = [
   { id: 'unit-1', customer_id: 'cust-1', unit_name: 'Truck 101', vin: '1HGCM82633A123456', year: 2021, make: 'Freightliner', model: 'Cascadia', mileage: 245000, hours: null, notes: 'Primary long-haul unit', is_active: true, created_at: staticDate, updated_at: staticDate },
@@ -589,12 +636,42 @@ export const useShopStore = create<ShopState>()(
       customers: [WALKIN_CUSTOMER, ...SAMPLE_CUSTOMERS],
 
       addCustomer: (customer) => {
+        if (customer.credit_hold && !customer.credit_hold_reason?.trim()) {
+          return { success: false, error: 'Credit hold reason is required' };
+        }
+
+        const normalizedPhone = normalizePhone(customer.phone);
+        if (normalizedPhone) {
+          const state = get();
+          const conflictCustomer = state.customers.find((c) => normalizePhone(c.phone) === normalizedPhone);
+          if (conflictCustomer) {
+            return { success: false, error: `Phone already used by ${conflictCustomer.company_name}` };
+          }
+          const conflictContact = state.customerContacts.find((cc) => normalizePhone(cc.phone) === normalizedPhone);
+          if (conflictContact) {
+            const conflictCust = state.customers.find((c) => c.id === conflictContact.customer_id);
+            return {
+              success: false,
+              error: `Phone already used by ${conflictContact.name}${conflictCust ? ` (${conflictCust.company_name})` : ''}`,
+            };
+          }
+        }
+
         const newCustomer: Customer = {
           ...customer,
           id: generateId(),
           price_level: customer.price_level ?? 'RETAIL',
+          payment_terms: customer.payment_terms ?? 'COD',
+          credit_limit: customer.credit_limit ?? null,
+          credit_hold: customer.credit_hold ?? false,
+          credit_hold_reason: customer.credit_hold_reason ?? null,
           is_tax_exempt: customer.is_tax_exempt ?? false,
           tax_rate_override: customer.tax_rate_override ?? null,
+          phone: customer.phone?.trim() || null,
+          email: customer.email?.trim() || null,
+          address: customer.address?.trim() || null,
+          contact_name: customer.contact_name?.trim() || null,
+          notes: customer.notes?.trim() || null,
           is_active: true,
           created_at: now(),
           updated_at: now(),
@@ -602,15 +679,68 @@ export const useShopStore = create<ShopState>()(
         set((state) => ({
           customers: [...state.customers, newCustomer],
         }));
-        return newCustomer;
+        return { success: true, customer: newCustomer };
       },
 
-      updateCustomer: (id, customer) =>
-        set((state) => ({
-          customers: state.customers.map((c) =>
-            c.id === id ? { ...c, ...customer, updated_at: now() } : c
-          ),
-        })),
+      updateCustomer: (id, customer) => {
+        const state = get();
+        const existing = state.customers.find((c) => c.id === id);
+        if (!existing) return { success: false, error: 'Customer not found' };
+
+        if ((customer.credit_hold ?? existing.credit_hold) && !(customer.credit_hold_reason ?? existing.credit_hold_reason)?.trim()) {
+          return { success: false, error: 'Credit hold reason is required' };
+        }
+
+        const normalizedPhone = normalizePhone(customer.phone ?? existing.phone);
+        if (normalizedPhone) {
+          const conflictCustomer = state.customers.find(
+            (c) => c.id !== id && normalizePhone(c.phone) === normalizedPhone
+          );
+          if (conflictCustomer) {
+            return { success: false, error: `Phone already used by ${conflictCustomer.company_name}` };
+          }
+          const conflictContact = state.customerContacts.find(
+            (cc) => normalizePhone(cc.phone) === normalizedPhone && cc.customer_id !== id
+          );
+          if (conflictContact) {
+            const conflictCust = state.customers.find((c) => c.id === conflictContact.customer_id);
+            return {
+              success: false,
+              error: `Phone already used by ${conflictContact.name}${conflictCust ? ` (${conflictCust.company_name})` : ''}`,
+            };
+          }
+        }
+
+        let updatedCustomer: Customer | null = null;
+        set((s) => ({
+          customers: s.customers.map((c) => {
+            if (c.id !== id) return c;
+            updatedCustomer = {
+              ...c,
+              ...customer,
+              phone: (customer.phone ?? c.phone)?.trim() || null,
+              email: (customer.email ?? c.email)?.trim() || null,
+              address: (customer.address ?? c.address)?.trim() || null,
+              contact_name: (customer.contact_name ?? c.contact_name)?.trim() || null,
+              notes: (customer.notes ?? c.notes)?.trim() || null,
+              payment_terms: customer.payment_terms ?? c.payment_terms ?? 'COD',
+              credit_limit:
+                customer.credit_limit === undefined
+                  ? c.credit_limit ?? null
+                  : customer.credit_limit,
+              credit_hold: customer.credit_hold ?? c.credit_hold ?? false,
+              credit_hold_reason:
+                customer.credit_hold_reason === undefined
+                  ? c.credit_hold_reason ?? null
+                  : (customer.credit_hold_reason?.trim() || null),
+              updated_at: now(),
+            };
+            return updatedCustomer;
+          }),
+        }));
+
+        return updatedCustomer ? { success: true, customer: updatedCustomer } : { success: false, error: 'Customer not found' };
+      },
 
       deactivateCustomer: (id) => {
         const state = get();
@@ -626,6 +756,134 @@ export const useShopStore = create<ShopState>()(
           customers: state.customers.map((c) =>
             c.id === id ? { ...c, is_active: false, updated_at: now() } : c
           ),
+        }));
+        return true;
+      },
+
+      isCustomerOnCreditHold: (customerId) => {
+        const customer = get().customers.find((c) => c.id === customerId);
+        return Boolean(customer?.credit_hold);
+      },
+
+      // Customer Contacts
+      customerContacts: [...SAMPLE_CUSTOMER_CONTACTS],
+
+      getCustomerContacts: (customerId) => {
+        const contacts = useShopStore.getState().customerContacts;
+        return contacts.filter((c) => c.customer_id === customerId);
+      },
+
+      setPrimaryCustomerContact: (customerId, contactId) =>
+        set((state) => ({
+          customerContacts: state.customerContacts.map((c) =>
+            c.customer_id === customerId
+              ? { ...c, is_primary: c.id === contactId }
+              : c
+          ),
+        })),
+
+      createCustomerContact: (customerId, contact) => {
+        const state = useShopStore.getState();
+        const contacts = state.customerContacts;
+        const normalizedPhone = normalizePhone(contact.phone);
+        if (normalizedPhone) {
+          const conflictCustomer = state.customers.find((c) => normalizePhone(c.phone) === normalizedPhone);
+          if (conflictCustomer) {
+            return { success: false, error: `Phone already used by ${conflictCustomer.company_name}` };
+          }
+          const conflictContact = contacts.find((c) => normalizePhone(c.phone) === normalizedPhone);
+          if (conflictContact) {
+            const conflictCust = state.customers.find((c) => c.id === conflictContact.customer_id);
+            return {
+              success: false,
+              error: `Phone already used by ${conflictContact.name}${conflictCust ? ` (${conflictCust.company_name})` : ''}`,
+            };
+          }
+        }
+
+        const newContact: CustomerContact = {
+          ...contact,
+          id: generateId(),
+          customer_id: customerId,
+          role: contact.role ?? null,
+          phone: contact.phone?.trim() || null,
+          email: contact.email?.trim() || null,
+          preferred_method: contact.preferred_method ?? null,
+          is_primary: contact.is_primary ?? false,
+          created_at: now(),
+          updated_at: now(),
+        };
+
+        set((state) => ({
+          customerContacts: [...state.customerContacts, newContact],
+        }));
+
+        const hasPrimary = contacts.some((c) => c.customer_id === customerId && c.is_primary);
+        if (newContact.is_primary || !hasPrimary) {
+          useShopStore.getState().setPrimaryCustomerContact(customerId, newContact.id);
+          newContact.is_primary = true;
+        }
+
+        return { success: true, contact: newContact };
+      },
+
+      updateCustomerContact: (contactId, patch) => {
+        const state = useShopStore.getState();
+        const contacts = state.customerContacts;
+        const existing = contacts.find((c) => c.id === contactId);
+        if (!existing) return { success: false, error: 'Contact not found' };
+
+        const normalizedPhone = normalizePhone(patch.phone ?? existing.phone);
+        if (normalizedPhone) {
+          const conflictCustomer = state.customers.find(
+            (c) => normalizePhone(c.phone) === normalizedPhone && c.id !== existing.customer_id
+          );
+          if (conflictCustomer) {
+            return { success: false, error: `Phone already used by ${conflictCustomer.company_name}` };
+          }
+          const conflictContact = contacts.find(
+            (c) => c.id !== contactId && normalizePhone(c.phone) === normalizedPhone
+          );
+          if (conflictContact) {
+            const conflictCust = state.customers.find((c) => c.id === conflictContact.customer_id);
+            return {
+              success: false,
+              error: `Phone already used by ${conflictContact.name}${conflictCust ? ` (${conflictCust.company_name})` : ''}`,
+            };
+          }
+        }
+
+        let updatedContact: CustomerContact | null = null;
+        set((state) => ({
+          customerContacts: state.customerContacts.map((c) => {
+            if (c.id !== contactId) return c;
+            updatedContact = {
+              ...c,
+              ...patch,
+              phone: (patch.phone ?? c.phone)?.trim() || null,
+              email: (patch.email ?? c.email)?.trim() || null,
+              role: patch.role ?? c.role,
+              preferred_method: patch.preferred_method ?? c.preferred_method,
+              is_primary: patch.is_primary ?? c.is_primary,
+              updated_at: now(),
+            };
+            return updatedContact;
+          }),
+        }));
+
+        if (updatedContact?.is_primary) {
+          useShopStore.getState().setPrimaryCustomerContact(updatedContact.customer_id, updatedContact.id);
+          updatedContact.is_primary = true;
+        }
+
+        return updatedContact ? { success: true, contact: updatedContact } : { success: false, error: 'Contact not found' };
+      },
+
+      deleteCustomerContact: (contactId) => {
+        const state = get();
+        if (!state.customerContacts.some((c) => c.id === contactId)) return false;
+        set((s) => ({
+          customerContacts: s.customerContacts.filter((c) => c.id !== contactId),
         }));
         return true;
       },

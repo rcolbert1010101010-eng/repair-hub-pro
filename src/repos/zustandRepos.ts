@@ -193,6 +193,29 @@ export const zustandRepos: Repos = {
     deactivateCustomer(id) {
       return useShopStore.getState().deactivateCustomer(id);
     },
+    isCustomerOnCreditHold(customerId) {
+      return useShopStore.getState().isCustomerOnCreditHold(customerId);
+    },
+  },
+  customerContacts: {
+    get customerContacts() {
+      return useShopStore.getState().customerContacts;
+    },
+    getCustomerContacts(customerId) {
+      return useShopStore.getState().getCustomerContacts(customerId);
+    },
+    createCustomerContact(customerId, contact) {
+      return useShopStore.getState().createCustomerContact(customerId, contact);
+    },
+    updateCustomerContact(contactId, patch) {
+      return useShopStore.getState().updateCustomerContact(contactId, patch);
+    },
+    deleteCustomerContact(contactId) {
+      return useShopStore.getState().deleteCustomerContact(contactId);
+    },
+    setPrimaryCustomerContact(customerId, contactId) {
+      return useShopStore.getState().setPrimaryCustomerContact(customerId, contactId);
+    },
   },
   units: {
     get units() {

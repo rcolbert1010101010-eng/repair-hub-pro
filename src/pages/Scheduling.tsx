@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { CalendarDays, Clock, User, AlertTriangle, Plus, ChevronLeft, ChevronRight, ClipboardList, Wrench } from 'lucide-react';
 import { useRepos } from '@/repos';
 import type { ScheduleItem, ScheduleItemStatus, ScheduleBlockType } from '@/types';
@@ -17,13 +17,16 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useToast } from '@/components/ui/use-toast';
 
 const DAILY_CAPACITY_MINUTES = 480;
 const DEFAULT_SHOP_START = '08:00';
 const DEFAULT_SHOP_END = '17:00';
 const SNAP_MINUTES = 15;
 const MAX_BARS_PER_CELL = 3;
+const UTIL_WARN = 70;
+const UTIL_ALERT = 90;
 
 type FormState = {
   itemType: 'WORK_ORDER' | 'BLOCK';
@@ -140,8 +143,11 @@ export default function Scheduling() {
   const { units } = repos.units;
   const { technicians } = repos.technicians;
   const { settings } = repos.settings;
+  const { toast } = useToast();
 
   const scheduleItems = schedulingRepo.list();
+  const location = useLocation();
+  const [focusedScheduleItemId, setFocusedScheduleItemId] = useState<string | null>(null);
 
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<'DAY' | 'WEEK'>('DAY');
@@ -159,6 +165,25 @@ export default function Scheduling() {
   const dayStartTotalMinutes = startHour * 60 + startMinute;
   const dayEndTotalMinutes = endHour * 60 + endMinute;
   const dayMinutes = Math.max(60, dayEndTotalMinutes - dayStartTotalMinutes);
+
+  const getUtilizationTone = (percent: number) => {
+    if (percent > UTIL_ALERT) return 'text-destructive';
+    if (percent >= UTIL_WARN) return 'text-amber-600';
+    return 'text-muted-foreground';
+  };
+
+  const renderUtilizationBar = (percent: number) => {
+    const tone =
+      percent > UTIL_ALERT ? 'bg-destructive' : percent >= UTIL_WARN ? 'bg-amber-500' : 'bg-primary';
+    return (
+      <div className="h-1.5 w-28 overflow-hidden rounded-full bg-muted">
+        <div
+          className={cn('h-full rounded-full transition-all', tone)}
+          style={{ width: `${Math.min(percent, 150)}%` }}
+        />
+      </div>
+    );
+  };
 
   const startDate = useMemo(() => {
     const base = new Date(currentDate);
@@ -475,13 +500,17 @@ export default function Scheduling() {
                       handleBarClick();
                     }
                   }}
-                  className={barClasses}
+                  className={cn(
+                    barClasses,
+                    focusedScheduleItemId === item.id ? 'ring-2 ring-primary ring-offset-2' : ''
+                  )}
                   data-gantt-bar="true"
                   style={{
                     left: `${leftPercent}%`,
                     width: `${widthPercent}%`,
                     top: barIdx * 26,
                   }}
+                  data-schedule-item-id={item.id}
                 >
                   <div className="flex items-center justify-between gap-1">
                     <span className="truncate font-medium">{getItemLabel(item)}</span>
@@ -621,6 +650,34 @@ export default function Scheduling() {
   const hasDialogConflicts = dialogConflicts.length > 0;
   const dialogConflictSummary = dialogConflicts[0] ? formatConflict(dialogConflicts[0]) : null;
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const focusId = params.get('focusScheduleItemId');
+    if (!focusId) return;
+
+    const target = scheduleItems.find((item) => item.id === focusId);
+    if (!target) return;
+
+    handleOpenEdit(target);
+    setFocusedScheduleItemId(target.id);
+
+    const el = document.querySelector(`[data-schedule-item-id="${focusId}"]`) as HTMLElement | null;
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+    }
+
+    const timer = setTimeout(() => setFocusedScheduleItemId(null), 2500);
+
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.delete('focusScheduleItemId');
+    navigate(
+      { pathname: location.pathname, search: nextParams.toString() ? `?${nextParams.toString()}` : '' },
+      { replace: true }
+    );
+
+    return () => clearTimeout(timer);
+  }, [handleOpenEdit, location.pathname, location.search, navigate, scheduleItems]);
+
   const saveScheduleItem = () => {
     const isBlock = formState.itemType === 'BLOCK';
     if (!isBlock && !formState.workOrderId) {
@@ -650,6 +707,28 @@ export default function Scheduling() {
       status: formState.status,
       notes: formState.notes.trim() ? formState.notes.trim() : null,
     };
+
+    // Warn (non-blocking) if overbooking
+    if (!isBlock && isoStart) {
+      const startDateLocal = new Date(isoStart);
+      const sameDayItems = scheduleItems.filter(
+        (item) =>
+          (item.technician_id || null) === payload.technician_id &&
+          sameDay(item.start_at, startDateLocal) &&
+          item.id !== editingId
+      );
+      const existingMinutes = sameDayItems.reduce((sum, item) => sum + item.duration_minutes, 0);
+      const prospectiveMinutes = existingMinutes + durationMinutes;
+      const availableMinutes = dayMinutes;
+      if (availableMinutes > 0 && prospectiveMinutes > availableMinutes) {
+        const percent = Math.min(200, (prospectiveMinutes / availableMinutes) * 100);
+        toast({
+          title: 'Over capacity warning',
+          description: `${getTechnicianLabel(payload.technician_id || null)} would be ${(prospectiveMinutes / 60).toFixed(1)} / ${(availableMinutes / 60).toFixed(1)} hrs (${percent.toFixed(0)}%) for that day.`,
+          variant: 'destructive',
+        });
+      }
+    }
 
     if (editingId) {
       schedulingRepo.update(editingId, payload);
@@ -693,6 +772,16 @@ export default function Scheduling() {
     () => scheduleItems.filter((item) => weekDayRange.some((day) => sameDay(item.start_at, day))),
     [scheduleItems, weekDayRange]
   );
+  const weekItemsByTech = useMemo(() => {
+    const map = new Map<string, ScheduleItem[]>();
+    weekLaneItems.forEach((item) => {
+      const key = item.technician_id ?? 'unassigned';
+      const arr = map.get(key) ?? [];
+      arr.push(item);
+      map.set(key, arr);
+    });
+    return map;
+  }, [weekLaneItems]);
 
   const dayGanttMap = useMemo(() => {
     const map = new Map<string, ScheduleItem[]>();
@@ -742,9 +831,12 @@ export default function Scheduling() {
           const laneItems = laneSource.filter((item) =>
             techId === 'unassigned' ? !item.technician_id : item.technician_id === techId
           );
-          const loadMinutes = laneItems.reduce((sum, item) => sum + item.duration_minutes, 0);
-          const overCap = loadMinutes > DAILY_CAPACITY_MINUTES;
-          const loadHours = (loadMinutes / 60).toFixed(1);
+          const visibleDays = showHeatmap ? weekDayRange.length : 1;
+          const availableMinutes = dayMinutes * visibleDays;
+          const scheduledMinutes = laneItems.reduce((sum, item) => sum + item.duration_minutes, 0);
+          const percent = availableMinutes > 0 ? Math.min(200, (scheduledMinutes / availableMinutes) * 100) : 0;
+          const loadText = `${(scheduledMinutes / 60).toFixed(1)} / ${(availableMinutes / 60).toFixed(1)} hrs (${percent.toFixed(0)}%)`;
+          const overCap = percent > 100;
 
           return (
             <Card key={techId} className="h-full">
@@ -757,9 +849,26 @@ export default function Scheduling() {
                     </CardTitle>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Badge variant="outline" className={cn('px-2 py-0.5', overCap ? 'border-destructive text-destructive' : '')}>
-                      Load: {loadHours}h
-                    </Badge>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            'px-2 py-0.5 cursor-default',
+                            overCap ? 'border-destructive text-destructive' : ''
+                          )}
+                        >
+                          {loadText}
+                        </Badge>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="text-sm font-medium">Scheduled: {scheduledMinutes} mins</p>
+                        <p className="text-sm text-muted-foreground">Available: {availableMinutes} mins</p>
+                        {overCap && (
+                          <p className="text-sm text-destructive">Overbooked: {scheduledMinutes - availableMinutes} mins</p>
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -776,11 +885,16 @@ export default function Scheduling() {
                         </TooltipTrigger>
                         <TooltipContent>
                           <p className="font-medium text-destructive">Over capacity</p>
-                          <p className="text-xs text-muted-foreground">Daily capacity is 8h. Adjust schedule.</p>
+                          <p className="text-xs text-muted-foreground">Utilization over 100% for this window.</p>
                         </TooltipContent>
                       </Tooltip>
                     )}
                   </div>
+                </div>
+                <div className="mt-1 flex items-center gap-2 text-[11px]">
+                  <span className={cn(getUtilizationTone(percent))}>{loadText}</span>
+                  {renderUtilizationBar(percent)}
+                  {overCap && <Badge variant="destructive" className="px-2 py-0.5 text-[10px]">Overbooked</Badge>}
                 </div>
                 {showHeatmap && (
                   <div className="mt-2 flex items-center gap-1">
@@ -1050,25 +1164,47 @@ export default function Scheduling() {
               if (technicianFilter === 'UNASSIGNED') return id === 'unassigned';
               return id === technicianFilter;
             })
-            .map((techId) => {
-              const tech = technicianMap.get(techId) ?? null;
-              const cellItems = dayGanttMap.get(techId) ?? [];
-              const dayStart = new Date(startDate);
-              dayStart.setHours(startHour, startMinute, 0, 0);
+        .map((techId) => {
+          const tech = technicianMap.get(techId) ?? null;
+          const cellItems = dayGanttMap.get(techId) ?? [];
+          const dayStart = new Date(startDate);
+          dayStart.setHours(startHour, startMinute, 0, 0);
+          const scheduledMinutes = cellItems.reduce((sum, item) => sum + item.duration_minutes, 0);
+          const availableMinutes = dayMinutes;
+          const percent = availableMinutes > 0 ? Math.min(200, (scheduledMinutes / availableMinutes) * 100) : 0;
+          const loadText = `${(scheduledMinutes / 60).toFixed(1)} / ${(availableMinutes / 60).toFixed(1)} hrs (${percent.toFixed(0)}%)`;
 
-              return (
-                <div
-                  key={`day-gantt-row-${techId}`}
-                  className="grid grid-cols-[180px_minmax(0,1fr)] border-b last:border-b-0"
-                >
-                  <div className="sticky left-0 z-10 flex items-center gap-2 border-r bg-background px-3 py-3 text-sm font-medium">
-                    <User className="w-4 h-4 text-muted-foreground" />
-                    <span>{techId === 'unassigned' ? 'Unassigned' : tech?.name || 'Technician'}</span>
+          return (
+            <div
+              key={`day-gantt-row-${techId}`}
+              className="grid grid-cols-[180px_minmax(0,1fr)] border-b last:border-b-0"
+            >
+              <div className="sticky left-0 z-10 flex items-center gap-2 border-r bg-background px-3 py-3 text-sm font-medium">
+                <User className="w-4 h-4 text-muted-foreground" />
+                <div className="min-w-0">
+                  <div>{techId === 'unassigned' ? 'Unassigned' : tech?.name || 'Technician'}</div>
+                  <div className="flex items-center gap-2 text-[11px]">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className={cn('cursor-default', getUtilizationTone(percent))}>{loadText}</span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="text-sm font-medium">Scheduled: {scheduledMinutes} mins</p>
+                        <p className="text-sm text-muted-foreground">Available: {availableMinutes} mins</p>
+                        {percent > 100 && (
+                          <p className="text-sm text-destructive">Overbooked: {scheduledMinutes - availableMinutes} mins</p>
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                    {renderUtilizationBar(percent)}
+                    {percent > 100 && <Badge variant="destructive" className="px-2 py-0.5 text-[10px]">Overbooked</Badge>}
                   </div>
-                  {renderGanttCell({
-                    cellKey: `day-${techId}`,
-                    dayStart,
-                    dayDate: startDate,
+                </div>
+              </div>
+              {renderGanttCell({
+                cellKey: `day-${techId}`,
+                dayStart,
+                dayDate: startDate,
                     techId,
                     techLabel: techId === 'unassigned' ? 'Unassigned' : tech?.name || 'Technician',
                     cellItems,
@@ -1203,6 +1339,11 @@ export default function Scheduling() {
             })
             .map((techId) => {
               const tech = technicianMap.get(techId) ?? null;
+              const weekItemsForTech = weekItemsByTech.get(techId) ?? [];
+              const scheduledMinutes = weekItemsForTech.reduce((sum, item) => sum + item.duration_minutes, 0);
+              const availableMinutes = dayMinutes * weekDayRange.length;
+              const percent = availableMinutes > 0 ? Math.min(200, (scheduledMinutes / availableMinutes) * 100) : 0;
+              const loadText = `${(scheduledMinutes / 60).toFixed(1)} / ${(availableMinutes / 60).toFixed(1)} hrs (${percent.toFixed(0)}%)`;
               return (
                 <div
                   key={`gantt-row-${techId}`}
@@ -1210,7 +1351,27 @@ export default function Scheduling() {
                 >
                   <div className="sticky left-0 z-10 flex items-center gap-2 border-r bg-background px-3 py-3 text-sm font-medium">
                     <User className="w-4 h-4 text-muted-foreground" />
-                    <span>{techId === 'unassigned' ? 'Unassigned' : tech?.name || 'Technician'}</span>
+                    <div className="min-w-0">
+                      <div>{techId === 'unassigned' ? 'Unassigned' : tech?.name || 'Technician'}</div>
+                      <div className="flex items-center gap-2 text-[11px]">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className={cn('cursor-default', getUtilizationTone(percent))}>{loadText}</span>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="text-sm font-medium">Scheduled: {scheduledMinutes} mins</p>
+                            <p className="text-sm text-muted-foreground">Available: {availableMinutes} mins</p>
+                            {percent > 100 && (
+                              <p className="text-sm text-destructive">
+                                Overbooked: {scheduledMinutes - availableMinutes} mins
+                              </p>
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                        {renderUtilizationBar(percent)}
+                        {percent > 100 && <Badge variant="destructive" className="px-2 py-0.5 text-[10px]">Overbooked</Badge>}
+                      </div>
+                    </div>
                   </div>
                   {weekDayRange.map((day, dayIdx) => {
                     const dayStart = new Date(day);

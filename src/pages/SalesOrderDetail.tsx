@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +32,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Shield, RotateCcw, Check, Pencil, X as XIcon } from 'lucide-react';
@@ -45,6 +46,7 @@ import { PurchaseOrderPreviewDialog } from '@/components/purchase-orders/Purchas
 export default function SalesOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const repos = useRepos();
   const {
     salesOrders,
@@ -71,7 +73,7 @@ export default function SalesOrderDetail() {
   const { toast } = useToast();
 
   const isNew = id === 'new';
-  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState(searchParams.get('customer_id') || '');
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
   const [order, setOrder] = useState(() => {
     if (!isNew) return salesOrders.find((o) => o.id === id);
@@ -116,6 +118,7 @@ export default function SalesOrderDetail() {
 
   const isInvoiced = currentOrder?.status === 'INVOICED';
   const isEstimate = currentOrder?.status === 'ESTIMATE';
+  const isCustomerOnHold = Boolean(customer?.credit_hold);
 
   if (!isNew && !currentOrder) {
     return (
@@ -171,6 +174,14 @@ export default function SalesOrderDetail() {
 
   const handleInvoice = () => {
     if (!currentOrder) return;
+    if (isCustomerOnHold) {
+      toast({
+        title: 'Credit Hold',
+        description: 'Cannot invoice while customer is on credit hold.',
+        variant: 'destructive',
+      });
+      return;
+    }
     const result = soInvoice(currentOrder.id);
     if (result.success) {
       toast({ title: 'Order Invoiced' });
@@ -182,7 +193,7 @@ export default function SalesOrderDetail() {
 
   const handleQuickAddCustomer = () => {
     if (!newCustomerName.trim()) return;
-    const newCustomer = addCustomer({
+    const result = addCustomer({
       company_name: newCustomerName.trim(),
       contact_name: null,
       phone: null,
@@ -190,7 +201,11 @@ export default function SalesOrderDetail() {
       address: null,
       notes: null,
     });
-    setSelectedCustomerId(newCustomer.id);
+    if (!result.success || !result.customer) {
+      toast({ title: 'Unable to add customer', description: result.error, variant: 'destructive' });
+      return;
+    }
+    setSelectedCustomerId(result.customer.id);
     setQuickAddCustomerOpen(false);
     setNewCustomerName('');
     toast({ title: 'Customer Added' });
@@ -444,7 +459,11 @@ export default function SalesOrderDetail() {
                   Convert to Sales Order
                 </Button>
               ) : (
-                <Button onClick={() => setShowInvoiceDialog(true)}>
+                <Button
+                  onClick={() => setShowInvoiceDialog(true)}
+                  disabled={isCustomerOnHold}
+                  title={isCustomerOnHold ? 'Customer is on credit hold' : undefined}
+                >
                   <FileCheck className="w-4 h-4 mr-2" />
                   Invoice
                 </Button>
@@ -467,6 +486,13 @@ export default function SalesOrderDetail() {
           )
         }
       />
+
+      {isCustomerOnHold && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertTitle>Customer is on Credit Hold</AlertTitle>
+          <AlertDescription>{customer?.credit_hold_reason || 'Resolve hold before invoicing.'}</AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 no-print">
         {/* Order Info */}

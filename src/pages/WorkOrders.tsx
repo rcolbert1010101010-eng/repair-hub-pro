@@ -7,6 +7,7 @@ import { useRepos } from '@/repos';
 import type { WorkOrder } from '@/types';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { useMemo, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
 
 type WorkOrderRow = WorkOrder & { customer_name: string; unit_label: string; is_active?: boolean };
 
@@ -16,7 +17,20 @@ export default function WorkOrders() {
   const { workOrders } = repos.workOrders;
   const { customers } = repos.customers;
   const { units } = repos.units;
+  const schedulingRepo = repos.scheduling;
+  const scheduleItems = schedulingRepo.list();
   const [statusFilter, setStatusFilter] = useState<'open' | 'estimate' | 'invoiced' | 'deleted'>('open');
+  const [showUnscheduledOnly, setShowUnscheduledOnly] = useState(false);
+
+  const scheduledWorkOrderIds = useMemo(
+    () =>
+      new Set(
+        scheduleItems
+          .filter((s) => s.source_ref_type === 'WORK_ORDER')
+          .map((s) => s.source_ref_id)
+      ),
+    [scheduleItems]
+  );
 
   const tableData = useMemo<WorkOrderRow[]>(() => {
     return workOrders.map((order) => {
@@ -54,6 +68,66 @@ export default function WorkOrders() {
       render: (item) => <StatusBadge status={item.status} />,
     },
     {
+      key: 'scheduled',
+      header: 'Schedule',
+      render: (item) => (
+        <div className="flex items-center gap-2">
+          {scheduledWorkOrderIds.has(item.id) ? (
+            <Badge variant="secondary">Scheduled</Badge>
+          ) : (
+            <Badge variant="destructive">Unscheduled</Badge>
+          )}
+          {!scheduledWorkOrderIds.has(item.id) ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={(e) => {
+                e.stopPropagation();
+                const existing = schedulingRepo.getByWorkOrder(item.id)[0];
+                if (existing) {
+                  navigate(`/scheduling?focusScheduleItemId=${existing.id}`);
+                  return;
+                }
+                const start = new Date();
+                start.setMinutes(0, 0, 0);
+                start.setHours(start.getHours() + 1);
+                const created = schedulingRepo.create({
+                  source_ref_type: 'WORK_ORDER',
+                  source_ref_id: item.id,
+                  block_type: null,
+                  block_title: null,
+                  technician_id: null,
+                  start_at: start.toISOString(),
+                  duration_minutes: 60,
+                  priority: 3,
+                  promised_at: null,
+                  parts_ready: false,
+                  status: 'ON_TRACK',
+                  notes: null,
+                  auto_scheduled: false,
+                });
+                navigate(`/scheduling?focusScheduleItemId=${created.id}`);
+              }}
+            >
+              Schedule
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={(e) => {
+                e.stopPropagation();
+                const existing = schedulingRepo.getByWorkOrder(item.id)[0];
+                if (existing) navigate(`/scheduling?focusScheduleItemId=${existing.id}`);
+              }}
+            >
+              View
+            </Button>
+          )}
+        </div>
+      ),
+    },
+    {
       key: 'total',
       header: 'Total',
       sortable: true,
@@ -69,7 +143,7 @@ export default function WorkOrders() {
   ];
 
   const filteredTableData = useMemo(() => {
-    const statusFiltered = tableData.filter((order) => {
+    let statusFiltered = tableData.filter((order) => {
       switch (statusFilter) {
         case 'open':
           return order.is_active !== false && (order.status === 'OPEN' || order.status === 'IN_PROGRESS');
@@ -85,11 +159,15 @@ export default function WorkOrders() {
     });
 
     if (statusFilter === 'deleted') {
-      return statusFiltered.map((order) => ({ ...order, is_active: true }));
+      statusFiltered = statusFiltered.map((order) => ({ ...order, is_active: true }));
+    }
+
+    if (showUnscheduledOnly) {
+      statusFiltered = statusFiltered.filter((order) => !scheduledWorkOrderIds.has(order.id));
     }
 
     return statusFiltered;
-  }, [statusFilter, tableData]);
+  }, [scheduledWorkOrderIds, showUnscheduledOnly, statusFilter, tableData]);
 
   return (
     <div className="page-container">
@@ -118,6 +196,13 @@ export default function WorkOrders() {
             {filter === 'deleted' && 'Deleted'}
           </Button>
         ))}
+        <Button
+          variant={showUnscheduledOnly ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setShowUnscheduledOnly((prev) => !prev)}
+        >
+          {showUnscheduledOnly ? 'All' : 'Unscheduled only'}
+        </Button>
       </div>
 
       <DataTable

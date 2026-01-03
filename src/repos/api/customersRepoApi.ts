@@ -9,13 +9,18 @@ export const customersRepoApi: CustomersRepo = {
     return useShopStore.getState().customers;
   },
   addCustomer(customer) {
-    const newCustomer = useShopStore.getState().addCustomer(customer);
-    void apiClient.post<Customer>('/customers', newCustomer);
-    return newCustomer;
+    const result = useShopStore.getState().addCustomer(customer);
+    if (result.success && result.customer) {
+      void apiClient.post<Customer>('/customers', result.customer);
+    }
+    return result;
   },
   updateCustomer(id, customer) {
-    useShopStore.getState().updateCustomer(id, customer);
-    void apiClient.put<Customer>(`/customers/${id}`, customer);
+    const result = useShopStore.getState().updateCustomer(id, customer);
+    if (result.success && result.customer) {
+      void apiClient.put<Customer>(`/customers/${id}`, customer);
+    }
+    return result;
   },
   deactivateCustomer(id) {
     const success = useShopStore.getState().deactivateCustomer(id);

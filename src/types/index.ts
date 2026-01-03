@@ -1,5 +1,7 @@
 // System Settings
 export type PriceLevel = 'RETAIL' | 'FLEET' | 'WHOLESALE';
+export type PaymentTerms = 'COD' | 'NET_15' | 'NET_30' | 'NET_45' | 'NET_60';
+export type PreferredContactMethod = 'PHONE' | 'EMAIL';
 
 export interface SystemSettings {
   id: string;
@@ -23,9 +25,26 @@ export interface Customer {
   address: string | null;
   notes: string | null;
   price_level: PriceLevel;
+  payment_terms?: PaymentTerms;
+  credit_limit?: number | null;
+  credit_hold?: boolean;
+  credit_hold_reason?: string | null;
   is_tax_exempt: boolean;
   tax_rate_override: number | null;
   is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CustomerContact {
+  id: string;
+  customer_id: string;
+  name: string;
+  role: string | null;
+  phone: string | null;
+  email: string | null;
+  is_primary: boolean;
+  preferred_method: PreferredContactMethod | null;
   created_at: string;
   updated_at: string;
 }
