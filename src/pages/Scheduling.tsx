@@ -1610,11 +1610,13 @@ export default function Scheduling() {
                     <SelectItem value="__NONE__">
                       Unassigned
                     </SelectItem>
-                    {technicians.map((tech) => (
-                      <SelectItem key={tech.id} value={tech.id}>
-                        {tech.name}
-                      </SelectItem>
-                    ))}
+                    {technicians
+                      .filter((tech) => tech.id && tech.id.trim() !== '')
+                      .map((tech) => (
+                        <SelectItem key={tech.id} value={tech.id}>
+                          {tech.name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>

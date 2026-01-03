@@ -195,11 +195,13 @@ export default function ReturnDetail() {
                   <SelectValue placeholder="Select part" />
                 </SelectTrigger>
                 <SelectContent>
-                  {parts.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.part_number}
-                    </SelectItem>
-                  ))}
+                  {parts
+                    .filter((p) => p.id && p.id.trim() !== '')
+                    .map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.part_number}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
               <Input

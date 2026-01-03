@@ -53,6 +53,7 @@ import { calcPartPriceForLevel } from '@/domain/pricing/partPricing';
 import { getPurchaseOrderDerivedStatus } from '@/services/purchaseOrderStatus';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { PurchaseOrderPreviewDialog } from '@/components/purchase-orders/PurchaseOrderPreviewDialog';
+import { AddUnitDialog } from '@/components/units/AddUnitDialog';
 import { useRepos } from '@/repos';
 import { summarizeFabJob } from '@/services/fabJobSummary';
 import type { FabJobLine, PlasmaJobLine } from '@/types';
@@ -106,8 +107,9 @@ export default function WorkOrderDetail() {
   const schedulingRepo = repos.scheduling;
 
   const isNew = id === 'new';
+  const unitFromQuery = searchParams.get('unit_id') || '';
   const [selectedCustomerId, setSelectedCustomerId] = useState(searchParams.get('customer_id') || '');
-  const [selectedUnitId, setSelectedUnitId] = useState('');
+  const [selectedUnitId, setSelectedUnitId] = useState(unitFromQuery);
   const [order, setOrder] = useState(() => {
     if (!isNew) return workOrders.find((o) => o.id === id);
     return null;
@@ -138,7 +140,6 @@ export default function WorkOrderDetail() {
   const [quickAddCustomerOpen, setQuickAddCustomerOpen] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
   const [quickAddUnitOpen, setQuickAddUnitOpen] = useState(false);
-  const [newUnitName, setNewUnitName] = useState('');
 
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState('');
@@ -844,7 +845,9 @@ export default function WorkOrderDetail() {
               <div className="flex gap-2">
                 <Select value={selectedCustomerId} onValueChange={(v) => {
                   setSelectedCustomerId(v);
-                  setSelectedUnitId('');
+                  if (!unitFromQuery) {
+                    setSelectedUnitId('');
+                  }
                 }}>
                   <SelectTrigger className="flex-1">
                     <SelectValue placeholder="Select customer" />
@@ -865,8 +868,8 @@ export default function WorkOrderDetail() {
               <div>
                 <Label>Unit *</Label>
                 <div className="flex gap-2">
-                  <Select value={selectedUnitId} onValueChange={setSelectedUnitId}>
-                    <SelectTrigger className="flex-1">
+                  <Select value={selectedUnitId} onValueChange={setSelectedUnitId} disabled={!!unitFromQuery}>
+                    <SelectTrigger className="flex-1" disabled={!!unitFromQuery}>
                       <SelectValue placeholder="Select unit" />
                     </SelectTrigger>
                     <SelectContent>
@@ -876,7 +879,12 @@ export default function WorkOrderDetail() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button variant="outline" size="icon" onClick={() => setQuickAddUnitOpen(true)}>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setQuickAddUnitOpen(true)}
+                    disabled={!selectedCustomerId || selectedCustomerId === 'walkin'}
+                  >
                     <Plus className="w-4 h-4" />
                   </Button>
                 </div>
@@ -897,12 +905,19 @@ export default function WorkOrderDetail() {
           </div>
         </QuickAddDialog>
 
-        <QuickAddDialog open={quickAddUnitOpen} onOpenChange={setQuickAddUnitOpen} title="Quick Add Unit" onSave={handleQuickAddUnit} onCancel={() => setQuickAddUnitOpen(false)}>
-          <div>
-            <Label>Unit Name *</Label>
-            <Input value={newUnitName} onChange={(e) => setNewUnitName(e.target.value)} placeholder="Enter unit name" />
-          </div>
-        </QuickAddDialog>
+        <AddUnitDialog
+          open={quickAddUnitOpen}
+          onOpenChange={setQuickAddUnitOpen}
+          customerId={selectedCustomerId || currentOrder?.customer_id || ''}
+          customerName={
+            customers.find((c) => c.id === (selectedCustomerId || currentOrder?.customer_id))?.company_name ||
+            'Customer'
+          }
+          onUnitCreated={(unit) => {
+            setSelectedUnitId(unit.id);
+            setQuickAddUnitOpen(false);
+          }}
+        />
       </div>
     );
   }

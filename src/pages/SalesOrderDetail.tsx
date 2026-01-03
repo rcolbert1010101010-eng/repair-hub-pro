@@ -72,9 +72,11 @@ export default function SalesOrderDetail() {
   const { settings } = repos.settings;
   const { toast } = useToast();
 
+  const unitFromQuery = searchParams.get('unit_id') || '';
+  const NONE_UNIT = '__NONE__';
   const isNew = id === 'new';
   const [selectedCustomerId, setSelectedCustomerId] = useState(searchParams.get('customer_id') || '');
-  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
+  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(unitFromQuery || null);
   const [order, setOrder] = useState(() => {
     if (!isNew) return salesOrders.find((o) => o.id === id);
     return null;
@@ -106,6 +108,8 @@ export default function SalesOrderDetail() {
   const [printMode, setPrintMode] = useState<'invoice' | 'picklist'>('invoice');
 
   const currentOrder = salesOrders.find((o) => o.id === id) || order;
+  const customer = customers.find((c) => c.id === (currentOrder?.customer_id || selectedCustomerId));
+  const unit = units.find((u) => u.id === (currentOrder?.unit_id || selectedUnitId));
 
   const activeCustomers = customers.filter((c) => c.is_active);
   const customerUnits = useMemo(() => {
@@ -327,8 +331,6 @@ export default function SalesOrderDetail() {
     setCoreReturnLineId(null);
   };
 
-  const customer = customers.find((c) => c.id === (currentOrder?.customer_id || selectedCustomerId));
-  const unit = units.find((u) => u.id === (currentOrder?.unit_id || selectedUnitId));
   const orderLines = currentOrder ? getSalesOrderLines(currentOrder.id) : [];
   const poLinesByPo = useMemo(() => {
     return purchaseOrderLines.reduce<Record<string, typeof purchaseOrderLines>>((acc, line) => {
@@ -370,7 +372,9 @@ export default function SalesOrderDetail() {
               <div className="flex gap-2">
                 <Select value={selectedCustomerId} onValueChange={(v) => {
                   setSelectedCustomerId(v);
-                  setSelectedUnitId(null);
+                  if (!unitFromQuery) {
+                    setSelectedUnitId(null);
+                  }
                 }}>
                   <SelectTrigger className="flex-1">
                     <SelectValue placeholder="Select customer" />
@@ -390,11 +394,16 @@ export default function SalesOrderDetail() {
             {selectedCustomerId && selectedCustomerId !== 'walkin' && customerUnits.length > 0 && (
               <div>
                 <Label>Unit (optional)</Label>
-                <Select value={selectedUnitId || ''} onValueChange={setSelectedUnitId}>
-                  <SelectTrigger>
+                <Select
+                  value={selectedUnitId || NONE_UNIT}
+                  onValueChange={(v) => setSelectedUnitId(v === NONE_UNIT ? null : v)}
+                  disabled={!!unitFromQuery}
+                >
+                  <SelectTrigger disabled={!!unitFromQuery}>
                     <SelectValue placeholder="Select unit (optional)" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value={NONE_UNIT}>No unit</SelectItem>
                     {customerUnits.map((u) => (
                       <SelectItem key={u.id} value={u.id}>
                         {u.unit_name} {u.vin && `(${u.vin})`}

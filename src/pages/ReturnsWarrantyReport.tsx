@@ -61,11 +61,13 @@ export default function ReturnsWarrantyReport() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="__ALL__">All vendors</SelectItem>
-            {vendors.map((v) => (
-              <SelectItem key={v.id} value={v.id}>
-                {v.vendor_name}
-              </SelectItem>
-            ))}
+            {vendors
+              .filter((v) => v.id && v.id.trim() !== '')
+              .map((v) => (
+                <SelectItem key={v.id} value={v.id}>
+                  {v.vendor_name}
+                </SelectItem>
+              ))}
           </SelectContent>
         </Select>
       </div>
