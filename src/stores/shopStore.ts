@@ -388,7 +388,7 @@ const SAMPLE_CATEGORIES: PartCategory[] = [
 const SAMPLE_PARTS: Part[] = [
   { id: 'part-1', part_number: 'BRK-001', description: 'Heavy Duty Brake Pad Set (Front)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 45.00, selling_price: 89.99, quantity_on_hand: 24, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
   { id: 'part-2', part_number: 'BRK-002', description: 'Heavy Duty Brake Pad Set (Rear)', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 42.00, selling_price: 84.99, quantity_on_hand: 18, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
-  { id: 'part-3', part_number: 'BRK-010', description: 'Brake Rotor - 15\" HD', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 120.00, selling_price: 189.99, quantity_on_hand: 8, core_required: true, core_charge: 35.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
+  { id: 'part-3', part_number: 'BRK-010', description: 'Brake Rotor - 15" HD', vendor_id: 'vendor-1', category_id: 'cat-1', cost: 120.00, selling_price: 189.99, quantity_on_hand: 8, core_required: true, core_charge: 35.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
   { id: 'part-4', part_number: 'ENG-001', description: 'Oil Filter - Heavy Duty', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 8.50, selling_price: 18.99, quantity_on_hand: 50, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
   { id: 'part-5', part_number: 'ENG-002', description: 'Air Filter - Commercial Truck', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 25.00, selling_price: 49.99, quantity_on_hand: 30, core_required: false, core_charge: 0, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
   { id: 'part-6', part_number: 'ENG-015', description: 'Fuel Injector - Diesel', vendor_id: 'vendor-2', category_id: 'cat-2', cost: 180.00, selling_price: 299.99, quantity_on_hand: 6, core_required: true, core_charge: 75.00, min_qty: null, max_qty: null, bin_location: null, last_cost: null, avg_cost: null, model: null, serial_number: null, barcode: null, is_kit: false, is_active: true, created_at: staticDate, updated_at: staticDate },
@@ -434,6 +434,64 @@ const SAMPLE_CUSTOMER_CONTACTS: CustomerContact[] = [
     updated_at: staticDate,
   },
 ];
+
+const INITIAL_CUSTOMERS = [WALKIN_CUSTOMER, ...SAMPLE_CUSTOMERS];
+
+const hydrateLegacyCustomerContacts = (
+  customers: Customer[],
+  customerContacts: CustomerContact[],
+): CustomerContact[] => {
+  const timestamp = now();
+  const contactsByCustomer = customerContacts.reduce<Record<string, CustomerContact[]>>((acc, contact) => {
+    acc[contact.customer_id] = acc[contact.customer_id] || [];
+    acc[contact.customer_id].push(contact);
+    return acc;
+  }, {});
+
+  const hydrated: CustomerContact[] = [];
+
+  customers.forEach((customer) => {
+    const contacts = contactsByCustomer[customer.id] || [];
+
+    if (customer.id === WALKIN_CUSTOMER.id) {
+      hydrated.push(...contacts);
+      return;
+    }
+
+    if (contacts.length === 0) {
+      hydrated.push({
+        id: generateId(),
+        customer_id: customer.id,
+        name: customer.contact_name?.trim() || 'Primary Contact',
+        role: null,
+        phone: customer.phone?.trim() || null,
+        email: customer.email?.trim() || null,
+        is_primary: true,
+        preferred_method: null,
+        created_at: timestamp,
+        updated_at: timestamp,
+      });
+      return;
+    }
+
+    if (!contacts.some((c) => c.is_primary)) {
+      const [first, ...rest] = contacts;
+      hydrated.push({ ...first, is_primary: true }, ...rest);
+      return;
+    }
+
+    hydrated.push(...contacts);
+  });
+
+  // Preserve any contacts tied to customers not in the provided list
+  customerContacts.forEach((contact) => {
+    if (!customers.some((customer) => customer.id === contact.customer_id)) {
+      hydrated.push(contact);
+    }
+  });
+
+  return hydrated;
+};
 
 // Sample Units
 const SAMPLE_UNITS: Unit[] = [
@@ -633,7 +691,7 @@ export const useShopStore = create<ShopState>()(
         })),
 
       // Customers
-      customers: [WALKIN_CUSTOMER, ...SAMPLE_CUSTOMERS],
+      customers: INITIAL_CUSTOMERS,
 
       addCustomer: (customer) => {
         if (customer.credit_hold && !customer.credit_hold_reason?.trim()) {
@@ -766,7 +824,10 @@ export const useShopStore = create<ShopState>()(
       },
 
       // Customer Contacts
-      customerContacts: [...SAMPLE_CUSTOMER_CONTACTS],
+      customerContacts: hydrateLegacyCustomerContacts(
+        INITIAL_CUSTOMERS,
+        SAMPLE_CUSTOMER_CONTACTS,
+      ),
 
       getCustomerContacts: (customerId) => {
         const contacts = useShopStore.getState().customerContacts;
