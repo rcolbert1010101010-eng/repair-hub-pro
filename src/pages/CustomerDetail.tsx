@@ -248,33 +248,41 @@ export default function CustomerDetail() {
         subtitle={customer.is_active ? 'Active Customer' : 'Inactive Customer'}
         backTo="/customers"
         actions={
-          editing ? (
-            <>
-              <Button variant="outline" onClick={() => setEditing(false)}>
-                <X className="w-4 h-4 mr-2" />
-                Cancel
-              </Button>
-              <Button onClick={handleSave}>
-                <Save className="w-4 h-4 mr-2" />
-                Save
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button variant="outline" onClick={() => setEditing(true)}>
-                <Edit className="w-4 h-4 mr-2" />
-                Edit
-              </Button>
-              {customer.is_active && (
-                <Button variant="destructive" onClick={handleDeactivate}>
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Deactivate
+          <div className="flex flex-wrap justify-end gap-2">
+            {editing ? (
+              <>
+                <Button variant="outline" onClick={() => setEditing(false)}>
+                  <X className="w-4 h-4 mr-2" />
+                  Cancel
                 </Button>
-              )}
-            </>
-          )
+                <Button onClick={handleSave}>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => setEditing(true)}>
+                  <Edit className="w-4 h-4 mr-2" />
+                  Edit
+                </Button>
+                {customer.is_active && (
+                  <Button variant="destructive" onClick={handleDeactivate}>
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Deactivate
+                  </Button>
+                )}
+              </>
+            )}
+          </div>
         }
       />
+
+      {customer.address && (
+        <p className="text-sm text-muted-foreground mb-4 whitespace-normal break-words">
+          {customer.address}
+        </p>
+      )}
 
       {!editing && customer.credit_hold && (
         <Alert variant="destructive" className="mb-4">
