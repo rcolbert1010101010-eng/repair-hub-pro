@@ -279,7 +279,17 @@ export default function WorkOrderDetail() {
       !!fabJob?.posted_at ||
       !!plasmaJob?.posted_at;
     setActiveTab(hasContent ? 'overview' : 'parts');
-  }, [currentOrder?.id]);
+  }, [
+    currentOrder?.id,
+    isInvoiced,
+    chargeLines.length,
+    partLines.length,
+    laborLines.length,
+    fabLines.length,
+    plasmaLines.length,
+    fabJob?.posted_at,
+    plasmaJob?.posted_at,
+  ]);
 
   if (!isNew && !currentOrder) {
     return (
