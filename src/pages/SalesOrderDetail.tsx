@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -73,6 +73,8 @@ export default function SalesOrderDetail() {
   const { toast } = useToast();
 
   const unitFromQuery = searchParams.get('unit_id') || '';
+  const createdParam = searchParams.get('created');
+  const location = useLocation();
   const NONE_UNIT = '__NONE__';
   const isNew = id === 'new';
   const [selectedCustomerId, setSelectedCustomerId] = useState(searchParams.get('customer_id') || '');
@@ -102,6 +104,9 @@ export default function SalesOrderDetail() {
   
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState('');
+  const notesRef = useRef<HTMLTextAreaElement | null>(null);
+  const initialFocusRequested = useRef(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
   const [showCoreReturnDialog, setShowCoreReturnDialog] = useState(false);
   const [coreReturnLineId, setCoreReturnLineId] = useState<string | null>(null);
@@ -139,9 +144,10 @@ export default function SalesOrderDetail() {
       return;
     }
     const newOrder = createSalesOrder(selectedCustomerId, selectedUnitId);
-    navigate(`/sales-orders/${newOrder.id}`, { replace: true });
+    navigate(`/sales-orders/${newOrder.id}`, { replace: true, state: { justCreated: true } });
     setOrder(newOrder);
     toast({ title: 'Order Created', description: `Sales Order ${newOrder.order_number} created` });
+    setIsDirty(false);
   };
 
   const handleAddPart = () => {
@@ -153,6 +159,7 @@ export default function SalesOrderDetail() {
       setAddPartDialogOpen(false);
       setSelectedPartId('');
       setPartQty('1');
+      setIsDirty(true);
     } else {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
@@ -166,6 +173,8 @@ export default function SalesOrderDetail() {
     const result = soUpdatePartQty(lineId, newQty);
     if (!result.success) {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
+    } else {
+      setIsDirty(true);
     }
   };
 
@@ -173,6 +182,8 @@ export default function SalesOrderDetail() {
     const result = soRemovePartLine(lineId);
     if (!result.success) {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
+    } else {
+      setIsDirty(true);
     }
   };
 
@@ -190,6 +201,7 @@ export default function SalesOrderDetail() {
     if (result.success) {
       toast({ title: 'Order Invoiced' });
       setShowInvoiceDialog(false);
+      setIsDirty(false);
     } else {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
@@ -286,6 +298,7 @@ export default function SalesOrderDetail() {
       selling_price: '',
     });
     setSelectedPartId(newPart.id);
+    setIsDirty(true);
   };
 
   const handleEditNotes = () => {
@@ -293,11 +306,44 @@ export default function SalesOrderDetail() {
     setIsEditingNotes(true);
   };
 
+  const isNewlyCreated = Boolean(createdParam === '1' || location.state?.justCreated);
+  useEffect(() => {
+    if (!isNewlyCreated) return;
+    if (initialFocusRequested.current) return;
+    initialFocusRequested.current = true;
+    requestAnimationFrame(() => {
+      notesRef.current?.focus();
+    });
+  }, [isNewlyCreated]);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!isDirty) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (!isDirty) return;
+      const confirmLeave = window.confirm('You have unsaved changes. Leave without saving?');
+      if (!confirmLeave) {
+        window.history.pushState(null, '', location.pathname + location.search + location.hash);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isDirty, location.pathname, location.search, location.hash]);
+
   const handleSaveNotes = () => {
     if (!currentOrder) return;
     updateSalesOrderNotes(currentOrder.id, notesValue.trim() || null);
     setIsEditingNotes(false);
     toast({ title: 'Notes Updated' });
+    setIsDirty(false);
   };
 
   const handleMarkCoreReturned = (lineId: string) => {
@@ -314,6 +360,7 @@ export default function SalesOrderDetail() {
         title: 'Order Converted',
         description: 'Estimate converted to sales order',
       });
+      setIsDirty(false);
     } else {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
@@ -324,6 +371,7 @@ export default function SalesOrderDetail() {
     const result = soMarkCoreReturned(coreReturnLineId);
     if (result.success) {
       toast({ title: 'Core Returned', description: 'Refund line has been created' });
+      setIsDirty(true);
     } else {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
@@ -375,6 +423,7 @@ export default function SalesOrderDetail() {
                   if (!unitFromQuery) {
                     setSelectedUnitId(null);
                   }
+                  setIsDirty(true);
                 }}>
                   <SelectTrigger className="flex-1">
                     <SelectValue placeholder="Select customer" />
@@ -395,8 +444,13 @@ export default function SalesOrderDetail() {
               <div>
                 <Label>Unit (optional)</Label>
                 <Select
-                  value={selectedUnitId || NONE_UNIT}
-                  onValueChange={(v) => setSelectedUnitId(v === NONE_UNIT ? null : v)}
+                  value={selectedUnitId && selectedUnitId !== '' ? selectedUnitId : unitFromQuery || NONE_UNIT}
+                  onValueChange={(v) => {
+                    setSelectedUnitId(v === NONE_UNIT ? null : v);
+                    if (!unitFromQuery) {
+                      setIsDirty(true);
+                    }
+                  }}
                   disabled={!!unitFromQuery}
                 >
                   <SelectTrigger disabled={!!unitFromQuery}>
@@ -420,7 +474,7 @@ export default function SalesOrderDetail() {
 
             <Button onClick={handleCreateOrder} className="w-full">
               <Save className="w-4 h-4 mr-2" />
-              Create Order
+              {isNew ? 'Create Order' : 'Save'}
             </Button>
           </div>
         </div>
@@ -448,6 +502,18 @@ export default function SalesOrderDetail() {
             : 'Open'
         }
         backTo="/sales-orders"
+        description={
+          unit ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-2"
+              onClick={() => navigate(`/units/${unit.id}`)}
+            >
+              {unit.unit_name || 'Unit'} {unit.vin ? `• ${unit.vin}` : ''}
+            </Button>
+          ) : undefined
+        }
         actions={
           !isInvoiced ? (
             <>
@@ -572,7 +638,16 @@ export default function SalesOrderDetail() {
             </div>
             {isEditingNotes ? (
               <div className="space-y-2">
-                <Textarea value={notesValue} onChange={(e) => setNotesValue(e.target.value)} rows={3} placeholder="Add notes..." />
+                <Textarea
+                  ref={notesRef}
+                  value={notesValue}
+                  onChange={(e) => {
+                    setNotesValue(e.target.value);
+                    setIsDirty(true);
+                  }}
+                  rows={3}
+                  placeholder="Add notes..."
+                />
                 <div className="flex gap-2">
                   <Button size="sm" onClick={handleSaveNotes}><Save className="w-3 h-3 mr-1" />Save</Button>
                   <Button size="sm" variant="outline" onClick={() => setIsEditingNotes(false)}><X className="w-3 h-3 mr-1" />Cancel</Button>
@@ -624,7 +699,13 @@ export default function SalesOrderDetail() {
                         <TableCell>{part?.description || '-'}</TableCell>
                         <TableCell className="text-center">
                           {!isInvoiced ? (
-                            <Checkbox checked={line.is_warranty} onCheckedChange={() => soToggleWarranty(line.id)} />
+                            <Checkbox
+                              checked={line.is_warranty}
+                              onCheckedChange={() => {
+                                soToggleWarranty(line.id);
+                                setIsDirty(true);
+                              }}
+                            />
                           ) : line.is_warranty ? (
                             <Badge variant="secondary"><Shield className="w-3 h-3" /></Badge>
                           ) : null}
@@ -671,6 +752,7 @@ export default function SalesOrderDetail() {
                                   }
                                   setEditingPriceLineId(null);
                                   setPriceDraft('');
+                                  setIsDirty(true);
                                 }}
                               >
                                 <Check className="w-4 h-4" />
@@ -719,11 +801,11 @@ export default function SalesOrderDetail() {
                         </TableCell>
                         {!isInvoiced && (
                           <TableCell>
-                            <Button variant="ghost" size="icon" onClick={() => handleRemoveLine(line.id)} className="text-destructive hover:text-destructive">
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </TableCell>
-                        )}
+                          <Button variant="ghost" size="icon" onClick={() => handleRemoveLine(line.id)} className="text-destructive hover:text-destructive">
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </TableCell>
+                      )}
                       </TableRow>
                     );
                   })
