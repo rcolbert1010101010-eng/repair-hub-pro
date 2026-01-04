@@ -993,8 +993,12 @@ export default function WorkOrderDetail() {
                   variant="outline"
                   onClick={() => {
                     const res = schedulingRepo.ensureScheduleItemForWorkOrder(currentOrder);
-                    if (!res) {
-                      toast({ title: 'Not scheduled', description: 'Could not create schedule item', variant: 'destructive' });
+                    if (!res?.item) {
+                      toast({
+                        title: 'Not scheduled',
+                        description: res?.reason || 'Could not create schedule item',
+                        variant: 'destructive',
+                      });
                       return;
                     }
                     toast({ title: 'Pushed to Scheduling', description: 'Work order added to schedule' });
