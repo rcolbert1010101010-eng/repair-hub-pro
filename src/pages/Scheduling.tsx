@@ -148,6 +148,7 @@ export default function Scheduling() {
   const scheduleItems = schedulingRepo.list();
   const location = useLocation();
   const [focusedScheduleItemId, setFocusedScheduleItemId] = useState<string | null>(null);
+  const [highlightedScheduleItemId, setHighlightedScheduleItemId] = useState<string | null>(null);
 
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [viewMode, setViewMode] = useState<'DAY' | 'WEEK'>('DAY');
@@ -502,7 +503,8 @@ export default function Scheduling() {
                   }}
                   className={cn(
                     barClasses,
-                    focusedScheduleItemId === item.id ? 'ring-2 ring-primary ring-offset-2' : ''
+                    focusedScheduleItemId === item.id ? 'ring-2 ring-primary ring-offset-2' : '',
+                    highlightedScheduleItemId === item.id ? 'ring-2 ring-primary animate-pulse' : ''
                   )}
                   data-gantt-bar="true"
                   style={{
@@ -653,23 +655,31 @@ export default function Scheduling() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const focusId = params.get('focusScheduleItemId');
+    const shouldOpen = params.get('open') === '1';
     if (!focusId) return;
 
     const target = scheduleItems.find((item) => item.id === focusId);
     if (!target) return;
 
-    handleOpenEdit(target);
+    if (shouldOpen) {
+      handleOpenEdit(target);
+    }
     setFocusedScheduleItemId(target.id);
+    setHighlightedScheduleItemId(target.id);
 
     const el = document.querySelector(`[data-schedule-item-id="${focusId}"]`) as HTMLElement | null;
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
     }
 
-    const timer = setTimeout(() => setFocusedScheduleItemId(null), 2500);
+    const timer = setTimeout(() => {
+      setFocusedScheduleItemId(null);
+      setHighlightedScheduleItemId(null);
+    }, 2500);
 
     const nextParams = new URLSearchParams(location.search);
     nextParams.delete('focusScheduleItemId');
+    nextParams.delete('open');
     navigate(
       { pathname: location.pathname, search: nextParams.toString() ? `?${nextParams.toString()}` : '' },
       { replace: true }
