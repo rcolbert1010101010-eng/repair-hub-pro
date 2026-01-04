@@ -297,6 +297,9 @@ export const zustandRepos: Repos = {
     getMovementsForPart(partId) {
       return useShopStore.getState().getMovementsForPart(partId);
     },
+    reactivatePart(id) {
+      return useShopStore.getState().reactivatePart(id);
+    },
   },
   kitComponents: {
     get kitComponents() {

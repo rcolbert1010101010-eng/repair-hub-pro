@@ -32,4 +32,8 @@ export const partsRepoApi: PartsRepo = {
       });
     }
   },
+  async reactivatePart(id) {
+    useShopStore.getState().reactivatePart(id);
+    await apiClient.put<Part>(`/parts/${id}`, { is_active: true });
+  },
 };

@@ -55,6 +55,7 @@ import { computePlasmaJobMetrics } from '@/services/plasmaJobSummary';
 
 // Generate unique IDs
 const generateId = () => crypto.randomUUID();
+const SESSION_USER_KEY = 'rhp.session_user_name';
 
 // Generate order numbers
 const generateOrderNumber = (prefix: string, count: number) => 
@@ -134,6 +135,7 @@ interface ShopState {
   updatePart: (id: string, part: Partial<Part>) => void;
   updatePartWithQohAdjustment: (id: string, part: Partial<Part>, meta: { reason: string; adjusted_by: string }) => void;
   deactivatePart: (id: string) => void;
+  reactivatePart: (id: string) => void;
   kitComponents: PartKitComponent[];
   addKitComponent: (component: Omit<PartKitComponent, 'id' | 'is_active' | 'created_at' | 'updated_at'>) => PartKitComponent;
   updateKitComponentQuantity: (id: string, quantity: number) => void;
@@ -696,13 +698,27 @@ export const useShopStore = create<ShopState>()(
         markup_retail_percent: 60,
         markup_fleet_percent: 40,
         markup_wholesale_percent: 25,
-        session_user_name: '',
+        session_user_name:
+          typeof localStorage !== 'undefined'
+            ? (localStorage.getItem(SESSION_USER_KEY) || '').trim()
+            : '',
       },
 
       updateSettings: (newSettings) =>
-        set((state) => ({
-          settings: { ...state.settings, ...newSettings },
-        })),
+        set((state) => {
+          const merged = { ...state.settings, ...newSettings };
+          if (newSettings.session_user_name !== undefined && typeof localStorage !== 'undefined') {
+            const trimmed = newSettings.session_user_name.trim();
+            if (trimmed) {
+              localStorage.setItem(SESSION_USER_KEY, trimmed);
+            } else {
+              localStorage.removeItem(SESSION_USER_KEY);
+            }
+          }
+          return {
+            settings: merged,
+          };
+        }),
 
       getSessionUserName: () => {
         const name = get().settings.session_user_name?.trim();
@@ -1127,28 +1143,32 @@ export const useShopStore = create<ShopState>()(
 
         const old_qty = existing.quantity_on_hand;
         const new_qty = part.quantity_on_hand ?? old_qty;
+        const qtyProvided = part.quantity_on_hand !== undefined;
         const deltaQty = new_qty - old_qty;
-        const adjustment: InventoryAdjustment = {
-          id: generateId(),
-          part_id: id,
-          old_qty,
-          new_qty,
-          delta: deltaQty,
-          reason: meta.reason,
-          adjusted_by: meta.adjusted_by,
-          adjusted_at: now(),
-        };
-
+        const candidate = meta.adjusted_by?.trim();
+        const performer = candidate && candidate !== 'system' ? candidate : get().getSessionUserName();
         const timestamp = now();
 
         set((state) => ({
           parts: state.parts.map((p) =>
             p.id === id ? { ...p, ...part, updated_at: timestamp } : p
           ),
-          inventoryAdjustments: [...state.inventoryAdjustments, adjustment],
+          inventoryAdjustments: [
+            ...state.inventoryAdjustments,
+            {
+              id: generateId(),
+              part_id: id,
+              old_qty,
+              new_qty,
+              delta: deltaQty,
+              reason: meta.reason,
+              adjusted_by: performer,
+              adjusted_at: timestamp,
+            },
+          ],
         }));
 
-        if (deltaQty !== 0) {
+        if (qtyProvided && deltaQty !== 0) {
           get().recordInventoryMovement({
             part_id: id,
             movement_type: 'ADJUST',
@@ -1156,6 +1176,8 @@ export const useShopStore = create<ShopState>()(
             reason: meta.reason,
             ref_type: 'MANUAL',
             ref_id: id,
+            performed_by: performer,
+            performed_at: timestamp,
           });
         }
       },
@@ -1164,6 +1186,12 @@ export const useShopStore = create<ShopState>()(
         set((state) => ({
           parts: state.parts.map((p) =>
             p.id === id ? { ...p, is_active: false, updated_at: now() } : p
+          ),
+        })),
+      reactivatePart: (id) =>
+        set((state) => ({
+          parts: state.parts.map((p) =>
+            p.id === id ? { ...p, is_active: true, updated_at: now() } : p
           ),
         })),
 

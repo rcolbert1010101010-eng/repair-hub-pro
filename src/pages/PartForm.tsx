@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,18 @@ import { Save, X, Trash2, Edit, Plus } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { calcPartPriceForLevel, getPartCostBasis } from '@/domain/pricing/partPricing';
 import type { Part } from '@/types';
+import { useShopStore } from '@/stores/shopStore';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 export default function PartForm() {
   const { id } = useParams<{ id: string }>();
@@ -37,7 +49,7 @@ export default function PartForm() {
     updatePart,
     updatePartWithQohAdjustment,
     deactivatePart,
-    getMovementsForPart,
+    reactivatePart,
   } = repos.parts;
   const {
     kitComponents,
@@ -53,9 +65,11 @@ export default function PartForm() {
   const { purchaseOrders, purchaseOrderLines } = repos.purchaseOrders;
   const { settings } = repos.settings;
   const { toast } = useToast();
+  const sessionUserName = (settings.session_user_name || 'system').trim() || 'system';
 
   const isNew = id === 'new';
   const part = !isNew ? parts.find((p) => p.id === id) : null;
+  const [confirmDeactivateOpen, setConfirmDeactivateOpen] = useState(false);
 
   const [editing, setEditing] = useState(isNew);
   const [formData, setFormData] = useState({
@@ -148,7 +162,14 @@ export default function PartForm() {
   const availableComponentParts = parts.filter(
     (p) => p.is_active && p.id !== part?.id && !p.is_kit
   );
-  const movements = part && getMovementsForPart ? getMovementsForPart(part.id).slice(0, 20) : [];
+  const inventoryMovements = useShopStore((state) => state.inventoryMovements);
+  const recentMovements = useMemo(() => {
+    if (!id || id === 'new') return [];
+    return inventoryMovements
+      .filter((m) => m.part_id === id)
+      .sort((a, b) => new Date(b.performed_at).getTime() - new Date(a.performed_at).getTime())
+      .slice(0, 20);
+  }, [inventoryMovements, id]);
 
   if (!isNew && !part) {
     return (
@@ -221,7 +242,26 @@ export default function PartForm() {
   const handleDeactivate = () => {
     deactivatePart(id!);
     toast({ title: 'Part Deactivated', description: 'Part has been deactivated' });
-    navigate('/inventory');
+    setEditing(false);
+  };
+
+  const handleReactivate = async () => {
+    try {
+      if (reactivatePart) {
+        await reactivatePart(id!);
+      } else {
+        updatePart(id!, { is_active: true });
+      }
+      toast({ title: 'Part Reactivated', description: 'Part has been reactivated' });
+    } catch (error) {
+      toast({
+        title: 'Server unavailable — reactivation saved locally',
+        description: 'The server could not be reached. State has been updated locally.',
+        variant: 'destructive',
+      });
+    } finally {
+      setEditing(false);
+    }
   };
 
   const handleQuickAddVendor = () => {
@@ -325,7 +365,10 @@ export default function PartForm() {
       max_qty: pendingPartData.max_qty === '' ? null : (Number.isFinite(parseInt(pendingPartData.max_qty)) ? parseInt(pendingPartData.max_qty) : null),
       bin_location: pendingPartData.bin_location.trim() || null,
     };
-    updatePartWithQohAdjustment(id!, partData, { reason: adjustReason.trim(), adjusted_by: 'system' });
+      updatePartWithQohAdjustment(id!, partData, {
+        reason: adjustReason.trim(),
+        adjusted_by: '',
+      });
     toast({ title: 'Part Updated', description: 'Changes have been saved' });
     setAdjustDialogOpen(false);
     setAdjustReason('');
@@ -359,11 +402,43 @@ export default function PartForm() {
                 <Edit className="w-4 h-4 mr-2" />
                 Edit
               </Button>
-              {part?.is_active && (
-                <Button variant="destructive" onClick={handleDeactivate}>
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Deactivate
-                </Button>
+              {!isNew && !editing && (
+                part?.is_active ? (
+                  <AlertDialog open={confirmDeactivateOpen} onOpenChange={setConfirmDeactivateOpen}>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive">
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Deactivate
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Deactivate part?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will hide the part from active lists but keep history and movements. You can reactivate it later.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction asChild>
+                          <Button
+                            variant="destructive"
+                            onClick={() => {
+                              setConfirmDeactivateOpen(false);
+                              handleDeactivate();
+                            }}
+                          >
+                            Deactivate
+                          </Button>
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                ) : (
+                  <Button variant="outline" onClick={handleReactivate}>
+                    Reactivate
+                  </Button>
+                )
               )}
             </>
           )
@@ -813,7 +888,7 @@ export default function PartForm() {
                 <h3 className="text-sm font-semibold">Recent Movements</h3>
                 <span className="text-xs text-muted-foreground">Last 20</span>
               </div>
-              {(!movements || movements.length === 0) ? (
+              {(!recentMovements || recentMovements.length === 0) ? (
                 <p className="text-sm text-muted-foreground">No movements yet.</p>
               ) : (
                 <Table>
@@ -828,7 +903,7 @@ export default function PartForm() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {movements.map((m) => (
+                    {recentMovements.map((m) => (
                       <TableRow key={m.id}>
                         <TableCell className="whitespace-nowrap">
                           {new Date(m.performed_at).toLocaleString()}

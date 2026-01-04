@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,7 @@ import {
 import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, Edit, X } from 'lucide-react';
+import { useShopStore } from '@/stores/shopStore';
 
 export default function Settings() {
   const { settings, updateSettings } = useRepos().settings;
@@ -27,7 +28,24 @@ export default function Settings() {
     session_user_name: settings.session_user_name || '',
   });
 
-  const handleSave = () => {
+  const hydrateForm = useCallback(() => {
+    setFormData({
+      shop_name: settings.shop_name,
+      default_labor_rate: settings.default_labor_rate.toString(),
+      default_tax_rate: settings.default_tax_rate.toString(),
+      currency: settings.currency,
+      units: settings.units,
+      session_user_name: settings.session_user_name || '',
+    });
+  }, [settings]);
+
+  useEffect(() => {
+    if (!editing) {
+      hydrateForm();
+    }
+  }, [settings, editing, hydrateForm]);
+
+  const handleSave = async () => {
     if (!formData.shop_name.trim()) {
       toast({
         title: 'Validation Error',
@@ -37,20 +55,39 @@ export default function Settings() {
       return;
     }
 
-    updateSettings({
+    const payload = {
       shop_name: formData.shop_name.trim(),
       default_labor_rate: parseFloat(formData.default_labor_rate) || 0,
       default_tax_rate: parseFloat(formData.default_tax_rate) || 0,
       currency: formData.currency,
       units: formData.units,
       session_user_name: formData.session_user_name.trim(),
-    });
+    };
 
-    toast({
-      title: 'Settings Updated',
-      description: 'Your changes have been saved',
-    });
-    setEditing(false);
+    try {
+      await updateSettings(payload);
+      toast({
+        title: 'Settings Updated',
+        description: 'Your changes have been saved',
+      });
+      setEditing(false);
+    } catch (error) {
+      useShopStore.getState().updateSettings(payload);
+      if (typeof localStorage !== 'undefined') {
+        const trimmed = payload.session_user_name.trim();
+        if (trimmed) {
+          localStorage.setItem('rhp.session_user_name', trimmed);
+        } else {
+          localStorage.removeItem('rhp.session_user_name');
+        }
+      }
+      toast({
+        title: 'Saved locally',
+        description: 'Server unavailable — settings stored locally for this browser session.',
+        variant: 'destructive',
+      });
+      setEditing(false);
+    }
   };
 
   return (
@@ -61,7 +98,13 @@ export default function Settings() {
         actions={
           editing ? (
             <>
-              <Button variant="outline" onClick={() => setEditing(false)}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  hydrateForm();
+                  setEditing(false);
+                }}
+              >
                 <X className="w-4 h-4 mr-2" />
                 Cancel
               </Button>
@@ -71,7 +114,13 @@ export default function Settings() {
               </Button>
             </>
           ) : (
-            <Button variant="outline" onClick={() => setEditing(true)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                hydrateForm();
+                setEditing(true);
+              }}
+            >
               <Edit className="w-4 h-4 mr-2" />
               Edit
             </Button>

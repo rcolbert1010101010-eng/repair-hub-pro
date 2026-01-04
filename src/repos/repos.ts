@@ -104,6 +104,7 @@ export interface PartsRepo {
   updatePart: (id: string, part: Partial<Part>) => void;
   updatePartWithQohAdjustment: (id: string, part: Partial<Part>, meta: { reason: string; adjusted_by: string }) => void;
   deactivatePart: (id: string) => void;
+  reactivatePart: (id: string) => void;
   getMovementsForPart?: (partId: string) => InventoryMovement[];
 }
 
