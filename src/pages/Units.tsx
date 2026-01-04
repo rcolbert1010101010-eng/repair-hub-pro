@@ -157,16 +157,18 @@ export default function Units() {
                   onClick={(e) => {
                     e.stopPropagation();
                     const created = createWorkOrder(item.customer_id, item.id);
-                    const res = schedulingRepo.ensureScheduleItemForWorkOrder(created.id);
-                    if (!res?.item) {
+                    const { item: scheduleItem, reason } = schedulingRepo.ensureScheduleItemForWorkOrder(created.id);
+                    if (!scheduleItem) {
                       toast({
-                        title: 'Unable to schedule',
-                        description: res?.reason || 'Could not create or find a schedule item.',
+                        title: 'Scheduling failed',
+                        description: reason || 'Unable to create schedule item for work order',
                         variant: 'destructive',
                       });
                       return;
                     }
-                    navigate(`/work-orders/${created.id}?openScheduling=1&focusScheduleItemId=${res.item.id}`);
+                    navigate(
+                      `/work-orders/${created.id}?openScheduling=1&focusScheduleItemId=${scheduleItem.id}`
+                    );
                   }}
                 >
                   <CalendarClock className="w-4 h-4 mr-2" />
