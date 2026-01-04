@@ -324,7 +324,9 @@ export interface SchedulingRepo {
       | Pick<ScheduleItem, 'technician_id' | 'start_at' | 'duration_minutes'> & { id?: string | null }
       | string
   ) => ScheduleItem[];
-  ensureScheduleItemForWorkOrder: (workOrder: WorkOrder) => ScheduleItem | null;
+  ensureScheduleItemForWorkOrder: (
+    workOrderOrId: WorkOrder | string
+  ) => { item: ScheduleItem | null; reason?: string };
 }
 
 export interface Repos {

@@ -112,16 +112,32 @@ const getStartAtForWorkOrder = (
   return candidate.toISOString();
 };
 
-const ensureScheduleItemForWorkOrder = (workOrder: WorkOrder): ScheduleItem | null => {
-  if (!SCHEDULABLE_WORK_ORDER_STATUSES.includes(workOrder.status)) return null;
-
+const ensureScheduleItemForWorkOrder = (
+  workOrderOrId: WorkOrder | string
+): { item: ScheduleItem | null; reason?: string } => {
   const state = useShopStore.getState();
+  if (!state) return { item: null, reason: 'Scheduling store unavailable' };
+
+  const workOrders = state.workOrders || [];
+  const resolved =
+    typeof workOrderOrId === 'string'
+      ? workOrders.find((wo) => wo.id === workOrderOrId)
+      : workOrders.find((wo) => wo.id === workOrderOrId.id) || workOrderOrId;
+
+  if (!resolved) return { item: null, reason: 'Work order not found' };
+  if (!resolved.customer_id || !resolved.unit_id) {
+    return { item: null, reason: 'Work order missing customer or unit' };
+  }
+  if (!SCHEDULABLE_WORK_ORDER_STATUSES.includes(resolved.status)) {
+    return { item: null, reason: 'Work order status not schedulable' };
+  }
+
   const existing = state.scheduleItems.find(
-    (item) => item.source_ref_type === 'WORK_ORDER' && item.source_ref_id === workOrder.id
+    (item) => item.source_ref_type === 'WORK_ORDER' && item.source_ref_id === resolved.id
   );
 
-  const promised_at = getPromisedAt(workOrder);
-  const woPriority = getWorkOrderPriority(workOrder);
+  const promised_at = getPromisedAt(resolved);
+  const woPriority = getWorkOrderPriority(resolved);
 
   if (existing) {
     const updates: Partial<ScheduleItem> = {};
@@ -137,9 +153,9 @@ const ensureScheduleItemForWorkOrder = (workOrder: WorkOrder): ScheduleItem | nu
       updates.priority = Math.round(woPriority) as ScheduleItem['priority'];
     }
     if (Object.keys(updates).length > 0) {
-      return state.updateScheduleItem(existing.id, updates) ?? existing;
+      return { item: state.updateScheduleItem(existing.id, updates) ?? existing };
     }
-    return existing;
+    return { item: existing };
   }
 
   const priority =
@@ -147,16 +163,16 @@ const ensureScheduleItemForWorkOrder = (workOrder: WorkOrder): ScheduleItem | nu
       ? (Math.round(woPriority) as ScheduleItem['priority'])
       : 3;
 
-  const duration_minutes = getDefaultDurationMinutes(workOrder, state);
-  const start_at = getStartAtForWorkOrder(workOrder, duration_minutes, state);
+  const duration_minutes = getDefaultDurationMinutes(resolved, state);
+  const start_at = getStartAtForWorkOrder(resolved, duration_minutes, state);
 
   const newItem: Omit<ScheduleItem, 'id' | 'created_at' | 'updated_at'> = {
     source_ref_type: 'WORK_ORDER',
-    source_ref_id: workOrder.id,
+    source_ref_id: resolved.id,
     block_type: null,
     block_title: null,
     auto_scheduled: true,
-    technician_id: getTechnicianId(workOrder),
+    technician_id: getTechnicianId(resolved),
     start_at,
     duration_minutes,
     priority,
@@ -166,7 +182,7 @@ const ensureScheduleItemForWorkOrder = (workOrder: WorkOrder): ScheduleItem | nu
     notes: null,
   };
 
-  return state.createScheduleItem(newItem);
+  return { item: state.createScheduleItem(newItem) };
 };
 
 import type { Repos } from './repos';
