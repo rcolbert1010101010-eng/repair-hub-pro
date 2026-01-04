@@ -13,6 +13,7 @@ export interface SystemSettings {
   markup_retail_percent: number;
   markup_fleet_percent: number;
   markup_wholesale_percent: number;
+  session_user_name?: string;
 }
 
 // Customer
@@ -125,6 +126,21 @@ export interface PartKitComponent {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export type InventoryMovementType = 'RECEIVE' | 'ISSUE' | 'RETURN' | 'ADJUST' | 'COUNT';
+export type InventoryRefType = 'PURCHASE_ORDER' | 'WORK_ORDER' | 'SALES_ORDER' | 'CYCLE_COUNT' | 'MANUAL';
+
+export interface InventoryMovement {
+  id: string;
+  part_id: string;
+  movement_type: InventoryMovementType;
+  qty_delta: number;
+  reason: string | null;
+  ref_type: InventoryRefType | null;
+  ref_id: string | null;
+  performed_by: string;
+  performed_at: string;
 }
 
 export type CycleCountStatus = 'DRAFT' | 'POSTED' | 'CANCELLED';

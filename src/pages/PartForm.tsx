@@ -12,6 +12,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, X, Trash2, Edit, Plus } from 'lucide-react';
@@ -29,6 +37,7 @@ export default function PartForm() {
     updatePart,
     updatePartWithQohAdjustment,
     deactivatePart,
+    getMovementsForPart,
   } = repos.parts;
   const {
     kitComponents,
@@ -139,6 +148,7 @@ export default function PartForm() {
   const availableComponentParts = parts.filter(
     (p) => p.is_active && p.id !== part?.id && !p.is_kit
   );
+  const movements = part && getMovementsForPart ? getMovementsForPart(part.id).slice(0, 20) : [];
 
   if (!isNew && !part) {
     return (
@@ -793,6 +803,49 @@ export default function PartForm() {
                     })}
                   </tbody>
                 </table>
+              )}
+            </div>
+          )}
+
+          {!isNew && (
+            <div className="border border-border rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">Recent Movements</h3>
+                <span className="text-xs text-muted-foreground">Last 20</span>
+              </div>
+              {(!movements || movements.length === 0) ? (
+                <p className="text-sm text-muted-foreground">No movements yet.</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow className="h-9">
+                      <TableHead>Date</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Delta</TableHead>
+                      <TableHead>Reason</TableHead>
+                      <TableHead>Ref</TableHead>
+                      <TableHead>By</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {movements.map((m) => (
+                      <TableRow key={m.id}>
+                        <TableCell className="whitespace-nowrap">
+                          {new Date(m.performed_at).toLocaleString()}
+                        </TableCell>
+                        <TableCell className="uppercase text-xs font-semibold">{m.movement_type}</TableCell>
+                        <TableCell className={m.qty_delta < 0 ? 'text-destructive' : ''}>
+                          {m.qty_delta}
+                        </TableCell>
+                        <TableCell className="max-w-xs break-words">{m.reason || '—'}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {m.ref_type ? `${m.ref_type}${m.ref_id ? `:${m.ref_id}` : ''}` : '—'}
+                        </TableCell>
+                        <TableCell>{m.performed_by}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
             </div>
           )}

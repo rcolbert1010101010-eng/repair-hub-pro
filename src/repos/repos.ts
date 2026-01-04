@@ -38,6 +38,7 @@ import type {
   Remnant,
   SalesOrderChargeLine,
   ScheduleItem,
+  InventoryMovement,
 } from '@/types';
 import type { FabricationPricingSettings } from '@/services/fabricationPricingService';
 import type { PlasmaPricingSettings } from '@/services/plasmaPricingService';
@@ -103,6 +104,7 @@ export interface PartsRepo {
   updatePart: (id: string, part: Partial<Part>) => void;
   updatePartWithQohAdjustment: (id: string, part: Partial<Part>, meta: { reason: string; adjusted_by: string }) => void;
   deactivatePart: (id: string) => void;
+  getMovementsForPart?: (partId: string) => InventoryMovement[];
 }
 
 export interface KitComponentsRepo {

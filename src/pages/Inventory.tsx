@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
@@ -94,25 +94,28 @@ export default function Inventory() {
     },
   ];
 
-  const handleScan = (value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    const matched =
-      parts.find((p) => p.barcode && p.barcode === trimmed) ||
-      parts.find((p) => p.part_number === trimmed);
-    if (matched) {
-      navigate(`/inventory/${matched.id}`);
-    } else {
-      toast({ title: 'Barcode not found', description: 'No matching part for scanned value' });
-    }
-    setScanValue('');
-  };
+  const handleScan = useCallback(
+    (value: string) => {
+      const trimmed = value.trim();
+      if (!trimmed) return;
+      const matched =
+        parts.find((p) => p.barcode && p.barcode === trimmed) ||
+        parts.find((p) => p.part_number === trimmed);
+      if (matched) {
+        navigate(`/inventory/${matched.id}`);
+      } else {
+        toast({ title: 'Barcode not found', description: 'No matching part for scanned value' });
+      }
+      setScanValue('');
+    },
+    [navigate, parts, toast]
+  );
 
   useEffect(() => {
     if (!scanValue) return;
     const timer = setTimeout(() => handleScan(scanValue), 200);
     return () => clearTimeout(timer);
-  }, [scanValue]);
+  }, [scanValue, handleScan]);
 
   return (
     <div className="page-container">

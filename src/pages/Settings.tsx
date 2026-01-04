@@ -24,6 +24,7 @@ export default function Settings() {
     default_tax_rate: settings.default_tax_rate.toString(),
     currency: settings.currency,
     units: settings.units,
+    session_user_name: settings.session_user_name || '',
   });
 
   const handleSave = () => {
@@ -42,6 +43,7 @@ export default function Settings() {
       default_tax_rate: parseFloat(formData.default_tax_rate) || 0,
       currency: formData.currency,
       units: formData.units,
+      session_user_name: formData.session_user_name.trim(),
     });
 
     toast({
@@ -150,6 +152,17 @@ export default function Settings() {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div>
+            <Label htmlFor="session_user_name">Session User Name</Label>
+            <Input
+              id="session_user_name"
+              value={formData.session_user_name}
+              onChange={(e) => setFormData({ ...formData, session_user_name: e.target.value })}
+              disabled={!editing}
+              placeholder="Used for audit logging until auth is implemented"
+            />
           </div>
         </div>
       </div>

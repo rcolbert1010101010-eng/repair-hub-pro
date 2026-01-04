@@ -44,6 +44,9 @@ import type {
   PlasmaJobAttachmentKind,
   ScheduleItem,
   PreferredContactMethod,
+  InventoryMovement,
+  InventoryMovementType,
+  InventoryRefType,
 } from '@/types';
 import { calculateFabJob, fabricationPricingDefaults, type FabricationPricingSettings } from '@/services/fabricationPricingService';
 import { calculatePlasmaJob, plasmaPricingDefaults, type PlasmaPricingSettings } from '@/services/plasmaPricingService';
@@ -285,7 +288,17 @@ interface ShopState {
   purchaseOrderLines: PurchaseOrderLine[];
   receivingRecords: ReceivingRecord[];
   inventoryAdjustments: InventoryAdjustment[];
-  vendorCostHistory: VendorCostHistory[];
+  inventoryMovements: InventoryMovement[];
+  getSessionUserName: () => string;
+  recordInventoryMovement: (
+    movement: Omit<InventoryMovement, 'id' | 'performed_at' | 'performed_by'> & {
+      performed_by?: string;
+      performed_at?: string;
+    }
+  ) => void;
+  getMovementsForPart: (partId: string) => InventoryMovement[];
+    vendorCostHistory: VendorCostHistory[];
+    inventoryMovements: [],
   returns: Return[];
   returnLines: ReturnLine[];
   warrantyPolicies: WarrantyPolicy[];
@@ -683,12 +696,40 @@ export const useShopStore = create<ShopState>()(
         markup_retail_percent: 60,
         markup_fleet_percent: 40,
         markup_wholesale_percent: 25,
+        session_user_name: '',
       },
 
       updateSettings: (newSettings) =>
         set((state) => ({
           settings: { ...state.settings, ...newSettings },
         })),
+
+      getSessionUserName: () => {
+        const name = get().settings.session_user_name?.trim();
+        return name && name.length > 0 ? name : 'system';
+      },
+
+      inventoryMovements: [],
+
+      recordInventoryMovement: (movement) => {
+        const performed_at = movement.performed_at || now();
+        const performed_by = movement.performed_by || get().getSessionUserName();
+        const entry: InventoryMovement = {
+          ...movement,
+          id: generateId(),
+          performed_at,
+          performed_by,
+        };
+        set((state) => ({
+          inventoryMovements: [...state.inventoryMovements, entry],
+        }));
+      },
+
+      getMovementsForPart: (partId) => {
+        return get()
+          .inventoryMovements.filter((m) => m.part_id === partId)
+          .sort((a, b) => new Date(b.performed_at).getTime() - new Date(a.performed_at).getTime());
+      },
 
       // Customers
       customers: INITIAL_CUSTOMERS,
@@ -1086,23 +1127,37 @@ export const useShopStore = create<ShopState>()(
 
         const old_qty = existing.quantity_on_hand;
         const new_qty = part.quantity_on_hand ?? old_qty;
+        const deltaQty = new_qty - old_qty;
         const adjustment: InventoryAdjustment = {
           id: generateId(),
           part_id: id,
           old_qty,
           new_qty,
-          delta: new_qty - old_qty,
+          delta: deltaQty,
           reason: meta.reason,
           adjusted_by: meta.adjusted_by,
           adjusted_at: now(),
         };
 
+        const timestamp = now();
+
         set((state) => ({
           parts: state.parts.map((p) =>
-            p.id === id ? { ...p, ...part, updated_at: now() } : p
+            p.id === id ? { ...p, ...part, updated_at: timestamp } : p
           ),
           inventoryAdjustments: [...state.inventoryAdjustments, adjustment],
         }));
+
+        if (deltaQty !== 0) {
+          get().recordInventoryMovement({
+            part_id: id,
+            movement_type: 'ADJUST',
+            qty_delta: deltaQty,
+            reason: meta.reason,
+            ref_type: 'MANUAL',
+            ref_id: id,
+          });
+        }
       },
 
       deactivatePart: (id) =>
@@ -1649,6 +1704,18 @@ export const useShopStore = create<ShopState>()(
             return { ...p, quantity_on_hand: p.quantity_on_hand - qty, updated_at: timestamp };
           }),
         }));
+        Object.entries(consumptionByPart).forEach(([partId, qty]) => {
+          if (!qty) return;
+          get().recordInventoryMovement({
+            part_id: partId,
+            movement_type: 'ISSUE',
+            qty_delta: -qty,
+            reason: `SO ${order.order_number || order.id} invoice`,
+            ref_type: 'SALES_ORDER',
+            ref_id: order.id,
+            performed_at: timestamp,
+          });
+        });
         createPOsForNegativeInventory(
           projectedQuantities,
           order.order_number ? `SO ${order.order_number}` : `SO ${order.id}`
@@ -2085,23 +2152,46 @@ export const useShopStore = create<ShopState>()(
         if (existingLine) {
           const newQty = existingLine.quantity + qty;
           const lineTotal = newQty * existingLine.unit_price;
-          
+          const timestamp = now();
           set((state) => ({
             workOrderPartLines: state.workOrderPartLines.map((l) =>
               l.id === existingLine.id
-                ? { ...l, quantity: newQty, line_total: lineTotal, updated_at: now() }
+                ? { ...l, quantity: newQty, line_total: lineTotal, updated_at: timestamp }
                 : l
             ),
             parts: state.parts.map((p) => {
               if (componentDeltas && componentDeltas[p.id]) {
-                return { ...p, quantity_on_hand: p.quantity_on_hand - componentDeltas[p.id], updated_at: now() };
+                return { ...p, quantity_on_hand: p.quantity_on_hand - componentDeltas[p.id], updated_at: timestamp };
               }
               if (!part.is_kit && p.id === partId) {
-                return { ...p, quantity_on_hand: p.quantity_on_hand - qty, updated_at: now() };
+                return { ...p, quantity_on_hand: p.quantity_on_hand - qty, updated_at: timestamp };
               }
               return p;
             }),
           }));
+          if (componentDeltas) {
+            Object.entries(componentDeltas).forEach(([compId, compQty]) => {
+              get().recordInventoryMovement({
+                part_id: compId,
+                movement_type: 'ISSUE',
+                qty_delta: -compQty,
+                reason: `WO ${order.order_number || order.id} part issue`,
+                ref_type: 'WORK_ORDER',
+                ref_id: orderId,
+                performed_at: timestamp,
+              });
+            });
+          } else {
+            get().recordInventoryMovement({
+              part_id: partId,
+              movement_type: 'ISSUE',
+              qty_delta: -qty,
+              reason: `WO ${order.order_number || order.id} part issue`,
+              ref_type: 'WORK_ORDER',
+              ref_id: orderId,
+              performed_at: timestamp,
+            });
+          }
         } else {
           const timestamp = now();
           const newLine: WorkOrderPartLine = {
@@ -2136,6 +2226,29 @@ export const useShopStore = create<ShopState>()(
               return p;
             }),
           }));
+          if (componentDeltas) {
+            Object.entries(componentDeltas).forEach(([compId, compQty]) => {
+              get().recordInventoryMovement({
+                part_id: compId,
+                movement_type: 'ISSUE',
+                qty_delta: -compQty,
+                reason: `WO ${order.order_number || order.id} part issue`,
+                ref_type: 'WORK_ORDER',
+                ref_id: orderId,
+                performed_at: timestamp,
+              });
+            });
+          } else {
+            get().recordInventoryMovement({
+              part_id: partId,
+              movement_type: 'ISSUE',
+              qty_delta: -qty,
+              reason: `WO ${order.order_number || order.id} part issue`,
+              ref_type: 'WORK_ORDER',
+              ref_id: orderId,
+              performed_at: timestamp,
+            });
+          }
         }
 
         get().recalculateWorkOrderTotals(orderId);
@@ -2177,6 +2290,34 @@ export const useShopStore = create<ShopState>()(
             return p;
           }),
         }));
+
+        if (kitDeltas) {
+          Object.entries(kitDeltas).forEach(([compId, compQty]) => {
+            const delta = -compQty;
+            get().recordInventoryMovement({
+              part_id: compId,
+              movement_type: qtyChange > 0 ? 'ISSUE' : 'RETURN',
+              qty_delta: delta,
+              reason: `WO ${order.order_number || order.id} part ${qtyChange > 0 ? 'issue' : 'return'}`,
+              ref_type: 'WORK_ORDER',
+              ref_id: order.id,
+              performed_at: timestamp,
+            });
+          });
+        } else {
+          const delta = -qtyChange;
+          if (delta !== 0) {
+            get().recordInventoryMovement({
+              part_id: line.part_id,
+              movement_type: qtyChange > 0 ? 'ISSUE' : 'RETURN',
+              qty_delta: delta,
+              reason: `WO ${order.order_number || order.id} part ${qtyChange > 0 ? 'issue' : 'return'}`,
+              ref_type: 'WORK_ORDER',
+              ref_id: order.id,
+              performed_at: timestamp,
+            });
+          }
+        }
 
         get().recalculateWorkOrderTotals(line.work_order_id);
         return { success: true };
@@ -2235,6 +2376,30 @@ export const useShopStore = create<ShopState>()(
             return p;
           }),
         }));
+
+        if (restoration) {
+          Object.entries(restoration).forEach(([compId, compQty]) => {
+            get().recordInventoryMovement({
+              part_id: compId,
+              movement_type: 'RETURN',
+              qty_delta: compQty,
+              reason: `WO ${order.order_number || order.id} part return`,
+              ref_type: 'WORK_ORDER',
+              ref_id: order.id,
+              performed_at: timestamp,
+            });
+          });
+        } else {
+          get().recordInventoryMovement({
+            part_id: line.part_id,
+            movement_type: 'RETURN',
+            qty_delta: line.quantity,
+            reason: `WO ${order.order_number || order.id} part return`,
+            ref_type: 'WORK_ORDER',
+            ref_id: order.id,
+            performed_at: timestamp,
+          });
+        }
 
         get().recalculateWorkOrderTotals(line.work_order_id);
         return { success: true };
@@ -3330,6 +3495,15 @@ export const useShopStore = create<ShopState>()(
           vendorCostHistory: [...state.vendorCostHistory, costHistory],
         }));
 
+        get().recordInventoryMovement({
+          part_id: line.part_id,
+          movement_type: 'RECEIVE',
+          qty_delta: quantity,
+          reason: 'PO Receiving',
+          ref_type: 'PURCHASE_ORDER',
+          ref_id: order.id,
+        });
+
         return { success: true };
       },
 
@@ -3725,7 +3899,19 @@ export const useShopStore = create<ShopState>()(
           if (line.variance === 0) continue;
           const reasonText = line.reason?.trim() || 'Variance';
           const reason = `Cycle Count ${id}: ${reasonText}`;
+          const expected = line.expected_qty;
+          const delta = line.counted_qty - expected;
           get().updatePartWithQohAdjustment(line.part_id, { quantity_on_hand: line.counted_qty }, { reason, adjusted_by: poster });
+          get().recordInventoryMovement({
+            part_id: line.part_id,
+            movement_type: 'COUNT',
+            qty_delta: delta,
+            reason,
+            ref_type: 'CYCLE_COUNT',
+            ref_id: id,
+            performed_by: poster,
+            performed_at: timestamp,
+          });
         }
 
         set((state) => ({
