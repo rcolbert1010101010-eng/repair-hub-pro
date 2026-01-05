@@ -41,6 +41,7 @@ export default function Inventory() {
   const { parts } = repos.parts;
   const { vendors } = repos.vendors;
   const { categories } = repos.categories;
+  const poRepo = repos.purchaseOrders;
   const { toast } = useToast();
   const [scanValue, setScanValue] = useState('');
   const scanInputRef = useRef<HTMLInputElement | null>(null);
@@ -67,6 +68,7 @@ export default function Inventory() {
   const [batchSummary, setBatchSummary] = useState<{ updated: number; skipped: number; failed: number } | null>(null);
   const countInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [searchInput, setSearchInput] = useState(() => searchParams.get('search') || '');
+  const [bulkSelectMode, setBulkSelectMode] = useState(false);
   const movementSummary = useMemo(() => {
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
     const summary: Record<string, { lastCountedAt: string | null; delta30d: number }> = {};
@@ -93,7 +95,7 @@ export default function Inventory() {
   }, [inventoryMovements]);
 
   const columns: Column<Part>[] = [
-    ...(cycleCountMode
+    ...(cycleCountMode || bulkSelectMode
       ? [
           {
             key: 'select',
@@ -452,6 +454,17 @@ export default function Inventory() {
   }, [batchReason, countInputs, selectedParts]);
   const cycleCountBlocker = cycleCountIssues[0] || '';
   const applyDisabled = Boolean(cycleCountBlocker);
+  const poIssues = useMemo(() => {
+    const issues: string[] = [];
+    if (!bulkSelectMode || selectedParts.length === 0) return issues;
+    const valid = selectedParts.filter(
+      (p) => p.vendor_id && Number.isFinite((p as any).__suggested) && (p as any).__suggested > 0
+    );
+    if (valid.length === 0) {
+      issues.push('Select parts with vendor and suggested qty > 0 to create draft PO.');
+    }
+    return issues;
+  }, [bulkSelectMode, selectedParts]);
   const adjustIssues = useMemo(() => {
     const issues: string[] = [];
     if (!selectedPart) issues.push('Select a part to adjust.');
@@ -459,6 +472,88 @@ export default function Inventory() {
     if (!Number.isFinite(Number(newQoh))) issues.push('Enter a valid quantity.');
     return issues;
   }, [adjustReason, newQoh, selectedPart]);
+
+  const handleCreateDraftPO = () => {
+    if (!bulkSelectMode || selectedParts.length === 0) return;
+    const grouped: Record<string, Part[]> = {};
+    const skipped: string[] = [];
+    selectedParts.forEach((p) => {
+      const suggested = (p as any).__suggested ?? 0;
+      if (!p.vendor_id || !Number.isFinite(suggested) || suggested <= 0) {
+        skipped.push(p.part_number);
+        return;
+      }
+      if (!grouped[p.vendor_id]) grouped[p.vendor_id] = [];
+      grouped[p.vendor_id].push(p);
+    });
+    const vendorIds = Object.keys(grouped);
+    if (vendorIds.length === 0) {
+      toast({
+        title: 'Cannot create draft PO',
+        description: 'Selected parts need vendor and suggested quantity.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const created: string[] = [];
+    vendorIds.forEach((vendorId) => {
+      const order = poRepo.createPurchaseOrder(vendorId);
+      if (!order) return;
+      created.push(order.id);
+      grouped[vendorId].forEach((p) => {
+        const suggested = Math.max(0, (p as any).__suggested ?? 0);
+        if (suggested > 0) {
+          poRepo.poAddLine(order.id, p.id, suggested);
+        }
+      });
+    });
+    const skippedText =
+      skipped.length === 0
+        ? ''
+        : ` • Skipped ${skipped.length} part(s) without vendor/qty${skipped.length > 5 ? '...' : skipped.length ? ` (${skipped.slice(0, 5).join(', ')})` : ''}`;
+    toast({
+      title: 'Draft purchase orders created',
+      description: `Created ${created.length} PO(s)${skippedText}`,
+    });
+    setBulkSelectMode(false);
+    setSelectedIds({});
+    setCountInputs({});
+    setBatchSummary(null);
+    if (created.length === 1) {
+      navigate(`/purchase-orders/${created[0]}`);
+    } else {
+      navigate('/purchase-orders');
+    }
+  };
+
+  const poPreview = useMemo(() => {
+    const groups: { vendorId: string; name: string; parts: number; total: number }[] = [];
+    let skipped = 0;
+    if (!bulkSelectMode || selectedParts.length === 0) return { groups, skipped };
+    const grouped: Record<string, { parts: number; total: number }> = {};
+    selectedParts.forEach((p) => {
+      const suggested = (p as any).__suggested ?? 0;
+      if (!p.vendor_id || !Number.isFinite(suggested) || suggested <= 0) {
+        skipped += 1;
+        return;
+      }
+      if (!grouped[p.vendor_id]) {
+        grouped[p.vendor_id] = { parts: 0, total: 0 };
+      }
+      grouped[p.vendor_id].parts += 1;
+      grouped[p.vendor_id].total += suggested;
+    });
+    Object.entries(grouped).forEach(([vendorId, info]) => {
+      const vendor = vendors.find((v) => v.id === vendorId);
+      groups.push({
+        vendorId,
+        name: vendor?.vendor_name || 'Unknown Vendor',
+        parts: info.parts,
+        total: info.total,
+      });
+    });
+    return { groups, skipped };
+  }, [bulkSelectMode, selectedParts, vendors]);
   const focusNextCountInput = (partId: string, direction: 'forward' | 'backward' = 'forward') => {
     const idx = filteredParts.findIndex((p) => p.id === partId);
     if (idx === -1) return;
@@ -613,103 +708,133 @@ export default function Inventory() {
         }
       />
 
-      <div className="flex items-center gap-2 mb-4">
-        <Input
-          ref={scanInputRef}
-          placeholder="Scan barcode"
-          value={scanValue}
-          onChange={(e) => setScanValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              handleScan(scanValue);
-            }
-          }}
-          className="max-w-xs"
-        />
-        <Button variant="outline" size="sm" onClick={() => scanInputRef.current?.focus()}>
-          Focus Scan
-        </Button>
-        <Button
-          variant={cycleCountMode ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => {
-            setCycleCountMode((prev) => !prev);
-            setSelectedIds({});
-            setCountInputs({});
-            setBatchReason('');
-            setBatchSummary(null);
-          }}
-        >
-          {cycleCountMode ? 'Exit Quick Cycle Count' : 'Quick Cycle Count'}
-        </Button>
-        <div className="flex items-center gap-2 ml-auto">
+      <div className="sticky top-16 z-20 bg-background/95 backdrop-blur border-b mb-4 space-y-3 py-3">
+        <div className="flex items-center gap-2">
           <Input
-            placeholder="Search parts"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="w-56"
+            ref={scanInputRef}
+            placeholder="Scan barcode"
+            value={scanValue}
+            onChange={(e) => setScanValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                handleScan(scanValue);
+              }
+            }}
+            className="max-w-xs"
           />
-          {searchInput && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setSearchInput('')}
-              aria-label="Clear search"
-            >
-              <XIcon className="w-4 h-4" />
-            </Button>
-          )}
-        </div>
-      </div>
-
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="font-semibold">Inventory:</span>
-          <span className="rounded-md bg-muted px-2 py-1 text-xs">SKUs {stockCounts.total}</span>
-          <span className="rounded-md bg-muted px-2 py-1 text-xs">Low {stockCounts.low}</span>
-          <span className="rounded-md bg-muted px-2 py-1 text-xs">Out {stockCounts.out}</span>
-          <span className="rounded-md bg-muted px-2 py-1 text-xs">Negative {stockCounts.negative}</span>
-        </div>
-        <div className="flex items-center gap-2 text-sm">
-          <span className="font-semibold">Inventory Alerts:</span>
-          <Button
-            variant={stockFilter === 'LOW' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setStockFilter('LOW')}
-          >
-            Low: {stockCounts.low}
+          <Button variant="outline" size="sm" onClick={() => scanInputRef.current?.focus()}>
+            Focus Scan
           </Button>
           <Button
-            variant={stockFilter === 'OUT' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setStockFilter('OUT')}
-          >
-            Out: {stockCounts.out}
-          </Button>
-          <Button
-            variant={stockFilter === 'ALL' && !needsReorderOnly ? 'default' : 'outline'}
+            variant={cycleCountMode ? 'default' : 'outline'}
             size="sm"
             onClick={() => {
-              setStockFilter('ALL');
-              setNeedsReorderOnly(false);
+              setCycleCountMode((prev) => {
+                const next = !prev;
+                if (next) {
+                  setBulkSelectMode(false);
+                  setSelectedIds({});
+                  setCountInputs({});
+                  setBatchReason('');
+                  setBatchSummary(null);
+                }
+                return next;
+              });
+              setSelectedIds({});
+              setCountInputs({});
+              setBatchReason('');
+              setBatchSummary(null);
             }}
           >
-            All
+            {cycleCountMode ? 'Exit Quick Cycle Count' : 'Quick Cycle Count'}
           </Button>
-        </div>
-        <div className="flex items-center gap-2 text-sm">
-          <span className="font-semibold">Reorder:</span>
           <Button
-            variant={needsReorderOnly ? 'default' : 'outline'}
+            variant={bulkSelectMode ? 'default' : 'outline'}
             size="sm"
-            onClick={() => setNeedsReorderOnly((prev) => !prev)}
+            onClick={() => {
+              setBulkSelectMode((prev) => {
+                const next = !prev;
+                if (next) {
+                  setCycleCountMode(false);
+                  setCountInputs({});
+                  setBatchReason('');
+                  setBatchSummary(null);
+                }
+                return next;
+              });
+              setSelectedIds({});
+            }}
           >
-            Needs Reorder: {stockCounts.needs}
+            {bulkSelectMode ? 'Exit Bulk Select' : 'Bulk Select'}
           </Button>
-          <span className="text-xs text-muted-foreground">
-            Suggested units: {stockCounts.suggestedTotal}
-          </span>
+          <div className="flex items-center gap-2 ml-auto">
+            <Input
+              placeholder="Search parts"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-56"
+            />
+            {searchInput && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSearchInput('')}
+                aria-label="Clear search"
+              >
+                <XIcon className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-semibold">Inventory:</span>
+            <span className="rounded-md bg-muted px-2 py-1 text-xs">SKUs {stockCounts.total}</span>
+            <span className="rounded-md bg-muted px-2 py-1 text-xs">Low {stockCounts.low}</span>
+            <span className="rounded-md bg-muted px-2 py-1 text-xs">Out {stockCounts.out}</span>
+            <span className="rounded-md bg-muted px-2 py-1 text-xs">Negative {stockCounts.negative}</span>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-semibold">Alerts:</span>
+            <Button
+              variant={stockFilter === 'LOW' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStockFilter('LOW')}
+              className="rounded-full"
+            >
+              Low: {stockCounts.low}
+            </Button>
+            <Button
+              variant={stockFilter === 'OUT' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setStockFilter('OUT')}
+              className="rounded-full"
+            >
+              Out: {stockCounts.out}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setStockFilter('ALL')}
+              className="rounded-full"
+            >
+              All
+            </Button>
+          </div>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-semibold">Reorder:</span>
+            <Button
+              variant={needsReorderOnly ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setNeedsReorderOnly((prev) => !prev)}
+              className="rounded-full"
+            >
+              Needs Reorder: {stockCounts.needs}
+            </Button>
+            <span className="text-xs text-muted-foreground">Suggested units: {stockCounts.suggestedTotal}</span>
+          </div>
         </div>
       </div>
 
@@ -719,75 +844,137 @@ export default function Inventory() {
         searchKeys={['part_number', 'description']}
         searchPlaceholder="Search parts..."
         onRowClick={(part, event) => {
-          if (cycleCountMode) {
+          if (cycleCountMode || bulkSelectMode) {
             event?.stopPropagation();
             event?.preventDefault();
+            setSelectedIds((prev) => ({ ...prev, [part.id]: !prev[part.id] }));
             return;
           }
           navigate(`/inventory/${part.id}`);
         }}
-        rowClassName={cycleCountMode ? 'cursor-default' : undefined}
+        rowClassName={cycleCountMode || bulkSelectMode ? 'cursor-default' : undefined}
         emptyMessage="No parts found. Add your first part to get started."
       />
 
-      {cycleCountMode && (
-        <div className="mt-4 border rounded-lg p-4 space-y-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="batch_reason" className="text-sm font-semibold">
-                Reason *
-              </Label>
-              <Input
-                id="batch_reason"
-                value={batchReason}
-                onChange={(e) => setBatchReason(e.target.value)}
-                placeholder="Reason for this cycle count"
-                className="w-64"
-              />
-            </div>
-            <div className="text-sm text-muted-foreground">
-              Selected: {selectedParts.length} • Valid: {validCount} • Invalid: {invalidCount}
-            </div>
-            {batchSummary && (
-              <div className="text-sm text-muted-foreground">
-                Updated {batchSummary.updated} • Skipped {batchSummary.skipped} • Failed {batchSummary.failed}
+      {(bulkSelectMode || cycleCountMode) && (
+        <div className="mt-4 rounded-lg border bg-muted/40 p-4 space-y-3">
+          {bulkSelectMode && (
+            <>
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-semibold">Bulk actions:</span>
+                <span className="text-muted-foreground">Selected {selectedParts.length} part(s)</span>
               </div>
-            )}
-          </div>
-          <div className="rounded-md border border-border/60 bg-muted/50 p-3 text-sm">
-            {cycleCountIssues.length > 0 ? (
-              <ul className="list-disc list-inside space-y-1 text-destructive">
-                {cycleCountIssues.map((issue) => (
-                  <li key={issue}>{issue}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-muted-foreground">Ready to apply counts to {validCount} part(s).</p>
-            )}
-            <p className="text-[11px] text-muted-foreground">
-              Tab/Shift+Tab moves • Enter next • ↑/↓ adjusts • ⌘/Ctrl+Enter applies • Esc blurs
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              onClick={applyCounts}
-              disabled={applyDisabled}
-            >
-              Apply Counts
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setCycleCountMode(false);
-                setSelectedIds({});
-                setCountInputs({});
-                setBatchReason('');
-                setBatchSummary(null);
-              }}
-            >
-              Cancel
-            </Button>
-          </div>
+              {selectedParts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Select parts from the table to create draft purchase orders.
+                </p>
+              ) : (
+                <>
+                  {poPreview.groups.length > 0 && (
+                    <div className="space-y-1 text-sm">
+                      {poPreview.groups.map((g) => (
+                        <div key={g.vendorId} className="flex justify-between">
+                          <span>{g.name}</span>
+                          <span className="text-muted-foreground">
+                            {g.parts} part(s) • Suggested {g.total}
+                          </span>
+                        </div>
+                      ))}
+                      {poPreview.skipped > 0 && (
+                        <div className="text-[11px] text-muted-foreground">
+                          Skipped {poPreview.skipped} without vendor/qty
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+              {poIssues.length > 0 ? (
+                <ul className="list-disc list-inside text-destructive text-sm">
+                  {poIssues.map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">Ready to create draft purchase order(s) from selection.</p>
+              )}
+              <div className="flex gap-2">
+                <Button onClick={handleCreateDraftPO} disabled={poIssues.length > 0}>
+                  Create Draft PO
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSelectedIds({});
+                    setBulkSelectMode(false);
+                  }}
+                >
+                  Clear Selection
+                </Button>
+              </div>
+            </>
+          )}
+
+          {cycleCountMode && (
+            <>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="batch_reason" className="text-sm font-semibold">
+                    Reason *
+                  </Label>
+                  <Input
+                    id="batch_reason"
+                    value={batchReason}
+                    onChange={(e) => setBatchReason(e.target.value)}
+                    placeholder="Reason for this cycle count"
+                    className="w-64"
+                  />
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Selected: {selectedParts.length} • Valid: {validCount} • Invalid: {invalidCount}
+                </div>
+                {batchSummary && (
+                  <div className="text-sm text-muted-foreground">
+                    Updated {batchSummary.updated} • Skipped {batchSummary.skipped} • Failed {batchSummary.failed}
+                  </div>
+                )}
+              </div>
+              <div className="rounded-md border border-border/60 bg-muted/50 p-3 text-sm">
+                {cycleCountIssues.length > 0 ? (
+                  <ul className="list-disc list-inside space-y-1 text-destructive">
+                    {cycleCountIssues.map((issue) => (
+                      <li key={issue}>{issue}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-muted-foreground">Ready to apply counts to {validCount} part(s).</p>
+                )}
+                <p className="text-[11px] text-muted-foreground">
+                  Tab/Shift+Tab moves • Enter next • ↑/↓ adjusts • ⌘/Ctrl+Enter applies • Esc blurs
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={applyCounts}
+                  disabled={applyDisabled}
+                >
+                  Apply Counts
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCycleCountMode(false);
+                    setSelectedIds({});
+                    setCountInputs({});
+                    setBatchReason('');
+                    setBatchSummary(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
