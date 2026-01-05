@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -245,6 +245,48 @@ export default function PartForm() {
   };
 
   const recentActivity = recentMovements.slice(0, 10);
+
+  useEffect(() => {
+    if (editing || isNew || !part) return;
+    const handler = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('input, textarea, select, button, [contenteditable="true"]')) return;
+      const key = e.key.toLowerCase();
+      if (key === 'e') {
+        e.preventDefault();
+        setEditing(true);
+        return;
+      }
+      if (key === 'r') {
+        e.preventDefault();
+        navigate(`/receiving?search=${encodeURIComponent(part.part_number)}`);
+        return;
+      }
+      if (key === 'a') {
+        e.preventDefault();
+        setNewQoh(part.quantity_on_hand?.toString() || '');
+        setAdjustReason('');
+        setAdjustDialogOpen(true);
+        return;
+      }
+      if (key === 'c') {
+        e.preventDefault();
+        (async () => {
+          try {
+            setCopying(true);
+            await navigator.clipboard.writeText(part.part_number);
+            toast({ title: 'Copied', description: 'Part number copied to clipboard' });
+          } catch {
+            toast({ title: 'Copy failed', variant: 'destructive' });
+          } finally {
+            setCopying(false);
+          }
+        })();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [editing, isNew, navigate, part, toast]);
 
   const handleSave = () => {
     if (!formData.part_number.trim()) {

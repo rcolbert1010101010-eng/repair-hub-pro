@@ -88,10 +88,10 @@ export default function ReceivingReceiptDetail() {
                   <td className="py-2 text-right">{line.unit_cost != null ? line.unit_cost : '—'}</td>
                   <td className="py-2 text-right">
                     <Link
-                      to={`/inventory?search=${encodeURIComponent(part?.part_number || line.part_id)}`}
+                      to={part ? `/inventory/${part.id}` : `/inventory?search=${encodeURIComponent(part?.part_number || line.part_id)}`}
                       className="text-primary hover:underline text-sm"
                     >
-                      View
+                      View Part
                     </Link>
                   </td>
                 </tr>

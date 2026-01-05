@@ -10,6 +10,12 @@ import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -264,22 +270,40 @@ export default function Inventory() {
     {
       key: 'actions',
       header: 'Actions',
-      className: 'text-right',
+      className: 'text-right w-40',
       render: (item) =>
         item.is_active ? (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedPart(item);
-              setNewQoh(item.quantity_on_hand.toString());
-              setAdjustReason('');
-              setAdjustDialogOpen(true);
-            }}
-          >
-            Adjust QOH
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" onClick={(e) => e.stopPropagation()}>
+                Actions
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+              <DropdownMenuItem
+                onClick={() => {
+                  navigate(`/inventory/${item.id}`);
+                }}
+              >
+                View
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => navigate(`/receiving?search=${encodeURIComponent(item.part_number)}`)}
+              >
+                Receive
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  setSelectedPart(item);
+                  setNewQoh(item.quantity_on_hand.toString());
+                  setAdjustReason('');
+                  setAdjustDialogOpen(true);
+                }}
+              >
+                Adjust QOH
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         ) : (
           <span className="text-xs text-muted-foreground">Inactive</span>
         ),
