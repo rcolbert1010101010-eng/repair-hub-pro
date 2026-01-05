@@ -47,6 +47,7 @@ import type {
   InventoryMovement,
   InventoryMovementType,
   InventoryRefType,
+  ReceivingReceipt,
 } from '@/types';
 import { calculateFabJob, fabricationPricingDefaults, type FabricationPricingSettings } from '@/services/fabricationPricingService';
 import { calculatePlasmaJob, plasmaPricingDefaults, type PlasmaPricingSettings } from '@/services/plasmaPricingService';
@@ -56,6 +57,7 @@ import { computePlasmaJobMetrics } from '@/services/plasmaJobSummary';
 // Generate unique IDs
 const generateId = () => crypto.randomUUID();
 const SESSION_USER_KEY = 'rhp.session_user_name';
+const NEG_QOH_POLICY_KEY = 'rhp.inventory_negative_qoh_policy';
 
 // Generate order numbers
 const generateOrderNumber = (prefix: string, count: number) => 
@@ -299,6 +301,15 @@ interface ShopState {
     }
   ) => void;
   getMovementsForPart: (partId: string) => InventoryMovement[];
+  receivingReceipts: ReceivingReceipt[];
+  receiveInventory?: (payload: {
+    lines: { part_id: string; quantity: number; unit_cost?: number | null }[];
+    vendor_id?: string | null;
+    reference?: string | null;
+    received_at?: string | null;
+    source_type?: 'PURCHASE_ORDER' | 'MANUAL';
+    source_id?: string | null;
+  }) => { success: boolean; error?: string };
     vendorCostHistory: VendorCostHistory[];
     inventoryMovements: [],
   returns: Return[];
@@ -702,17 +713,26 @@ export const useShopStore = create<ShopState>()(
           typeof localStorage !== 'undefined'
             ? (localStorage.getItem(SESSION_USER_KEY) || '').trim()
             : '',
+        inventory_negative_qoh_policy:
+          typeof localStorage !== 'undefined'
+            ? ((localStorage.getItem(NEG_QOH_POLICY_KEY) as SystemSettings['inventory_negative_qoh_policy']) || 'WARN')
+            : 'WARN',
       },
 
       updateSettings: (newSettings) =>
         set((state) => {
           const merged = { ...state.settings, ...newSettings };
-          if (newSettings.session_user_name !== undefined && typeof localStorage !== 'undefined') {
-            const trimmed = newSettings.session_user_name.trim();
-            if (trimmed) {
-              localStorage.setItem(SESSION_USER_KEY, trimmed);
-            } else {
-              localStorage.removeItem(SESSION_USER_KEY);
+          if (typeof localStorage !== 'undefined') {
+            if (newSettings.session_user_name !== undefined) {
+              const trimmed = newSettings.session_user_name.trim();
+              if (trimmed) {
+                localStorage.setItem(SESSION_USER_KEY, trimmed);
+              } else {
+                localStorage.removeItem(SESSION_USER_KEY);
+              }
+            }
+            if (newSettings.inventory_negative_qoh_policy) {
+              localStorage.setItem(NEG_QOH_POLICY_KEY, newSettings.inventory_negative_qoh_policy);
             }
           }
           return {
@@ -1139,7 +1159,7 @@ export const useShopStore = create<ShopState>()(
       updatePartWithQohAdjustment: (id, part, meta) => {
         const state = get();
         const existing = state.parts.find((p) => p.id === id);
-        if (!existing) return;
+        if (!existing) return { success: false, error: 'Part not found' };
 
         const old_qty = existing.quantity_on_hand;
         const new_qty = part.quantity_on_hand ?? old_qty;
@@ -1148,6 +1168,10 @@ export const useShopStore = create<ShopState>()(
         const candidate = meta.adjusted_by?.trim();
         const performer = candidate && candidate !== 'system' ? candidate : get().getSessionUserName();
         const timestamp = now();
+        const policy = state.settings.inventory_negative_qoh_policy ?? 'WARN';
+        if (qtyProvided && new_qty < 0 && policy === 'BLOCK') {
+          return { success: false, error: 'Negative inventory is blocked by policy' };
+        }
 
         set((state) => ({
           parts: state.parts.map((p) =>
@@ -1168,6 +1192,10 @@ export const useShopStore = create<ShopState>()(
           ],
         }));
 
+        let warning: string | undefined;
+        if (qtyProvided && new_qty < 0 && policy === 'WARN') {
+          warning = 'Negative inventory allowed (policy=WARN)';
+        }
         if (qtyProvided && deltaQty !== 0) {
           get().recordInventoryMovement({
             part_id: id,
@@ -1180,6 +1208,7 @@ export const useShopStore = create<ShopState>()(
             performed_at: timestamp,
           });
         }
+        return { success: true, warning };
       },
 
       deactivatePart: (id) =>
@@ -1194,6 +1223,125 @@ export const useShopStore = create<ShopState>()(
             p.id === id ? { ...p, is_active: true, updated_at: now() } : p
           ),
         })),
+      receiveInventory: (payload) => {
+        const lines = payload.lines || [];
+        if (lines.length === 0) return { success: false, error: 'No lines to receive' };
+        const timestamp = payload.received_at || now();
+        const ref = payload.reference?.trim() || null;
+        const performer = get().getSessionUserName();
+        const sourceType = payload.source_type || 'MANUAL';
+        const sourceId = payload.source_id || null;
+
+        const totals = new Map<string, { qty: number; unit_cost?: number | null }>();
+        for (const line of lines) {
+          if (!line.part_id) return { success: false, error: 'Part required' };
+          if (!Number.isFinite(line.quantity) || line.quantity <= 0) {
+            return { success: false, error: 'Quantity must be greater than 0' };
+          }
+          const existing = totals.get(line.part_id) || { qty: 0, unit_cost: line.unit_cost };
+          totals.set(line.part_id, { qty: existing.qty + line.quantity, unit_cost: line.unit_cost ?? existing.unit_cost });
+        }
+
+        const state = get();
+        for (const [partId] of totals) {
+          const part = state.parts.find((p) => p.id === partId);
+          if (!part) return { success: false, error: `Part not found: ${partId}` };
+        }
+
+        // Update parts with quantities and cost
+        set((state) => ({
+          parts: state.parts.map((p) => {
+            const entry = totals.get(p.id);
+            if (!entry) return p;
+            const oldQoh = p.quantity_on_hand;
+            const qty = entry.qty;
+            const unitCost = entry.unit_cost ?? p.last_cost ?? null;
+            let avgCost = p.avg_cost;
+            if (unitCost != null) {
+              if (avgCost === null || oldQoh <= 0) {
+                avgCost = unitCost;
+              } else {
+                avgCost = ((avgCost * oldQoh) + (unitCost * qty)) / (oldQoh + qty);
+              }
+            }
+            return {
+              ...p,
+              quantity_on_hand: p.quantity_on_hand + qty,
+              last_cost: unitCost ?? p.last_cost ?? null,
+              avg_cost: avgCost ?? p.avg_cost ?? null,
+              updated_at: timestamp,
+            };
+          }),
+          vendorCostHistory: [
+            ...state.vendorCostHistory,
+            ...Array.from(totals.entries())
+              .filter(([, v]) => v.unit_cost != null)
+              .map(([partId, v]) => ({
+                id: generateId(),
+                part_id: partId,
+                vendor_id: payload.vendor_id || state.parts.find((p) => p.id === partId)?.vendor_id || null,
+                unit_cost: v.unit_cost as number,
+                quantity: v.qty,
+                source: 'RECEIVING' as const,
+                created_at: timestamp,
+              })),
+          ],
+      receivingReceipts: [
+        ...state.receivingReceipts,
+        {
+          id: generateId(),
+          vendor_id: payload.vendor_id || null,
+          reference: ref,
+          received_at: timestamp,
+          received_by: performer,
+          source_type: sourceType,
+          source_id: sourceId,
+          lines: Array.from(totals.entries()).map(([part_id, v]) => ({
+            part_id,
+            quantity: v.qty,
+            unit_cost: v.unit_cost ?? null,
+          })),
+        },
+      ],
+        }));
+
+        totals.forEach((entry, partId) => {
+          const reason = `RECEIVE: ${ref || (sourceType === 'PURCHASE_ORDER' ? 'PO' : 'manual')}`;
+          get().recordInventoryMovement({
+            part_id: partId,
+            movement_type: 'RECEIVE',
+            qty_delta: entry.qty,
+            reason,
+            ref_type: sourceType === 'PURCHASE_ORDER' ? 'PURCHASE_ORDER' : 'MANUAL',
+            ref_id: sourceId || ref,
+            performed_by: performer,
+            performed_at: timestamp,
+          });
+        });
+
+        if (sourceType === 'PURCHASE_ORDER' && sourceId) {
+          set((state) => {
+            const updatedLines = state.purchaseOrderLines.map((l) => {
+              if (l.purchase_order_id !== sourceId) return l;
+              const entry = totals.get(l.part_id);
+              if (!entry) return l;
+              const remaining = l.ordered_quantity - l.received_quantity;
+              const received = Math.min(entry.qty, remaining);
+              return { ...l, received_quantity: l.received_quantity + received, updated_at: timestamp };
+            });
+            const linesForOrder = updatedLines.filter((l) => l.purchase_order_id === sourceId);
+            const allReceived = linesForOrder.every((l) => l.received_quantity >= l.ordered_quantity);
+            return {
+              purchaseOrderLines: updatedLines,
+              purchaseOrders: state.purchaseOrders.map((o) =>
+                o.id === sourceId ? { ...o, status: allReceived ? 'CLOSED' : o.status, updated_at: timestamp } : o
+              ),
+            };
+          });
+        }
+
+        return { success: true };
+      },
 
       addKitComponent: (component) => {
         const newComponent: PartKitComponent = {
@@ -3236,6 +3384,7 @@ export const useShopStore = create<ShopState>()(
       purchaseOrders: [],
       purchaseOrderLines: [],
       receivingRecords: [],
+      receivingReceipts: [],
       inventoryAdjustments: [],
       vendorCostHistory: [],
 
@@ -3889,8 +4038,9 @@ export const useShopStore = create<ShopState>()(
         const session = state.cycleCountSessions.find((s) => s.id === line.session_id);
         if (!session || session.status !== 'DRAFT') return { success: false, error: 'Cannot edit this cycle count' };
 
-        const counted_qty = updates.counted_qty ?? line.counted_qty;
-        const variance = counted_qty - line.expected_qty;
+        const hasCountUpdate = Object.prototype.hasOwnProperty.call(updates, 'counted_qty');
+        const counted_qty = hasCountUpdate ? updates.counted_qty ?? null : line.counted_qty;
+        const variance = counted_qty == null ? 0 : counted_qty - line.expected_qty;
         set((state) => ({
           cycleCountLines: state.cycleCountLines.map((l) =>
             l.id === id
@@ -3898,7 +4048,7 @@ export const useShopStore = create<ShopState>()(
                   ...l,
                   counted_qty,
                   variance,
-                  reason: updates.reason ?? l.reason,
+                  reason: Object.prototype.hasOwnProperty.call(updates, 'reason') ? updates.reason ?? null : l.reason,
                   updated_at: now(),
                 }
               : l

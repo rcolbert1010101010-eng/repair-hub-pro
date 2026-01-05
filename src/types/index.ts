@@ -14,6 +14,7 @@ export interface SystemSettings {
   markup_fleet_percent: number;
   markup_wholesale_percent: number;
   session_user_name?: string;
+  inventory_negative_qoh_policy?: NegativeInventoryPolicy;
 }
 
 // Customer
@@ -130,6 +131,7 @@ export interface PartKitComponent {
 
 export type InventoryMovementType = 'RECEIVE' | 'ISSUE' | 'RETURN' | 'ADJUST' | 'COUNT';
 export type InventoryRefType = 'PURCHASE_ORDER' | 'WORK_ORDER' | 'SALES_ORDER' | 'CYCLE_COUNT' | 'MANUAL';
+export type NegativeInventoryPolicy = 'ALLOW' | 'WARN' | 'BLOCK';
 
 export interface InventoryMovement {
   id: string;
@@ -713,6 +715,23 @@ export interface ReceivingRecord {
   quantity_received: number;
   received_at: string;
   notes: string | null;
+}
+
+export interface ReceivingReceiptLine {
+  part_id: string;
+  quantity: number;
+  unit_cost?: number | null;
+}
+
+export interface ReceivingReceipt {
+  id: string;
+  vendor_id: string | null;
+  reference: string | null;
+  received_at: string;
+  received_by: string;
+  source_type: 'PURCHASE_ORDER' | 'MANUAL';
+  source_id?: string | null;
+  lines: ReceivingReceiptLine[];
 }
 
 // Dashboard Stats

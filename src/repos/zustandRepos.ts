@@ -294,6 +294,9 @@ export const zustandRepos: Repos = {
     deactivatePart(id) {
       return useShopStore.getState().deactivatePart(id);
     },
+    receiveInventory(payload) {
+      return useShopStore.getState().receiveInventory?.(payload);
+    },
     getMovementsForPart(partId) {
       return useShopStore.getState().getMovementsForPart(partId);
     },

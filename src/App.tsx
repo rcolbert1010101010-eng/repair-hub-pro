@@ -39,6 +39,9 @@ import PlasmaPrint from "@/pages/PlasmaPrint";
 import PlasmaTemplates from "@/pages/PlasmaTemplates";
 import PlasmaTemplateDetail from "@/pages/PlasmaTemplateDetail";
 import Scheduling from "@/pages/Scheduling";
+import ReceiveInventory from "@/pages/ReceiveInventory";
+import ReceivingHistory from "@/pages/ReceivingHistory";
+import ReceivingReceiptDetail from "@/pages/ReceivingReceiptDetail";
 
 const queryClient = new QueryClient();
 
@@ -62,6 +65,9 @@ const App = () => (
               <Route path="/categories" element={<Categories />} />
               <Route path="/categories/:id" element={<CategoryDetail />} />
               <Route path="/inventory" element={<Inventory />} />
+              <Route path="/receiving" element={<ReceiveInventory />} />
+              <Route path="/receiving-history" element={<ReceivingHistory />} />
+              <Route path="/receiving-history/:id" element={<ReceivingReceiptDetail />} />
               <Route path="/inventory/:id" element={<PartForm />} />
               <Route path="/sales-orders" element={<SalesOrders />} />
               <Route path="/sales-orders/:id" element={<SalesOrderDetail />} />

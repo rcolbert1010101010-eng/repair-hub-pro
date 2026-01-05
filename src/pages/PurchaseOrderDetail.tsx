@@ -345,6 +345,9 @@ export default function PurchaseOrderDetail() {
         actions={
           !isClosed && (
             <>
+              <Button size="sm" variant="outline" onClick={() => navigate(`/receiving?poId=${currentOrder?.id}`)}>
+                Receive
+              </Button>
               <Button size="sm" onClick={() => setAddPartOpen(true)}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Part

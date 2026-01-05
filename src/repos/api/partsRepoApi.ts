@@ -18,8 +18,18 @@ export const partsRepoApi: PartsRepo = {
     void apiClient.put<Part>(`/parts/${id}`, part);
   },
   updatePartWithQohAdjustment(id, part, meta) {
-    useShopStore.getState().updatePartWithQohAdjustment(id, part, meta);
-    void apiClient.put<Part>(`/parts/${id}`, part);
+    const result = useShopStore.getState().updatePartWithQohAdjustment(id, part, meta);
+    if (result.success) {
+      void apiClient.put<Part>(`/parts/${id}`, part);
+    }
+    return result;
+  },
+  receiveInventory(payload) {
+    const result = useShopStore.getState().receiveInventory?.(payload);
+    if (!result) return { success: false, error: 'Receive not available' };
+    if (!result.success) return result;
+    // If a backend endpoint exists, call it here. For now, rely on local store update only.
+    return result;
   },
   deactivatePart(id) {
     useShopStore.getState().deactivatePart(id);

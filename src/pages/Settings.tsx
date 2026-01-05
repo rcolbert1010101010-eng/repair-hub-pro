@@ -26,6 +26,7 @@ export default function Settings() {
     currency: settings.currency,
     units: settings.units,
     session_user_name: settings.session_user_name || '',
+    inventory_negative_qoh_policy: settings.inventory_negative_qoh_policy || 'WARN',
   });
 
   const hydrateForm = useCallback(() => {
@@ -36,6 +37,7 @@ export default function Settings() {
       currency: settings.currency,
       units: settings.units,
       session_user_name: settings.session_user_name || '',
+      inventory_negative_qoh_policy: settings.inventory_negative_qoh_policy || 'WARN',
     });
   }, [settings]);
 
@@ -62,6 +64,7 @@ export default function Settings() {
       currency: formData.currency,
       units: formData.units,
       session_user_name: formData.session_user_name.trim(),
+      inventory_negative_qoh_policy: formData.inventory_negative_qoh_policy,
     };
 
     try {
@@ -79,6 +82,9 @@ export default function Settings() {
           localStorage.setItem('rhp.session_user_name', trimmed);
         } else {
           localStorage.removeItem('rhp.session_user_name');
+        }
+        if (payload.inventory_negative_qoh_policy) {
+          localStorage.setItem('rhp.inventory_negative_qoh_policy', payload.inventory_negative_qoh_policy);
         }
       }
       toast({
@@ -198,6 +204,28 @@ export default function Settings() {
                 <SelectContent>
                   <SelectItem value="imperial">Imperial (miles, gallons)</SelectItem>
                   <SelectItem value="metric">Metric (km, liters)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="negative_qoh_policy">Negative Inventory (QOH) Policy</Label>
+              <Select
+                value={formData.inventory_negative_qoh_policy}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, inventory_negative_qoh_policy: value as typeof formData.inventory_negative_qoh_policy })
+                }
+                disabled={!editing}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="WARN">Warn</SelectItem>
+                  <SelectItem value="BLOCK">Block</SelectItem>
+                  <SelectItem value="ALLOW">Allow</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -62,6 +62,8 @@ const navItems: NavItem[] = [
     icon: Package,
     children: [
       { type: 'link', path: '/inventory', label: 'Parts', icon: Package },
+      { type: 'link', path: '/receiving', label: 'Receiving', icon: ClipboardList },
+      { type: 'link', path: '/receiving-history', label: 'Receiving History', icon: ClipboardList },
       { type: 'link', path: '/vendors', label: 'Vendors', icon: Building2 },
       { type: 'link', path: '/categories', label: 'Categories', icon: Tags },
       { type: 'link', path: '/cycle-counts', label: 'Cycle Counts', icon: ListChecks },

@@ -3,13 +3,18 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Plus } from 'lucide-react';
 import { useRepos } from '@/repos';
 import type { CycleCountSession } from '@/types';
+import { useShopStore } from '@/stores/shopStore';
+import { useMemo, useState } from 'react';
 
 export default function CycleCounts() {
   const navigate = useNavigate();
   const { cycleCountSessions, createCycleCountSession } = useRepos().cycleCounts;
+  const sessionUser = useShopStore((s) => s.getSessionUserName());
+  const [showCancelled, setShowCancelled] = useState(false);
 
   const columns: Column<CycleCountSession>[] = [
     {
@@ -39,9 +44,15 @@ export default function CycleCounts() {
   ];
 
   const handleNew = () => {
-    const session = createCycleCountSession({ created_by: 'system' });
+    const created_by = sessionUser || 'system';
+    const session = createCycleCountSession({ created_by });
     navigate(`/cycle-counts/${session.id}`);
   };
+
+  const visibleSessions = useMemo(
+    () => (showCancelled ? cycleCountSessions : cycleCountSessions.filter((s) => s.status !== 'CANCELLED')),
+    [cycleCountSessions, showCancelled]
+  );
 
   return (
     <div className="page-container">
@@ -56,8 +67,15 @@ export default function CycleCounts() {
         }
       />
 
+      <div className="mb-3 flex items-center gap-2">
+        <Switch id="show-cancelled" checked={showCancelled} onCheckedChange={setShowCancelled} />
+        <label htmlFor="show-cancelled" className="text-sm text-muted-foreground cursor-pointer select-none">
+          Show Cancelled
+        </label>
+      </div>
+
       <DataTable
-        data={cycleCountSessions}
+        data={visibleSessions}
         columns={columns}
         searchKeys={['title', 'status']}
         searchPlaceholder="Search cycle counts..."

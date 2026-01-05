@@ -102,10 +102,22 @@ export interface PartsRepo {
   parts: Part[];
   addPart: (part: Omit<Part, 'id' | 'is_active' | 'created_at' | 'updated_at' | 'last_cost' | 'avg_cost' | 'barcode'> & Partial<Pick<Part, 'last_cost' | 'avg_cost' | 'barcode'>>) => Part;
   updatePart: (id: string, part: Partial<Part>) => void;
-  updatePartWithQohAdjustment: (id: string, part: Partial<Part>, meta: { reason: string; adjusted_by: string }) => void;
+  updatePartWithQohAdjustment: (
+    id: string,
+    part: Partial<Part>,
+    meta: { reason: string; adjusted_by: string }
+  ) => { success: boolean; warning?: string; error?: string };
   deactivatePart: (id: string) => void;
   reactivatePart: (id: string) => void;
   getMovementsForPart?: (partId: string) => InventoryMovement[];
+  receiveInventory?: (payload: {
+    lines: { part_id: string; quantity: number; unit_cost?: number | null }[];
+    vendor_id?: string | null;
+    reference?: string | null;
+    received_at?: string | null;
+    source_type?: 'PURCHASE_ORDER' | 'MANUAL';
+    source_id?: string | null;
+  }) => { success: boolean; error?: string };
 }
 
 export interface KitComponentsRepo {

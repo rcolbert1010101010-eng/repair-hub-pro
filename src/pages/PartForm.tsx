@@ -79,7 +79,6 @@ export default function PartForm() {
     category_id: part?.category_id || '',
     cost: part?.cost?.toString() || '',
     selling_price: part?.selling_price?.toString() || '',
-    quantity_on_hand: part?.quantity_on_hand?.toString() || '0',
     core_required: part?.core_required || false,
     core_charge: part?.core_charge?.toString() || '0',
     barcode: part?.barcode || '',
@@ -117,7 +116,6 @@ export default function PartForm() {
     category_id: formData.category_id,
     cost: parseFloat(formData.cost) || 0,
     selling_price: parseFloat(formData.selling_price) || 0,
-    quantity_on_hand: parseInt(formData.quantity_on_hand) || 0,
     core_required: part?.core_required ?? false,
     core_charge: parseFloat(formData.core_charge) || 0,
     min_qty: formData.min_qty === '' ? null : (Number.isFinite(parseInt(formData.min_qty)) ? parseInt(formData.min_qty) : null),
@@ -210,7 +208,6 @@ export default function PartForm() {
       category_id: formData.category_id,
       cost: parseFloat(formData.cost) || 0,
       selling_price: parseFloat(formData.selling_price) || 0,
-      quantity_on_hand: parseInt(formData.quantity_on_hand) || 0,
       core_required: formData.core_required,
       core_charge: parseFloat(formData.core_charge) || 0,
       barcode: formData.barcode.trim() ? formData.barcode.trim() : null,
@@ -227,12 +224,6 @@ export default function PartForm() {
       toast({ title: 'Part Created', description: `${formData.part_number} has been added` });
       navigate(`/inventory/${newPart.id}`);
     } else {
-      const qohChanged = part && part.quantity_on_hand !== partData.quantity_on_hand;
-      if (qohChanged) {
-        setPendingPartData(formData);
-        setAdjustDialogOpen(true);
-        return;
-      }
       updatePart(id!, partData);
       toast({ title: 'Part Updated', description: 'Changes have been saved' });
       setEditing(false);
@@ -365,11 +356,19 @@ export default function PartForm() {
       max_qty: pendingPartData.max_qty === '' ? null : (Number.isFinite(parseInt(pendingPartData.max_qty)) ? parseInt(pendingPartData.max_qty) : null),
       bin_location: pendingPartData.bin_location.trim() || null,
     };
-      updatePartWithQohAdjustment(id!, partData, {
-        reason: adjustReason.trim(),
-        adjusted_by: '',
-      });
-    toast({ title: 'Part Updated', description: 'Changes have been saved' });
+    const result = updatePartWithQohAdjustment(id!, partData, {
+      reason: adjustReason.trim(),
+      adjusted_by: '',
+    });
+    if (result?.error) {
+      toast({ title: 'Adjustment blocked', description: result.error, variant: 'destructive' });
+      return;
+    }
+    if (result?.warning) {
+      toast({ title: 'Inventory adjusted', description: result.warning, variant: 'default' });
+    } else {
+      toast({ title: 'Part Updated', description: 'Changes have been saved' });
+    }
     setAdjustDialogOpen(false);
     setAdjustReason('');
     setPendingPartData(null);
@@ -476,10 +475,12 @@ export default function PartForm() {
               <Input
                 id="quantity_on_hand"
                 type="number"
-                value={formData.quantity_on_hand}
-                onChange={(e) => setFormData({ ...formData, quantity_on_hand: e.target.value })}
-                disabled={!editing}
+                value={part?.quantity_on_hand ?? 0}
+                disabled
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                To change QOH, use Inventory → Adjust QOH.
+              </p>
             </div>
             <div>
               <Label htmlFor="model">Model</Label>
