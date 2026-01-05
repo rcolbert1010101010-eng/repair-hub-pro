@@ -44,11 +44,18 @@ export default function ReceiveInventory() {
     if (!vendorId) return list;
     return list.filter((p) => p.vendor_id === vendorId);
   }, [parts, vendorId]);
+  const lineErrors = useMemo(() => {
+    return lines.map((l) => {
+      const errors: string[] = [];
+      if (!l.partId) errors.push('Part required');
+      const qtyNum = Number(l.qty);
+      if (!Number.isFinite(qtyNum) || qtyNum <= 0) errors.push('Qty must be > 0');
+      return { id: l.id, errors };
+    });
+  }, [lines]);
   const hasValidLines = useMemo(
-    () =>
-      lines.length > 0 &&
-      lines.every((l) => l.partId && Number.isFinite(Number(l.qty)) && Number(l.qty) > 0),
-    [lines]
+    () => lines.length > 0 && lineErrors.every((l) => l.errors.length === 0),
+    [lineErrors, lines.length]
   );
 
   const addLine = () => {
@@ -100,7 +107,6 @@ export default function ReceiveInventory() {
       .map((l) => ({ part_id: l.partId, quantity: Number(l.qty) }))
       .filter((l) => l.part_id && Number.isFinite(l.quantity) && l.quantity > 0);
     if (prepared.length === 0) {
-      toast({ title: 'Add at least one line with quantity', variant: 'destructive' });
       return;
     }
     const result = receiveInventory({
@@ -235,6 +241,7 @@ export default function ReceiveInventory() {
               ) : (
                 lines.map((line) => {
                   const part = partsById.get(line.partId);
+                  const errors = lineErrors.find((le) => le.id === line.id)?.errors ?? [];
                   return (
                     <tr key={line.id} className="border-t border-border/60">
                       <td className="py-2">
@@ -250,8 +257,8 @@ export default function ReceiveInventory() {
                           value={line.qty}
                           onChange={(e) => updateLineQty(line.id, e.target.value)}
                         />
-                        {(!Number.isFinite(Number(line.qty)) || Number(line.qty) <= 0) && (
-                          <p className="text-xs text-destructive mt-1 text-right">Qty must be greater than 0.</p>
+                        {errors.length > 0 && (
+                          <p className="text-xs text-destructive mt-1 text-right">{errors.join(' • ')}</p>
                         )}
                       </td>
                       <td className="py-2 text-right">
@@ -266,7 +273,16 @@ export default function ReceiveInventory() {
             </tbody>
           </table>
         </div>
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2 items-start">
+          {!hasValidLines && (
+            <div className="text-sm text-destructive mr-auto">
+              <ul className="list-disc list-inside space-y-1">
+                {lines.length === 0 && <li>Add at least one line.</li>}
+                {lineErrors.some((l) => l.errors.includes('Part required')) && <li>All lines need a part.</li>}
+                {lineErrors.some((l) => l.errors.includes('Qty must be > 0')) && <li>Quantities must be greater than 0.</li>}
+              </ul>
+            </div>
+          )}
           <Button variant="outline" onClick={clearForm}>
             Clear
           </Button>

@@ -97,6 +97,14 @@ export default function CycleCountDetail() {
     () => varianceLines.filter((l) => (l.counted_qty ?? 0) < 0),
     [varianceLines]
   );
+  const varianceSum = useMemo(
+    () => lines.reduce((sum, l) => sum + ((l.counted_qty ?? l.expected_qty) - l.expected_qty), 0),
+    [lines]
+  );
+  const lastCountDate = session.posted_at || session.updated_at || session.created_at;
+  const lastCountDays = lastCountDate
+    ? Math.floor((Date.now() - new Date(lastCountDate).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
   const postBlocked =
     missingReasonLines.length > 0 || (negativePolicy === 'BLOCK' && negativeLines.length > 0) || isReadOnly;
   const postWarning = negativePolicy === 'WARN' && negativeLines.length > 0;
@@ -340,6 +348,15 @@ export default function CycleCountDetail() {
           </div>
         }
       />
+
+      <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+        {lastCountDate && (
+          <span className="rounded-md bg-muted px-2 py-1">
+            Last count {lastCountDays != null && lastCountDays >= 0 ? `${lastCountDays}d ago` : new Date(lastCountDate).toLocaleDateString()}
+          </span>
+        )}
+        <span className="rounded-md bg-muted px-2 py-1">Δ {varianceSum > 0 ? `+${varianceSum}` : varianceSum}</span>
+      </div>
 
       <Card className="p-4 space-y-4">
         <div className="grid grid-cols-2 gap-4">

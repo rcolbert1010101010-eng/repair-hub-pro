@@ -368,27 +368,45 @@ export default function Inventory() {
       }).length,
     [countInputs, selectedParts]
   );
-  const cycleCountBlocker = useMemo(() => {
-    if (!batchReason.trim()) return 'Reason required to apply counts.';
-    if (selectedParts.length === 0) return 'Select at least one part.';
+  const cycleCountIssues = useMemo(() => {
+    const issues: string[] = [];
+    if (!batchReason.trim()) issues.push('Reason required to apply counts.');
+    if (selectedParts.length === 0) issues.push('Select at least one part.');
     const hasInvalid = selectedParts.some((p) => {
       const raw = countInputs[p.id];
       const num = Number(raw);
       return raw != null && raw !== '' && (!Number.isFinite(num) || num < 0);
     });
-    if (hasInvalid) return 'Invalid counts present (must be >= 0).';
-    return '';
+    if (hasInvalid) issues.push('Invalid counts present (must be >= 0).');
+    const hasAnyEntry = selectedParts.some((p) => {
+      const raw = countInputs[p.id];
+      return raw != null && raw !== '';
+    });
+    if (selectedParts.length > 0 && !hasAnyEntry) issues.push('Enter a count for at least one selected part.');
+    return issues;
   }, [batchReason, countInputs, selectedParts]);
+  const cycleCountBlocker = cycleCountIssues[0] || '';
   const applyDisabled = Boolean(cycleCountBlocker);
+  const adjustIssues = useMemo(() => {
+    const issues: string[] = [];
+    if (!selectedPart) issues.push('Select a part to adjust.');
+    if (!adjustReason.trim()) issues.push('Reason required.');
+    if (!Number.isFinite(Number(newQoh))) issues.push('Enter a valid quantity.');
+    return issues;
+  }, [adjustReason, newQoh, selectedPart]);
   const focusNextCountInput = (partId: string, direction: 'forward' | 'backward' = 'forward') => {
     const idx = filteredParts.findIndex((p) => p.id === partId);
     if (idx === -1) return;
     const enforceSelection = selectedParts.length > 0;
-    const start = direction === 'forward' ? idx + 1 : idx - 1;
+    const targetList = enforceSelection
+      ? filteredParts.filter((p) => selectedIds[p.id])
+      : filteredParts;
+    const relativeIdx = targetList.findIndex((p) => p.id === partId);
+    if (relativeIdx === -1) return;
+    const start = direction === 'forward' ? relativeIdx + 1 : relativeIdx - 1;
     const step = direction === 'forward' ? 1 : -1;
-    for (let i = start; i >= 0 && i < filteredParts.length; i += step) {
-      const candidate = filteredParts[i];
-      if (enforceSelection && !selectedIds[candidate.id]) continue;
+    for (let i = start; i >= 0 && i < targetList.length; i += step) {
+      const candidate = targetList[i];
       const ref = countInputRefs.current[candidate.id];
       if (ref && !ref.disabled) {
         ref.focus();
@@ -645,8 +663,12 @@ export default function Inventory() {
             )}
           </div>
           <div className="rounded-md border border-border/60 bg-muted/50 p-3 text-sm">
-            {cycleCountBlocker ? (
-              <p className="text-destructive">{cycleCountBlocker}</p>
+            {cycleCountIssues.length > 0 ? (
+              <ul className="list-disc list-inside space-y-1 text-destructive">
+                {cycleCountIssues.map((issue) => (
+                  <li key={issue}>{issue}</li>
+                ))}
+              </ul>
             ) : (
               <p className="text-muted-foreground">Ready to apply counts to {validCount} part(s).</p>
             )}
@@ -789,19 +811,24 @@ export default function Inventory() {
               </div>
             </div>
           </div>
-          <DialogFooter className="mt-4">
-            <Button variant="outline" onClick={closeAdjustDialog}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSaveAdjustment}
-              disabled={
-                !adjustReason.trim() ||
-                !Number.isFinite(Number(newQoh))
-              }
-            >
-              Save
-            </Button>
+          <DialogFooter className="mt-4 flex flex-wrap items-start gap-3">
+            {adjustIssues.length > 0 && (
+              <div className="text-sm text-destructive mr-auto">
+                <ul className="list-disc list-inside space-y-1">
+                  {adjustIssues.map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={closeAdjustDialog}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveAdjustment} disabled={adjustIssues.length > 0}>
+                Save
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

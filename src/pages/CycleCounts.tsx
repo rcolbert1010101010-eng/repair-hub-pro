@@ -13,14 +13,50 @@ import { useMemo, useState } from 'react';
 export default function CycleCounts() {
   const navigate = useNavigate();
   const { cycleCountSessions, createCycleCountSession } = useRepos().cycleCounts;
+  const cycleCountLines = useShopStore((s) => s.cycleCountLines);
   const sessionUser = useShopStore((s) => s.getSessionUserName());
   const [showCancelled, setShowCancelled] = useState(false);
+  const sessionStats = useMemo(() => {
+    const stats: Record<string, { delta: number; last: string | null }> = {};
+    cycleCountSessions.forEach((s) => {
+      const lines = cycleCountLines.filter((l) => l.session_id === s.id);
+      const delta = lines.reduce((sum, l) => {
+        const counted = l.counted_qty ?? l.expected_qty;
+        return sum + (counted - l.expected_qty);
+      }, 0);
+      const last = s.posted_at || s.updated_at || s.created_at;
+      stats[s.id] = { delta, last };
+    });
+    return stats;
+  }, [cycleCountLines, cycleCountSessions]);
+  const renderLastCount = (date?: string | null) => {
+    if (!date) return null;
+    const days = Math.floor((Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24));
+    return (
+      <span className="rounded-md bg-muted px-2 py-0.5">
+        Last count {Number.isFinite(days) && days >= 0 ? `${days}d ago` : new Date(date).toLocaleDateString()}
+      </span>
+    );
+  };
 
   const columns: Column<CycleCountSession>[] = [
     {
       key: 'title',
       header: 'Title',
-      render: (item) => item.title || 'Untitled',
+      render: (item) => {
+        const stat = sessionStats[item.id];
+        return (
+          <div className="space-y-1">
+            <div>{item.title || 'Untitled'}</div>
+            <div className="flex gap-2 text-[11px] text-muted-foreground">
+              {renderLastCount(stat?.last)}
+              <span className="rounded-md bg-muted px-2 py-0.5">
+                Δ {stat ? (stat.delta > 0 ? `+${stat.delta}` : stat.delta) : 0}
+              </span>
+            </div>
+          </div>
+        );
+      },
       sortable: true,
     },
     {
