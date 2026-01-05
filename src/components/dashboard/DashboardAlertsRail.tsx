@@ -16,7 +16,6 @@ export interface DashboardAlertGroup {
   items?: DashboardAlertItem[];
   viewLabel?: string;
   onView?: () => void;
-  id?: string;
 }
 
 interface DashboardAlertsRailProps {
@@ -49,7 +48,7 @@ export function DashboardAlertsRail({ groups, loading, emptyState }: DashboardAl
   return (
     <div className="space-y-4">
       {groups.map((group) => (
-        <Card key={group.id ?? group.title} className="border border-muted/50">
+        <Card key={group.title} className="border border-muted/50">
           <CardHeader className="pb-1">
             <div className="flex items-center justify-between gap-2">
               <div>
