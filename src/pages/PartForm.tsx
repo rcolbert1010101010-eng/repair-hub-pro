@@ -501,7 +501,16 @@ export default function PartForm() {
         actions={
           editing ? (
             <>
-              <Button variant="outline" onClick={() => navigate('/receiving')}>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  navigate(
+                    part?.part_number
+                      ? `/receiving?search=${encodeURIComponent(part.part_number)}`
+                      : '/receiving'
+                  )
+                }
+              >
                 Receive
               </Button>
               {!isNew && (
@@ -572,7 +581,16 @@ export default function PartForm() {
             </>
           ) : (
             <>
-              <Button variant="outline" onClick={() => navigate('/receiving')}>
+              <Button
+                variant="outline"
+                onClick={() =>
+                  navigate(
+                    part?.part_number
+                      ? `/receiving?search=${encodeURIComponent(part.part_number)}`
+                      : '/receiving'
+                  )
+                }
+              >
                 Receive
               </Button>
               {!isNew && (
@@ -627,12 +645,15 @@ export default function PartForm() {
                 <Edit className="w-4 h-4 mr-2" />
                 Edit
               </Button>
+              {!isNew && (
+                <span className="text-xs text-muted-foreground hidden sm:inline">
+                  Shortcuts: E edit · R receive · A adjust · C copy
+                </span>
+              )}
             </>
           )
         }
       />
-
-      {!isNew && <div className="flex flex-wrap gap-2">{renderStatusChips()}</div>}
 
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4">
         <div className="space-y-4">
@@ -1025,14 +1046,14 @@ export default function PartForm() {
           <div className="rounded-lg border bg-card p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold">Inventory Snapshot</h3>
-              {!isNew && suggestedReorder != null && suggestedReorder > 0 && (
-                <span className="text-xs rounded-full bg-muted px-2 py-1">Suggested Reorder: {suggestedReorder}</span>
-              )}
             </div>
-            <div className="grid grid-cols-2 gap-3 text-sm text-muted-foreground">
-              <div>
+            <div className="grid grid-cols-2 gap-3 text-sm text-muted-foreground items-start">
+              <div className="space-y-2">
                 <div className="text-xs">QOH</div>
-                <div className="text-2xl font-semibold text-foreground">{part?.quantity_on_hand ?? 0}</div>
+                <div className="flex items-center gap-2">
+                  <div className="text-3xl font-semibold text-foreground">{part?.quantity_on_hand ?? 0}</div>
+                  {!isNew && renderStatusChips()}
+                </div>
                 <p className="text-xs text-muted-foreground mt-1">To change QOH, use Adjust QOH.</p>
               </div>
               <div>
@@ -1051,6 +1072,12 @@ export default function PartForm() {
                   {part?.avg_cost != null ? `$${part.avg_cost.toFixed(2)}` : '—'}
                 </div>
               </div>
+              {!isNew && suggestedReorder != null && suggestedReorder > 0 && (
+                <div className="col-span-2 text-sm">
+                  <div className="text-xs text-muted-foreground">Suggested Reorder</div>
+                  <div className="font-medium text-foreground">{suggestedReorder}</div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1073,14 +1100,19 @@ export default function PartForm() {
                         ? 'Cycle Count'
                         : 'Manual';
                     return (
-                      <div key={m.id} className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2">
-                        <div>
-                          <div className="text-foreground font-medium">{new Date(m.performed_at).toLocaleString()}</div>
-                          <div className="text-xs text-muted-foreground">{source}</div>
+                      <div
+                        key={m.id}
+                        className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2"
+                      >
+                        <div className="space-y-0.5">
+                          <div className="text-foreground font-medium">
+                            {new Date(m.performed_at).toLocaleString()}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">{source}</div>
                         </div>
-                        <div className="text-right">
+                        <div className="text-right space-y-0.5">
                           <div className="font-semibold text-foreground">{delta > 0 ? `+${delta}` : delta}</div>
-                          <div className="text-xs text-muted-foreground">{m.reason || '—'}</div>
+                          <div className="text-[11px] text-muted-foreground">{m.reason || '—'}</div>
                         </div>
                       </div>
                     );
