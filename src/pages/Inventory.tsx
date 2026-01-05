@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
+import { Plus, X as XIcon } from 'lucide-react';
 import { useRepos } from '@/repos';
 import type { Part } from '@/types';
 import { cn } from '@/lib/utils';
@@ -36,7 +36,7 @@ import { Label } from '@/components/ui/label';
 
 export default function Inventory() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const repos = useRepos();
   const { parts } = repos.parts;
   const { vendors } = repos.vendors;
@@ -66,6 +66,7 @@ export default function Inventory() {
   const [batchReason, setBatchReason] = useState('');
   const [batchSummary, setBatchSummary] = useState<{ updated: number; skipped: number; failed: number } | null>(null);
   const countInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [searchInput, setSearchInput] = useState(() => searchParams.get('search') || '');
   const movementSummary = useMemo(() => {
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
     const summary: Record<string, { lastCountedAt: string | null; delta30d: number }> = {};
@@ -332,6 +333,30 @@ export default function Inventory() {
     const timer = setTimeout(() => handleScan(scanValue), 200);
     return () => clearTimeout(timer);
   }, [scanValue, handleScan]);
+
+  useEffect(() => {
+    const current = searchParams.get('search') || '';
+    if (current !== searchInput) {
+      setSearchInput(current);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      const trimmed = searchInput.trim();
+      const current = searchParams.get('search') || '';
+      if (current === trimmed) return;
+      const next = new URLSearchParams(searchParams);
+      if (trimmed) {
+        next.set('search', trimmed);
+      } else {
+        next.delete('search');
+      }
+      setSearchParams(next);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchInput, searchParams, setSearchParams]);
 
   const recentMovements = useMemo(() => {
     if (!selectedPart) return [];
@@ -618,6 +643,24 @@ export default function Inventory() {
         >
           {cycleCountMode ? 'Exit Quick Cycle Count' : 'Quick Cycle Count'}
         </Button>
+        <div className="flex items-center gap-2 ml-auto">
+          <Input
+            placeholder="Search parts"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="w-56"
+          />
+          {searchInput && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setSearchInput('')}
+              aria-label="Clear search"
+            >
+              <XIcon className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">

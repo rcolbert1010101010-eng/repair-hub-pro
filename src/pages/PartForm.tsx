@@ -38,6 +38,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
 
 export default function PartForm() {
   const { id } = useParams<{ id: string }>();
@@ -245,6 +250,29 @@ export default function PartForm() {
   };
 
   const recentActivity = recentMovements.slice(0, 10);
+
+  const resolveActivityLink = (movement: typeof recentMovements[number]) => {
+    if (movement.ref_type === 'CYCLE_COUNT') {
+      return movement.ref_id ? `/cycle-counts/${movement.ref_id}` : '/cycle-counts';
+    }
+    if (movement.movement_type === 'COUNT' || movement.reason?.startsWith('COUNT:')) {
+      return movement.ref_id ? `/cycle-counts/${movement.ref_id}` : '/cycle-counts';
+    }
+    if (movement.movement_type === 'RECEIVE' || movement.ref_type === 'PURCHASE_ORDER') {
+      return part?.part_number
+        ? `/receiving?search=${encodeURIComponent(part.part_number)}`
+        : '/receiving';
+    }
+    if (movement.ref_type && movement.ref_id) {
+      // Fallback to inventory search when we cannot map confidently
+      return part?.part_number
+        ? `/inventory?search=${encodeURIComponent(part.part_number)}`
+        : '/inventory';
+    }
+    return part?.part_number
+      ? `/inventory?search=${encodeURIComponent(part.part_number)}`
+      : '/inventory';
+  };
 
   useEffect(() => {
     if (editing || isNew || !part) return;
@@ -646,9 +674,21 @@ export default function PartForm() {
                 Edit
               </Button>
               {!isNew && (
-                <span className="text-xs text-muted-foreground hidden sm:inline">
-                  Shortcuts: E edit · R receive · A adjust · C copy
-                </span>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" size="icon" className="inline-flex" title="Keyboard shortcuts">
+                      ?
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-48 text-sm">
+                    <div className="space-y-1">
+                      <div className="flex justify-between"><span>E</span><span>Edit</span></div>
+                      <div className="flex justify-between"><span>R</span><span>Receive</span></div>
+                      <div className="flex justify-between"><span>A</span><span>Adjust QOH</span></div>
+                      <div className="flex justify-between"><span>C</span><span>Copy Part #</span></div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
               )}
             </>
           )
@@ -1099,6 +1139,7 @@ export default function PartForm() {
                         : m.movement_type === 'COUNT' || m.reason?.startsWith('COUNT:')
                         ? 'Cycle Count'
                         : 'Manual';
+                    const link = resolveActivityLink(m);
                     return (
                       <div
                         key={m.id}
@@ -1113,6 +1154,19 @@ export default function PartForm() {
                         <div className="text-right space-y-0.5">
                           <div className="font-semibold text-foreground">{delta > 0 ? `+${delta}` : delta}</div>
                           <div className="text-[11px] text-muted-foreground">{m.reason || '—'}</div>
+                          <div>
+                            <Button
+                              variant="link"
+                              size="sm"
+                              className="px-0 text-xs"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (link) navigate(link);
+                              }}
+                            >
+                              View
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     );
