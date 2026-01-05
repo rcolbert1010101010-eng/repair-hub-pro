@@ -76,6 +76,7 @@ export default function ReceivingReceiptDetail() {
                 <th className="py-2">Description</th>
                 <th className="py-2 text-right">Qty</th>
                 <th className="py-2 text-right">Unit Cost</th>
+                <th className="py-2 text-right">Inventory</th>
               </tr>
             </thead>
             <tbody>
@@ -85,6 +86,14 @@ export default function ReceivingReceiptDetail() {
                   <td className="py-2">{part?.description || '—'}</td>
                   <td className="py-2 text-right">{line.quantity}</td>
                   <td className="py-2 text-right">{line.unit_cost != null ? line.unit_cost : '—'}</td>
+                  <td className="py-2 text-right">
+                    <Link
+                      to={`/inventory?search=${encodeURIComponent(part?.part_number || line.part_id)}`}
+                      className="text-primary hover:underline text-sm"
+                    >
+                      View
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>

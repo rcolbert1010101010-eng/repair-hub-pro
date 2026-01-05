@@ -117,7 +117,14 @@ export default function Inventory() {
                 Last count {new Date(item.__lastCountedAt).toLocaleDateString()}
               </span>
             )}
-            <span className="rounded-md bg-muted px-2 py-0.5">30d Δ {item.__delta30d}</span>
+            <span className="rounded-md bg-muted px-2 py-0.5">
+              30d Δ {item.__delta30d > 0 ? `+${item.__delta30d}` : item.__delta30d}
+            </span>
+            {item.__needsReorder && (
+              <span className="rounded-md bg-amber-100 text-amber-800 px-2 py-0.5">
+                Suggested {item.__suggested}
+              </span>
+            )}
           </div>
         </div>
       ),
@@ -329,7 +336,7 @@ export default function Inventory() {
         __stock: (isOut ? 'OUT' : isLow ? 'LOW' : 'OK') as 'OUT' | 'LOW' | 'OK',
         __target: target,
         __suggested: suggested,
-        __needsReorder: suggested > 0,
+        __needsReorder: suggested > 0 && Number.isFinite(suggested) && suggested > 0,
         __lastCountedAt: summary?.lastCountedAt ?? null,
         __delta30d: summary?.delta30d ?? 0,
       };
@@ -495,7 +502,9 @@ export default function Inventory() {
     let out = 0;
     let needs = 0;
     let suggestedTotal = 0;
+    let negative = 0;
     enhancedParts.forEach((p) => {
+      if (p.quantity_on_hand < 0) negative += 1;
       if (p.__stock === 'OUT') out += 1;
       else if (p.__stock === 'LOW') low += 1;
       if (p.__needsReorder) {
@@ -503,7 +512,7 @@ export default function Inventory() {
         suggestedTotal += p.__suggested;
       }
     });
-    return { low, out, needs, suggestedTotal };
+    return { low, out, needs, suggestedTotal, negative, total: enhancedParts.length };
   }, [enhancedParts]);
 
   const handleSaveAdjustment = () => {
@@ -579,6 +588,13 @@ export default function Inventory() {
       </div>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="font-semibold">Inventory:</span>
+          <span className="rounded-md bg-muted px-2 py-1 text-xs">SKUs {stockCounts.total}</span>
+          <span className="rounded-md bg-muted px-2 py-1 text-xs">Low {stockCounts.low}</span>
+          <span className="rounded-md bg-muted px-2 py-1 text-xs">Out {stockCounts.out}</span>
+          <span className="rounded-md bg-muted px-2 py-1 text-xs">Negative {stockCounts.negative}</span>
+        </div>
         <div className="flex items-center gap-2 text-sm">
           <span className="font-semibold">Inventory Alerts:</span>
           <Button
