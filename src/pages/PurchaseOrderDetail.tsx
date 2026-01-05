@@ -34,11 +34,7 @@ import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { getPurchaseOrderDerivedStatus } from '@/services/purchaseOrderStatus';
 import { StatusBadge } from '@/components/ui/status-badge';
 
-const toNumber = (value: number | string | null | undefined) => {
-  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
-  return Number.isFinite(numeric) ? numeric : 0;
-};
-const formatCurrency = (value: number | string | null | undefined) => `$${toNumber(value).toFixed(2)}`;
+const formatCurrency = (value: number) => `$${value.toFixed(2)}`;
 
 export default function PurchaseOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -224,7 +220,7 @@ export default function PurchaseOrderDetail() {
         ? new Set(['OPEN', 'IN_PROGRESS'])
         : new Set([woStatusFilter.toUpperCase()]);
     return workOrders
-      .filter((wo) => allowedStatuses.has(wo.status) && (wo as any).is_active !== false)
+      .filter((wo) => allowedStatuses.has(wo.status) && wo.is_active !== false)
       .filter((wo) => statusFilterSet.has(wo.status))
       .map((wo) => {
         const number = wo.order_number || wo.id;
@@ -245,7 +241,7 @@ export default function PurchaseOrderDetail() {
         ? new Set(['OPEN', 'ESTIMATE'])
         : new Set([soStatusFilter.toUpperCase()]);
     return salesOrders
-      .filter((so) => allowedStatuses.has(so.status) && (so as any).is_active !== false)
+      .filter((so) => allowedStatuses.has(so.status) && so.is_active !== false)
       .filter((so) => statusFilterSet.has(so.status))
       .map((so) => {
         const number = so.order_number || so.id;
@@ -447,7 +443,7 @@ export default function PurchaseOrderDetail() {
                 />
               </div>
             </div>
-            <div className="col-span-12 lg:col-span-4">
+            <div className="col-span-12 lg:col-span-5">
               <div className="flex items-center justify-between h-5">
                 <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground leading-none">
                   Linked Sales Order
@@ -479,7 +475,7 @@ export default function PurchaseOrderDetail() {
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="p-0 w-[--radix-popover-trigger-width]">
+                  <PopoverContent className="p-0 w-72">
                     <div className="border-b p-2 flex flex-wrap items-center gap-2 max-w-full">
                       {(['all', 'open', 'estimate', 'invoiced'] as const).map((filter) => (
                         <Button
@@ -538,7 +534,7 @@ export default function PurchaseOrderDetail() {
                 </p>
               )}
             </div>
-            <div className="col-span-12 lg:col-span-4">
+            <div className="col-span-12 lg:col-span-3">
               <div className="flex items-center justify-between h-5">
                 <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground leading-none">
                   Linked Work Order
@@ -570,7 +566,7 @@ export default function PurchaseOrderDetail() {
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="p-0 w-[--radix-popover-trigger-width]">
+                  <PopoverContent className="p-0 w-72">
                     <div className="border-b p-2 flex flex-wrap items-center gap-2 max-w-full">
                       {(['all', 'open', 'estimate', 'invoiced'] as const).map((filter) => (
                         <Button
@@ -654,7 +650,7 @@ export default function PurchaseOrderDetail() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,1.15fr)]">
         <Card className="overflow-hidden">
           <CardHeader className="flex items-center justify-between gap-2">
-            <CardTitle className="text-base font-semibold">Purchase Order Lines</CardTitle>
+            <CardTitle className="text-base font-semibold">PO Lines</CardTitle>
             <Badge variant="secondary" className="text-xs px-2 py-1">
               {lineSummary.totalLines} lines
             </Badge>
