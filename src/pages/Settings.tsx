@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,12 +10,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, Edit, X } from 'lucide-react';
+import { useShopStore } from '@/stores/shopStore';
 
 export default function Settings() {
-  const { settings, updateSettings } = useShopStore();
+  const { settings, updateSettings } = useRepos().settings;
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState({
@@ -24,9 +25,29 @@ export default function Settings() {
     default_tax_rate: settings.default_tax_rate.toString(),
     currency: settings.currency,
     units: settings.units,
+    session_user_name: settings.session_user_name || '',
+    inventory_negative_qoh_policy: settings.inventory_negative_qoh_policy || 'WARN',
   });
 
-  const handleSave = () => {
+  const hydrateForm = useCallback(() => {
+    setFormData({
+      shop_name: settings.shop_name,
+      default_labor_rate: settings.default_labor_rate.toString(),
+      default_tax_rate: settings.default_tax_rate.toString(),
+      currency: settings.currency,
+      units: settings.units,
+      session_user_name: settings.session_user_name || '',
+      inventory_negative_qoh_policy: settings.inventory_negative_qoh_policy || 'WARN',
+    });
+  }, [settings]);
+
+  useEffect(() => {
+    if (!editing) {
+      hydrateForm();
+    }
+  }, [settings, editing, hydrateForm]);
+
+  const handleSave = async () => {
     if (!formData.shop_name.trim()) {
       toast({
         title: 'Validation Error',
@@ -36,19 +57,43 @@ export default function Settings() {
       return;
     }
 
-    updateSettings({
+    const payload = {
       shop_name: formData.shop_name.trim(),
       default_labor_rate: parseFloat(formData.default_labor_rate) || 0,
       default_tax_rate: parseFloat(formData.default_tax_rate) || 0,
       currency: formData.currency,
       units: formData.units,
-    });
+      session_user_name: formData.session_user_name.trim(),
+      inventory_negative_qoh_policy: formData.inventory_negative_qoh_policy,
+    };
 
-    toast({
-      title: 'Settings Updated',
-      description: 'Your changes have been saved',
-    });
-    setEditing(false);
+    try {
+      await updateSettings(payload);
+      toast({
+        title: 'Settings Updated',
+        description: 'Your changes have been saved',
+      });
+      setEditing(false);
+    } catch (error) {
+      useShopStore.getState().updateSettings(payload);
+      if (typeof localStorage !== 'undefined') {
+        const trimmed = payload.session_user_name.trim();
+        if (trimmed) {
+          localStorage.setItem('rhp.session_user_name', trimmed);
+        } else {
+          localStorage.removeItem('rhp.session_user_name');
+        }
+        if (payload.inventory_negative_qoh_policy) {
+          localStorage.setItem('rhp.inventory_negative_qoh_policy', payload.inventory_negative_qoh_policy);
+        }
+      }
+      toast({
+        title: 'Saved locally',
+        description: 'Server unavailable — settings stored locally for this browser session.',
+        variant: 'destructive',
+      });
+      setEditing(false);
+    }
   };
 
   return (
@@ -59,7 +104,13 @@ export default function Settings() {
         actions={
           editing ? (
             <>
-              <Button variant="outline" onClick={() => setEditing(false)}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  hydrateForm();
+                  setEditing(false);
+                }}
+              >
                 <X className="w-4 h-4 mr-2" />
                 Cancel
               </Button>
@@ -69,7 +120,13 @@ export default function Settings() {
               </Button>
             </>
           ) : (
-            <Button variant="outline" onClick={() => setEditing(true)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                hydrateForm();
+                setEditing(true);
+              }}
+            >
               <Edit className="w-4 h-4 mr-2" />
               Edit
             </Button>
@@ -150,6 +207,39 @@ export default function Settings() {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="negative_qoh_policy">Negative Inventory (QOH) Policy</Label>
+              <Select
+                value={formData.inventory_negative_qoh_policy}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, inventory_negative_qoh_policy: value as typeof formData.inventory_negative_qoh_policy })
+                }
+                disabled={!editing}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="WARN">Warn</SelectItem>
+                  <SelectItem value="BLOCK">Block</SelectItem>
+                  <SelectItem value="ALLOW">Allow</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="session_user_name">Session User Name</Label>
+            <Input
+              id="session_user_name"
+              value={formData.session_user_name}
+              onChange={(e) => setFormData({ ...formData, session_user_name: e.target.value })}
+              disabled={!editing}
+              placeholder="Used for audit logging until auth is implemented"
+            />
           </div>
         </div>
       </div>

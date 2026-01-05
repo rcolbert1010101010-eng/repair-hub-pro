@@ -44,6 +44,8 @@ export function PMScheduleDialog({
     interval_value: '',
     last_completed_date: '',
     last_completed_meter: '',
+    default_labor_description: '',
+    default_labor_hours: '',
     notes: '',
   });
 
@@ -55,6 +57,8 @@ export function PMScheduleDialog({
         interval_value: schedule.interval_value.toString(),
         last_completed_date: schedule.last_completed_date || '',
         last_completed_meter: schedule.last_completed_meter?.toString() || '',
+        default_labor_description: schedule.default_labor_description ?? '',
+        default_labor_hours: schedule.default_labor_hours?.toString() ?? '',
         notes: schedule.notes || '',
       });
     } else {
@@ -64,6 +68,8 @@ export function PMScheduleDialog({
         interval_value: '',
         last_completed_date: '',
         last_completed_meter: '',
+        default_labor_description: '',
+        default_labor_hours: '',
         notes: '',
       });
     }
@@ -88,6 +94,12 @@ export function PMScheduleDialog({
       return;
     }
 
+    const defaultHours = formData.default_labor_hours ? parseFloat(formData.default_labor_hours) : null;
+    if (defaultHours !== null && defaultHours <= 0) {
+      toast({ title: 'Validation Error', description: 'Default labor hours must be greater than 0', variant: 'destructive' });
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -98,6 +110,8 @@ export function PMScheduleDialog({
         interval_value: intervalValue,
         last_completed_date: formData.last_completed_date || null,
         last_completed_meter: lastMeter,
+        default_labor_description: formData.default_labor_description.trim() || null,
+        default_labor_hours: defaultHours,
         notes: formData.notes.trim() || null,
       };
 
@@ -194,6 +208,30 @@ export function PMScheduleDialog({
                 />
               </div>
             )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="default_labor_description">Default Labor Description</Label>
+              <Input
+                id="default_labor_description"
+                value={formData.default_labor_description}
+                onChange={(e) => setFormData({ ...formData, default_labor_description: e.target.value })}
+                placeholder="e.g., Preventive Maintenance - PM A"
+              />
+            </div>
+            <div>
+              <Label htmlFor="default_labor_hours">Default Labor Hours</Label>
+              <Input
+                id="default_labor_hours"
+                type="number"
+                step="0.1"
+                min="0.1"
+                value={formData.default_labor_hours}
+                onChange={(e) => setFormData({ ...formData, default_labor_hours: e.target.value })}
+                placeholder="e.g., 1.0"
+              />
+            </div>
           </div>
 
           <div>

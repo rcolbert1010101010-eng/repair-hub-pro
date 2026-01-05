@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import type { Customer } from '@/types';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { Input } from '@/components/ui/input';
@@ -14,7 +14,9 @@ import { useToast } from '@/hooks/use-toast';
 
 export default function Customers() {
   const navigate = useNavigate();
-  const { customers, addCustomer } = useShopStore();
+  const repos = useRepos();
+  const { customers, addCustomer } = repos.customers;
+  const { customerContacts } = repos.customerContacts;
   const { toast } = useToast();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
@@ -32,6 +34,22 @@ export default function Customers() {
     { key: 'phone', header: 'Phone', sortable: true },
     { key: 'email', header: 'Email', sortable: true },
   ];
+
+  const tableData = useMemo(() => {
+    return customers
+      .filter((c) => c.id !== 'walkin')
+      .map((c) => {
+        const primaryContact =
+          customerContacts.find((cc) => cc.customer_id === c.id && cc.is_primary) ||
+          customerContacts.find((cc) => cc.customer_id === c.id);
+        return {
+          ...c,
+          contact_name: primaryContact?.name || c.contact_name,
+          phone: primaryContact?.phone || c.phone,
+          email: primaryContact?.email || c.email,
+        };
+      });
+  }, [customers, customerContacts]);
 
   const handleSave = () => {
     if (!formData.company_name.trim()) {
@@ -56,20 +74,7 @@ export default function Customers() {
       return;
     }
 
-    // Check for duplicate phone
-    if (formData.phone) {
-      const phoneExists = customers.some((c) => c.phone === formData.phone);
-      if (phoneExists) {
-        toast({
-          title: 'Validation Error',
-          description: 'A customer with this phone number already exists',
-          variant: 'destructive',
-        });
-        return;
-      }
-    }
-
-    addCustomer({
+    const result = addCustomer({
       company_name: formData.company_name.trim(),
       contact_name: formData.contact_name.trim() || null,
       phone: formData.phone.trim() || null,
@@ -77,6 +82,14 @@ export default function Customers() {
       address: formData.address.trim() || null,
       notes: formData.notes.trim() || null,
     });
+    if (!result.success) {
+      toast({
+        title: 'Validation Error',
+        description: result.error || 'Unable to add customer',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     toast({
       title: 'Customer Created',
@@ -108,7 +121,7 @@ export default function Customers() {
       />
 
       <DataTable
-        data={customers.filter((c) => c.id !== 'walkin')}
+        data={tableData}
         columns={columns}
         searchKeys={['company_name', 'contact_name', 'phone', 'email']}
         searchPlaceholder="Search customers..."

@@ -1,26 +1,39 @@
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
-import { useShopStore } from '@/stores/shopStore';
+import { useRepos } from '@/repos';
 import type { SalesOrder } from '@/types';
 import { StatusBadge } from '@/components/ui/status-badge';
 
+type SalesOrderRow = SalesOrder & { customer_name: string; is_active?: boolean };
+
 export default function SalesOrders() {
   const navigate = useNavigate();
-  const { salesOrders, customers } = useShopStore();
+  const repos = useRepos();
+  const { salesOrders } = repos.salesOrders;
+  const { customers } = repos.customers;
+  const [statusFilter, setStatusFilter] = useState<'open' | 'estimate' | 'invoiced' | 'partial' | 'completed' | 'cancelled' | 'deleted'>('open');
 
-  const columns: Column<SalesOrder>[] = [
+  const tableData = useMemo<SalesOrderRow[]>(() => {
+    return salesOrders.map((order) => {
+      const customer = customers.find((c) => c.id === order.customer_id);
+      return {
+        ...order,
+        customer_name: customer?.company_name || '-',
+      };
+    });
+  }, [customers, salesOrders]);
+
+  const columns: Column<SalesOrderRow>[] = [
     { key: 'order_number', header: 'Order #', sortable: true, className: 'font-mono' },
     {
-      key: 'customer_id',
+      key: 'customer_name',
       header: 'Customer',
       sortable: true,
-      render: (item) => {
-        const customer = customers.find((c) => c.id === item.customer_id);
-        return customer?.company_name || '-';
-      },
+      render: (item) => item.customer_name || '-',
     },
     {
       key: 'status',
@@ -43,6 +56,35 @@ export default function SalesOrders() {
     },
   ];
 
+  const filteredTableData = useMemo(() => {
+    const statusFiltered = tableData.filter((order) => {
+      switch (statusFilter) {
+        case 'open':
+          return order.is_active !== false && order.status === 'OPEN';
+        case 'estimate':
+          return order.is_active !== false && order.status === 'ESTIMATE';
+        case 'invoiced':
+          return order.is_active !== false && order.status === 'INVOICED';
+        case 'partial':
+          return order.is_active !== false && order.status === 'PARTIAL';
+        case 'completed':
+          return order.is_active !== false && order.status === 'COMPLETED';
+        case 'cancelled':
+          return order.is_active !== false && order.status === 'CANCELLED';
+        case 'deleted':
+          return order.is_active === false;
+        default:
+          return true;
+      }
+    });
+
+    if (statusFilter === 'deleted') {
+      return statusFiltered.map((order) => ({ ...order, is_active: true }));
+    }
+
+    return statusFiltered;
+  }, [statusFilter, tableData]);
+
   return (
     <div className="page-container">
       <PageHeader
@@ -56,13 +98,31 @@ export default function SalesOrders() {
         }
       />
 
+      <div className="flex justify-end gap-2 mb-4">
+        {(['open', 'estimate', 'partial', 'completed', 'invoiced', 'cancelled', 'deleted'] as const).map((filter) => (
+          <Button
+            key={filter}
+            variant={statusFilter === filter ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setStatusFilter(filter)}
+          >
+            {filter === 'open' && 'Open'}
+            {filter === 'estimate' && 'Estimates'}
+            {filter === 'partial' && 'Partial'}
+            {filter === 'completed' && 'Completed'}
+            {filter === 'invoiced' && 'Invoiced'}
+            {filter === 'cancelled' && 'Cancelled'}
+            {filter === 'deleted' && 'Deleted'}
+          </Button>
+        ))}
+      </div>
+
       <DataTable
-        data={salesOrders}
+        data={filteredTableData}
         columns={columns}
-        searchKeys={['order_number']}
-        searchPlaceholder="Search orders..."
+        searchKeys={['order_number', 'customer_name']}
+        searchPlaceholder="Search sales orders..."
         onRowClick={(order) => navigate(`/sales-orders/${order.id}`)}
-        showActiveFilter={false}
         emptyMessage="No sales orders found. Create your first sales order to get started."
       />
     </div>

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -168,7 +169,8 @@ function formatLastCompleted(schedule: UnitPMSchedule): string {
 }
 
 export function PMSection({ unit }: PMSectionProps) {
-  const { getPMSchedulesByUnit, getPMHistoryByUnit, deactivatePMSchedule, pmSchedules } = useShopStore();
+  const navigate = useNavigate();
+  const { getPMSchedulesByUnit, getPMHistoryByUnit, deactivatePMSchedule, pmSchedules, createWorkOrder, updateWorkOrderNotes, woAddLaborLine, updatePMSchedule } = useShopStore();
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState<UnitPMSchedule | null>(null);
   const [completingSchedule, setCompletingSchedule] = useState<UnitPMSchedule | null>(null);
@@ -180,7 +182,7 @@ export function PMSection({ unit }: PMSectionProps) {
   // Compute status for each schedule
   const computedSchedules = useMemo(() => {
     return schedules.map((s) => computePMStatus(s, unit.mileage, unit.hours));
-  }, [schedules, unit.mileage, unit.hours, pmSchedules]);
+  }, [schedules, unit.mileage, unit.hours]);
 
   // Summary counts
   const summary = useMemo(() => {
@@ -242,6 +244,40 @@ export function PMSection({ unit }: PMSectionProps) {
 
   const handleMarkComplete = (schedule: UnitPMSchedule) => {
     setCompletingSchedule(schedule);
+  };
+
+  const handleCreateWorkOrder = (computed: ComputedSchedule) => {
+    if (computed.status !== 'OVERDUE' && computed.status !== 'DUE_SOON') return;
+
+    const dueKey = `${computed.schedule.interval_type}:${computed.nextDue ?? 'NONE'}`;
+    if (computed.status === 'NOT_CONFIGURED' || dueKey.endsWith(':NONE')) {
+      return;
+    }
+
+    if (computed.schedule.last_generated_due_key === dueKey && computed.schedule.last_generated_work_order_id) {
+      navigate(`/work-orders/${computed.schedule.last_generated_work_order_id}`);
+      return;
+    }
+
+    const wo = createWorkOrder(unit.customer_id, unit.id);
+
+    const dueText =
+      computed.status === 'NOT_CONFIGURED' ? 'No baseline set' : formatNextDue(computed);
+
+    const notes = `PM: ${computed.schedule.name} — Status: ${computed.status} — Due: ${dueText}`;
+
+    updateWorkOrderNotes(wo.id, notes);
+
+    const laborDesc = computed.schedule.default_labor_description ?? `Preventive Maintenance - ${computed.schedule.name}`;
+    const laborHours = computed.schedule.default_labor_hours ?? 1;
+    woAddLaborLine(wo.id, laborDesc, laborHours);
+
+    updatePMSchedule(computed.schedule.id, {
+      last_generated_due_key: dueKey,
+      last_generated_work_order_id: wo.id,
+    });
+
+    navigate(`/work-orders/${wo.id}`);
   };
 
   const currentMeter = unit.mileage || unit.hours;
@@ -334,6 +370,15 @@ export function PMSection({ unit }: PMSectionProps) {
                     <TableCell>{getStatusBadge(computed.status)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleCreateWorkOrder(computed)}
+                          title="Create Work Order"
+                          disabled={computed.status !== 'OVERDUE' && computed.status !== 'DUE_SOON'}
+                        >
+                          WO
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
