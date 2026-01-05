@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/table';
 import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
-import { Save, X, Trash2, Edit, Plus } from 'lucide-react';
+import { Save, X, Trash2, Edit, Plus, Copy } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { calcPartPriceForLevel, getPartCostBasis } from '@/domain/pricing/partPricing';
 import type { Part } from '@/types';
@@ -97,9 +97,10 @@ export default function PartForm() {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [adjustReason, setAdjustReason] = useState('');
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
-  const [pendingPartData, setPendingPartData] = useState<null | typeof formData>(null);
+  const [newQoh, setNewQoh] = useState('');
   const [newComponentId, setNewComponentId] = useState('');
   const [newComponentQty, setNewComponentQty] = useState('1');
+  const [copying, setCopying] = useState(false);
 
   const activeVendors = vendors.filter((v) => v.is_active);
   const activeCategories = categories.filter((c) => c.is_active);
@@ -107,6 +108,10 @@ export default function PartForm() {
     .filter((h) => h.part_id === id)
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 15);
+  const suggestedReorder =
+    part?.max_qty != null && Number.isFinite(part.max_qty) && part.max_qty > 0
+      ? Math.max(0, part.max_qty - (part.quantity_on_hand ?? 0))
+      : null;
 
   const tempPartForPricing: Part = part || {
     id: 'temp',
@@ -177,6 +182,69 @@ export default function PartForm() {
       </div>
     );
   }
+
+  const renderStatusChips = () => {
+    if (!part) return null;
+    const chips: React.ReactNode[] = [];
+    chips.push(
+      <span
+        key="active"
+        className={`rounded-md px-2 py-1 ${part.is_active ? 'bg-green-100 text-green-800' : 'bg-muted text-muted-foreground'}`}
+      >
+        {part.is_active ? 'Active' : 'Inactive'}
+      </span>
+    );
+    if (part.quantity_on_hand < 0) {
+      chips.push(
+        <span key="negative" className="rounded-md bg-destructive/10 text-destructive px-2 py-1">
+          Negative
+        </span>
+      );
+    } else if (part.quantity_on_hand === 0) {
+      chips.push(
+        <span key="out" className="rounded-md bg-muted px-2 py-1">
+          Out
+        </span>
+      );
+    }
+    if (part.min_qty != null && part.quantity_on_hand > 0 && part.quantity_on_hand < part.min_qty) {
+      chips.push(
+        <span key="low" className="rounded-md bg-muted px-2 py-1">
+          Low
+        </span>
+      );
+    }
+    if (suggestedReorder && suggestedReorder > 0) {
+      chips.push(
+        <span key="reorder" className="rounded-md bg-muted px-2 py-1">
+          Needs Reorder
+        </span>
+      );
+    }
+    return <div className="flex flex-wrap gap-2 text-xs">{chips}</div>;
+  };
+
+  const resetForm = () => {
+    setFormData({
+      part_number: part?.part_number || '',
+      description: part?.description || '',
+      vendor_id: part?.vendor_id || '',
+      category_id: part?.category_id || '',
+      cost: part?.cost?.toString() || '',
+      selling_price: part?.selling_price?.toString() || '',
+      core_required: part?.core_required || false,
+      core_charge: part?.core_charge?.toString() || '0',
+      barcode: part?.barcode || '',
+      is_kit: part?.is_kit ?? false,
+      min_qty: part?.min_qty?.toString() || '',
+      max_qty: part?.max_qty?.toString() || '',
+      bin_location: part?.bin_location ?? '',
+      model: part?.model ?? '',
+      serial_number: part?.serial_number ?? '',
+    });
+  };
+
+  const recentActivity = recentMovements.slice(0, 10);
 
   const handleSave = () => {
     if (!formData.part_number.trim()) {
@@ -335,26 +403,31 @@ export default function PartForm() {
   };
 
   const handleConfirmAdjustment = () => {
-    if (!pendingPartData || !part) return;
+    if (!part) return;
     if (!adjustReason.trim()) {
       toast({ title: 'Validation Error', description: 'Reason is required', variant: 'destructive' });
       return;
     }
+    const parsedQoh = parseFloat(newQoh);
+    if (!Number.isFinite(parsedQoh)) {
+      toast({ title: 'Validation Error', description: 'Enter a valid quantity', variant: 'destructive' });
+      return;
+    }
     const partData = {
-      part_number: pendingPartData.part_number.trim().toUpperCase(),
-      description: pendingPartData.description.trim() || null,
-      vendor_id: pendingPartData.vendor_id,
-      category_id: pendingPartData.category_id,
-      cost: parseFloat(pendingPartData.cost) || 0,
-      selling_price: parseFloat(pendingPartData.selling_price) || 0,
-      quantity_on_hand: parseInt(pendingPartData.quantity_on_hand) || 0,
-      core_required: pendingPartData.core_required,
-      core_charge: parseFloat(pendingPartData.core_charge) || 0,
-      barcode: pendingPartData.barcode.trim() ? pendingPartData.barcode.trim() : null,
-      is_kit: pendingPartData.is_kit,
-      min_qty: pendingPartData.min_qty === '' ? null : (Number.isFinite(parseInt(pendingPartData.min_qty)) ? parseInt(pendingPartData.min_qty) : null),
-      max_qty: pendingPartData.max_qty === '' ? null : (Number.isFinite(parseInt(pendingPartData.max_qty)) ? parseInt(pendingPartData.max_qty) : null),
-      bin_location: pendingPartData.bin_location.trim() || null,
+      part_number: part.part_number.trim().toUpperCase(),
+      description: part.description?.trim() || null,
+      vendor_id: part.vendor_id,
+      category_id: part.category_id,
+      cost: part.cost || 0,
+      selling_price: part.selling_price || 0,
+      quantity_on_hand: parsedQoh,
+      core_required: part.core_required,
+      core_charge: part.core_charge || 0,
+      barcode: part.barcode?.trim() ? part.barcode.trim() : null,
+      is_kit: part.is_kit,
+      min_qty: part.min_qty ?? null,
+      max_qty: part.max_qty ?? null,
+      bin_location: part.bin_location?.trim() || null,
     };
     const result = updatePartWithQohAdjustment(id!, partData, {
       reason: adjustReason.trim(),
@@ -371,37 +444,36 @@ export default function PartForm() {
     }
     setAdjustDialogOpen(false);
     setAdjustReason('');
-    setPendingPartData(null);
+    setNewQoh('');
     setEditing(false);
   };
 
   return (
-    <div className="page-container">
+    <div className="page-container space-y-4">
       <PageHeader
         title={isNew ? 'New Part' : part?.part_number || 'Part'}
-        subtitle={isNew ? 'Add a new part to inventory' : part?.is_active ? 'Active Part' : 'Inactive Part'}
+        subtitle={
+          isNew ? 'Add a new part to inventory' : part?.description || (part?.is_active ? 'Active Part' : 'Inactive Part')
+        }
         backTo="/inventory"
         actions={
           editing ? (
             <>
+              <Button variant="outline" onClick={() => navigate('/receiving')}>
+                Receive
+              </Button>
               {!isNew && (
-                <Button variant="outline" onClick={() => setEditing(false)}>
-                  <X className="w-4 h-4 mr-2" />
-                  Cancel
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setNewQoh(part?.quantity_on_hand?.toString() || '');
+                    setAdjustDialogOpen(true);
+                  }}
+                >
+                  Adjust QOH
                 </Button>
               )}
-              <Button onClick={handleSave}>
-                <Save className="w-4 h-4 mr-2" />
-                {isNew ? 'Create Part' : 'Save'}
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button variant="outline" onClick={() => setEditing(true)}>
-                <Edit className="w-4 h-4 mr-2" />
-                Edit
-              </Button>
-              {!isNew && !editing && (
+              {!isNew && (
                 part?.is_active ? (
                   <AlertDialog open={confirmDeactivateOpen} onOpenChange={setConfirmDeactivateOpen}>
                     <AlertDialogTrigger asChild>
@@ -439,166 +511,367 @@ export default function PartForm() {
                   </Button>
                 )
               )}
+              {!isNew && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    resetForm();
+                    setEditing(false);
+                  }}
+                >
+                  <X className="w-4 h-4 mr-2" />
+                  Cancel
+                </Button>
+              )}
+              <Button onClick={handleSave}>
+                <Save className="w-4 h-4 mr-2" />
+                {isNew ? 'Create Part' : 'Save'}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => navigate('/receiving')}>
+                Receive
+              </Button>
+              {!isNew && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setNewQoh(part?.quantity_on_hand?.toString() || '');
+                    setAdjustDialogOpen(true);
+                  }}
+                >
+                  Adjust QOH
+                </Button>
+              )}
+              {!isNew &&
+                (part?.is_active ? (
+                  <AlertDialog open={confirmDeactivateOpen} onOpenChange={setConfirmDeactivateOpen}>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive">
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Deactivate
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Deactivate part?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will hide the part from active lists but keep history and movements. You can reactivate it later.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction asChild>
+                          <Button
+                            variant="destructive"
+                            onClick={() => {
+                              setConfirmDeactivateOpen(false);
+                              handleDeactivate();
+                            }}
+                          >
+                            Deactivate
+                          </Button>
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                ) : (
+                  <Button variant="outline" onClick={handleReactivate}>
+                    Reactivate
+                  </Button>
+                ))}
+              <Button onClick={() => setEditing(true)}>
+                <Edit className="w-4 h-4 mr-2" />
+                Edit
+              </Button>
             </>
           )
         }
       />
 
-      <div className="form-section max-w-2xl">
+      {!isNew && <div className="flex flex-wrap gap-2">{renderStatusChips()}</div>}
+
+      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1fr] gap-4">
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="part_number">Part Number *</Label>
-              <Input
-                id="part_number"
-                value={formData.part_number}
-                onChange={(e) => setFormData({ ...formData, part_number: e.target.value.toUpperCase() })}
-                disabled={!editing}
-                placeholder="e.g., BRK-001"
-                className="font-mono"
-              />
-            </div>
-            <div>
-              <Label htmlFor="barcode">Barcode</Label>
-              <Input
-                id="barcode"
-                value={formData.barcode}
-                onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
-                disabled={!editing}
-                placeholder="Scan or enter barcode"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <Label htmlFor="quantity_on_hand">Quantity on Hand</Label>
-              <Input
-                id="quantity_on_hand"
-                type="number"
-                value={part?.quantity_on_hand ?? 0}
-                disabled
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                To change QOH, use Inventory → Adjust QOH.
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="model">Model</Label>
-              <Input
-                id="model"
-                value={formData.model}
-                onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                disabled={!editing}
-              />
-            </div>
-            <div>
-              <Label htmlFor="serial_number">Serial Number</Label>
-              <Input
-                id="serial_number"
-                value={formData.serial_number}
-                onChange={(e) => setFormData({ ...formData, serial_number: e.target.value })}
-                disabled={!editing}
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="min_qty">Min Qty</Label>
-              <Input
-                id="min_qty"
-                type="number"
-                value={formData.min_qty}
-                onChange={(e) => setFormData({ ...formData, min_qty: e.target.value })}
-                disabled={!editing}
-              />
-            </div>
-            <div>
-              <Label htmlFor="max_qty">Max Qty</Label>
-              <Input
-                id="max_qty"
-                type="number"
-                value={formData.max_qty}
-                onChange={(e) => setFormData({ ...formData, max_qty: e.target.value })}
-                disabled={!editing}
-              />
-            </div>
-          </div>
-
-          <div>
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              disabled={!editing}
-              rows={2}
-              placeholder="Part description"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="bin_location">Bin Location</Label>
-              <Input
-                id="bin_location"
-                value={formData.bin_location}
-                onChange={(e) => setFormData({ ...formData, bin_location: e.target.value })}
-                disabled={!editing}
-                placeholder="e.g., Aisle 3 - Bin 12"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Vendor *</Label>
-              <div className="flex gap-2">
-                <Select
-                  value={formData.vendor_id}
-                  onValueChange={(value) => setFormData({ ...formData, vendor_id: value })}
-                  disabled={!editing}
+          <div className="rounded-lg border bg-card p-4 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm text-muted-foreground">Part</div>
+                <div className="text-xl font-semibold leading-tight">
+                  {formData.part_number || part?.part_number || 'Untitled Part'}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {formData.description || part?.description || 'No description'}
+                </div>
+              </div>
+              {!isNew && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={copying}
+                  onClick={async () => {
+                    try {
+                      setCopying(true);
+                      await navigator.clipboard.writeText(part?.part_number || '');
+                      toast({ title: 'Copied', description: 'Part number copied to clipboard' });
+                    } catch {
+                      toast({ title: 'Copy failed', variant: 'destructive' });
+                    } finally {
+                      setCopying(false);
+                    }
+                  }}
                 >
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Select vendor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeVendors.map((vendor) => (
-                      <SelectItem key={vendor.id} value={vendor.id}>
-                        {vendor.vendor_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {editing && (
-                  <Button type="button" variant="outline" size="icon" onClick={() => setVendorDialogOpen(true)}>
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                )}
+                  <Copy className="w-4 h-4 mr-2" />
+                  {copying ? 'Copying…' : 'Copy Part #'}
+                </Button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <Label htmlFor="part_number">Part Number *</Label>
+                <Input
+                  id="part_number"
+                  value={formData.part_number}
+                  onChange={(e) => setFormData({ ...formData, part_number: e.target.value.toUpperCase() })}
+                  disabled={!editing}
+                  placeholder="e.g., BRK-001"
+                  className="font-mono"
+                />
+              </div>
+              <div>
+                <Label htmlFor="barcode">Barcode</Label>
+                <Input
+                  id="barcode"
+                  value={formData.barcode}
+                  onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+                  disabled={!editing}
+                  placeholder="Scan or enter barcode"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <Label htmlFor="description">Description</Label>
+                <Textarea
+                  id="description"
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  disabled={!editing}
+                  rows={2}
+                  placeholder="Part description"
+                />
+              </div>
+              <div>
+                <Label htmlFor="vendor">Vendor *</Label>
+                <div className="flex gap-2">
+                  <Select
+                    value={formData.vendor_id}
+                    onValueChange={(value) => setFormData({ ...formData, vendor_id: value })}
+                    disabled={!editing}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Select vendor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeVendors.map((vendor) => (
+                        <SelectItem key={vendor.id} value={vendor.id}>
+                          {vendor.vendor_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {editing && (
+                    <Button type="button" variant="outline" size="icon" onClick={() => setVendorDialogOpen(true)}>
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="category">Category *</Label>
+                <div className="flex gap-2">
+                  <Select
+                    value={formData.category_id}
+                    onValueChange={(value) => setFormData({ ...formData, category_id: value })}
+                    disabled={!editing}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {activeCategories.map((category) => (
+                        <SelectItem key={category.id} value={category.id}>
+                          {category.category_name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {editing && (
+                    <Button type="button" variant="outline" size="icon" onClick={() => setCategoryDialogOpen(true)}>
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="bin_location">Bin / Location</Label>
+                <Input
+                  id="bin_location"
+                  value={formData.bin_location}
+                  onChange={(e) => setFormData({ ...formData, bin_location: e.target.value })}
+                  disabled={!editing}
+                  placeholder="e.g., Aisle 3 - Bin 12"
+                />
+              </div>
+              <div>
+                <Label htmlFor="model">Model</Label>
+                <Input
+                  id="model"
+                  value={formData.model}
+                  onChange={(e) => setFormData({ ...formData, model: e.target.value })}
+                  disabled={!editing}
+                />
+              </div>
+              <div>
+                <Label htmlFor="serial_number">Serial Number</Label>
+                <Input
+                  id="serial_number"
+                  value={formData.serial_number}
+                  onChange={(e) => setFormData({ ...formData, serial_number: e.target.value })}
+                  disabled={!editing}
+                />
+              </div>
+              <div>
+                <Label htmlFor="min_qty">Min Qty</Label>
+                <Input
+                  id="min_qty"
+                  type="number"
+                  value={formData.min_qty}
+                  onChange={(e) => setFormData({ ...formData, min_qty: e.target.value })}
+                  disabled={!editing}
+                />
+              </div>
+              <div>
+                <Label htmlFor="max_qty">Max Qty</Label>
+                <Input
+                  id="max_qty"
+                  type="number"
+                  value={formData.max_qty}
+                  onChange={(e) => setFormData({ ...formData, max_qty: e.target.value })}
+                  disabled={!editing}
+                />
               </div>
             </div>
-            <div>
-              <Label>Category *</Label>
-              <div className="flex gap-2">
-                <Select
-                  value={formData.category_id}
-                  onValueChange={(value) => setFormData({ ...formData, category_id: value })}
+
+            <div className="border border-border rounded-lg p-4 space-y-4">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="core_required"
+                  checked={formData.core_required}
+                  onChange={(e) => setFormData({ ...formData, core_required: e.target.checked })}
                   disabled={!editing}
-                >
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeCategories.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>
-                        {category.category_name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {editing && (
-                  <Button type="button" variant="outline" size="icon" onClick={() => setCategoryDialogOpen(true)}>
-                    <Plus className="w-4 h-4" />
+                  className="h-4 w-4 rounded border-input"
+                />
+                <Label htmlFor="core_required" className="font-medium">
+                  Core Required
+                </Label>
+              </div>
+              {formData.core_required && (
+                <div>
+                  <Label htmlFor="core_charge">Core Charge Amount</Label>
+                  <Input
+                    id="core_charge"
+                    type="number"
+                    step="0.01"
+                    value={formData.core_charge}
+                    onChange={(e) => setFormData({ ...formData, core_charge: e.target.value })}
+                    disabled={!editing}
+                    placeholder="0.00"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    This amount will be added to orders and refunded when the core is returned.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-lg border bg-card p-4 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="cost">Cost</Label>
+                <Input
+                  id="cost"
+                  type="number"
+                  step="0.01"
+                  value={formData.cost}
+                  onChange={(e) => setFormData({ ...formData, cost: e.target.value })}
+                  disabled={!editing}
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <Label htmlFor="selling_price">Selling Price</Label>
+                <Input
+                  id="selling_price"
+                  type="number"
+                  step="0.01"
+                  value={formData.selling_price}
+                  onChange={(e) => setFormData({ ...formData, selling_price: e.target.value })}
+                  disabled={!editing}
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <Label>Last Cost</Label>
+                <Input value={part?.last_cost != null ? part.last_cost.toFixed(2) : '—'} disabled placeholder="N/A" />
+              </div>
+              <div>
+                <Label>Avg Cost</Label>
+                <Input value={part?.avg_cost != null ? part.avg_cost.toFixed(2) : '—'} disabled placeholder="N/A" />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label>Suggested Basis</Label>
+                <Input
+                  value={
+                    costBasis.basis != null
+                      ? `$${costBasis.basis.toFixed(2)} (${costBasis.source.replace('_', ' ')})`
+                      : '—'
+                  }
+                  disabled
+                />
+              </div>
+              {editing && (
+                <div className="flex items-end justify-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      if (suggestedRetail != null) {
+                        setFormData({ ...formData, selling_price: suggestedRetail.toFixed(2) });
+                      }
+                    }}
+                  >
+                    Apply Retail Suggested
                   </Button>
-                )}
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label>Retail Suggested</Label>
+                <Input value={suggestedRetail != null ? suggestedRetail.toFixed(2) : '—'} disabled />
+              </div>
+              <div>
+                <Label>Fleet Suggested</Label>
+                <Input value={suggestedFleet != null ? suggestedFleet.toFixed(2) : '—'} disabled />
+              </div>
+              <div>
+                <Label>Wholesale Suggested</Label>
+                <Input value={suggestedWholesale != null ? suggestedWholesale.toFixed(2) : '—'} disabled />
               </div>
             </div>
           </div>
@@ -614,7 +887,9 @@ export default function PartForm() {
                   disabled={!editing}
                   className="h-4 w-4 rounded border-input"
                 />
-                <Label htmlFor="is_kit" className="font-medium">Kit</Label>
+                <Label htmlFor="is_kit" className="font-medium">
+                  Kit
+                </Label>
               </div>
               {formData.is_kit && isNew && (
                 <span className="text-xs text-muted-foreground">Save the part to manage components</span>
@@ -625,11 +900,7 @@ export default function PartForm() {
                 <div className="grid grid-cols-3 gap-3 items-end">
                   <div className="col-span-2">
                     <Label htmlFor="component_part_id">Add Component</Label>
-                    <Select
-                      value={newComponentId}
-                      onValueChange={setNewComponentId}
-                      disabled={!editing || isNew}
-                    >
+                    <Select value={newComponentId} onValueChange={setNewComponentId} disabled={!editing || isNew}>
                       <SelectTrigger id="component_part_id">
                         <SelectValue placeholder="Select part" />
                       </SelectTrigger>
@@ -656,12 +927,7 @@ export default function PartForm() {
                   </div>
                 </div>
                 <div className="flex justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleAddKitComponent}
-                    disabled={!editing || isNew}
-                  >
+                  <Button type="button" variant="outline" onClick={handleAddKitComponent} disabled={!editing || isNew}>
                     <Plus className="w-4 h-4 mr-2" />
                     Add Component
                   </Button>
@@ -678,9 +944,7 @@ export default function PartForm() {
                           className="flex items-center justify-between rounded-md border border-border px-3 py-2"
                         >
                           <div className="flex flex-col">
-                            <span className="text-sm font-medium">
-                              {componentPart?.part_number || 'Component'}
-                            </span>
+                            <span className="text-sm font-medium">{componentPart?.part_number || 'Component'}</span>
                             <span className="text-xs text-muted-foreground">
                               {componentPart?.description || 'No description'}
                             </span>
@@ -713,252 +977,199 @@ export default function PartForm() {
               </div>
             )}
           </div>
+        </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="cost">Cost</Label>
-              <Input
-                id="cost"
-                type="number"
-                step="0.01"
-                value={formData.cost}
-                onChange={(e) => setFormData({ ...formData, cost: e.target.value })}
-                disabled={!editing}
-                placeholder="0.00"
-              />
-            </div>
-            <div>
-              <Label htmlFor="selling_price">Selling Price</Label>
-              <Input
-                id="selling_price"
-                type="number"
-                step="0.01"
-                value={formData.selling_price}
-                onChange={(e) => setFormData({ ...formData, selling_price: e.target.value })}
-                disabled={!editing}
-                placeholder="0.00"
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Last Cost</Label>
-              <Input
-                value={part?.last_cost != null ? part.last_cost.toFixed(2) : '—'}
-                disabled
-                placeholder="N/A"
-              />
-            </div>
-            <div>
-              <Label>Avg Cost</Label>
-              <Input
-                value={part?.avg_cost != null ? part.avg_cost.toFixed(2) : '—'}
-                disabled
-                placeholder="N/A"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Suggested Basis</Label>
-              <Input
-                value={
-                  costBasis.basis != null
-                    ? `$${costBasis.basis.toFixed(2)} (${costBasis.source.replace('_', ' ')})`
-                    : '—'
-                }
-                disabled
-              />
-            </div>
-            {editing && (
-              <div className="flex items-end justify-end">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    if (suggestedRetail != null) {
-                      setFormData({ ...formData, selling_price: suggestedRetail.toFixed(2) });
-                    }
-                  }}
-                >
-                  Apply Retail Suggested
-                </Button>
-              </div>
-            )}
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <Label>Retail Suggested</Label>
-              <Input value={suggestedRetail != null ? suggestedRetail.toFixed(2) : '—'} disabled />
-            </div>
-            <div>
-              <Label>Fleet Suggested</Label>
-              <Input value={suggestedFleet != null ? suggestedFleet.toFixed(2) : '—'} disabled />
-            </div>
-            <div>
-              <Label>Wholesale Suggested</Label>
-              <Input value={suggestedWholesale != null ? suggestedWholesale.toFixed(2) : '—'} disabled />
-            </div>
-          </div>
-
-          {!isNew && (
-            <div className="border border-border rounded-lg p-4 space-y-3">
-              <h3 className="text-sm font-semibold">Cost History</h3>
-              {partCostHistory.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No cost history yet.</p>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-muted-foreground">
-                      <th className="py-1">Date</th>
-                      <th className="py-1">Vendor</th>
-                      <th className="py-1 text-right">Unit Cost</th>
-                      <th className="py-1 text-right">Qty</th>
-                      <th className="py-1">Source</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {partCostHistory.map((entry) => {
-                      const vendor = vendors.find((v) => v.id === entry.vendor_id);
-                      return (
-                        <tr key={entry.id} className="border-t border-border/60">
-                          <td className="py-1">{new Date(entry.created_at).toLocaleDateString()}</td>
-                          <td className="py-1">{vendor?.vendor_name || '—'}</td>
-                          <td className="py-1 text-right">${entry.unit_cost.toFixed(2)}</td>
-                          <td className="py-1 text-right">{entry.quantity ?? '—'}</td>
-                          <td className="py-1 uppercase text-xs text-muted-foreground">{entry.source}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+        <div className="space-y-4">
+          <div className="rounded-lg border bg-card p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Inventory Snapshot</h3>
+              {!isNew && suggestedReorder != null && suggestedReorder > 0 && (
+                <span className="text-xs rounded-full bg-muted px-2 py-1">Suggested Reorder: {suggestedReorder}</span>
               )}
             </div>
-          )}
-
-          {!isNew && (
-            <div className="border border-border rounded-lg p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">On Order</h3>
-                <span className="text-sm font-medium">
-                  {totalOnOrder > 0 ? 'Yes' : 'No'} (Qty: {totalOnOrder})
-                </span>
-              </div>
-              {poLinesSorted.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No open purchase orders for this part.</p>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-muted-foreground">
-                      <th className="py-1">PO</th>
-                      <th className="py-1">Vendor</th>
-                      <th className="py-1 text-right">Qty On Order</th>
-                      <th className="py-1">Status</th>
-                      <th className="py-1">Created</th>
-                      <th className="py-1"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {poLinesSorted.slice(0, 15).map(({ line, po, outstanding }) => {
-                      const vendor = vendors.find((v) => v.id === po.vendor_id);
-                      return (
-                        <tr key={line.id} className="border-t border-border/60">
-                          <td className="py-1 font-mono">{po.po_number || po.id}</td>
-                          <td className="py-1">{vendor?.vendor_name || '—'}</td>
-                          <td className="py-1 text-right">{outstanding}</td>
-                          <td className="py-1">{po.status}</td>
-                          <td className="py-1">{new Date(po.created_at).toLocaleDateString()}</td>
-                          <td className="py-1 text-right">
-                            <Button variant="link" size="sm" onClick={() => navigate(`/purchase-orders/${po.id}`)}>
-                              View
-                            </Button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          )}
-
-          {!isNew && (
-            <div className="border border-border rounded-lg p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Recent Movements</h3>
-                <span className="text-xs text-muted-foreground">Last 20</span>
-              </div>
-              {(!recentMovements || recentMovements.length === 0) ? (
-                <p className="text-sm text-muted-foreground">No movements yet.</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="h-9">
-                      <TableHead>Date</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Delta</TableHead>
-                      <TableHead>Reason</TableHead>
-                      <TableHead>Ref</TableHead>
-                      <TableHead>By</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {recentMovements.map((m) => (
-                      <TableRow key={m.id}>
-                        <TableCell className="whitespace-nowrap">
-                          {new Date(m.performed_at).toLocaleString()}
-                        </TableCell>
-                        <TableCell className="uppercase text-xs font-semibold">{m.movement_type}</TableCell>
-                        <TableCell className={m.qty_delta < 0 ? 'text-destructive' : ''}>
-                          {m.qty_delta}
-                        </TableCell>
-                        <TableCell className="max-w-xs break-words">{m.reason || '—'}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {m.ref_type ? `${m.ref_type}${m.ref_id ? `:${m.ref_id}` : ''}` : '—'}
-                        </TableCell>
-                        <TableCell>{m.performed_by}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </div>
-          )}
-
-          {/* Core Charge Section */}
-          <div className="border border-border rounded-lg p-4 space-y-4">
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="core_required"
-                checked={formData.core_required}
-                onChange={(e) => setFormData({ ...formData, core_required: e.target.checked })}
-                disabled={!editing}
-                className="h-4 w-4 rounded border-input"
-              />
-              <Label htmlFor="core_required" className="font-medium">Core Required</Label>
-            </div>
-            {formData.core_required && (
+            <div className="grid grid-cols-2 gap-3 text-sm text-muted-foreground">
               <div>
-                <Label htmlFor="core_charge">Core Charge Amount</Label>
-                <Input
-                  id="core_charge"
-                  type="number"
-                  step="0.01"
-                  value={formData.core_charge}
-                  onChange={(e) => setFormData({ ...formData, core_charge: e.target.value })}
-                  disabled={!editing}
-                  placeholder="0.00"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  This amount will be added to orders and refunded when the core is returned.
-                </p>
+                <div className="text-xs">QOH</div>
+                <div className="text-2xl font-semibold text-foreground">{part?.quantity_on_hand ?? 0}</div>
+                <p className="text-xs text-muted-foreground mt-1">To change QOH, use Adjust QOH.</p>
               </div>
-            )}
+              <div>
+                <div className="text-xs">On Order</div>
+                <div className="text-lg font-semibold text-foreground">{totalOnOrder}</div>
+              </div>
+              <div>
+                <div className="text-xs">Last Cost</div>
+                <div className="font-medium text-foreground">
+                  {part?.last_cost != null ? `$${part.last_cost.toFixed(2)}` : '—'}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs">Avg Cost</div>
+                <div className="font-medium text-foreground">
+                  {part?.avg_cost != null ? `$${part.avg_cost.toFixed(2)}` : '—'}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border bg-card p-4 space-y-2">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Recent Activity</h3>
+              <span className="text-xs text-muted-foreground">Last 10</span>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              {recentActivity.length === 0 ? (
+                <p className="text-muted-foreground">No recent activity.</p>
+              ) : (
+                <div className="space-y-2">
+                  {recentActivity.map((m) => {
+                    const delta = m.qty_delta;
+                    const source =
+                      m.movement_type === 'RECEIVE'
+                        ? 'Receiving'
+                        : m.movement_type === 'COUNT' || m.reason?.startsWith('COUNT:')
+                        ? 'Cycle Count'
+                        : 'Manual';
+                    return (
+                      <div key={m.id} className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2">
+                        <div>
+                          <div className="text-foreground font-medium">{new Date(m.performed_at).toLocaleString()}</div>
+                          <div className="text-xs text-muted-foreground">{source}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-semibold text-foreground">{delta > 0 ? `+${delta}` : delta}</div>
+                          <div className="text-xs text-muted-foreground">{m.reason || '—'}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
+
+      {!isNew && (
+        <div className="space-y-4">
+          <div className="border border-border rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">On Order</h3>
+              <span className="text-sm font-medium">
+                {totalOnOrder > 0 ? 'Yes' : 'No'} (Qty: {totalOnOrder})
+              </span>
+            </div>
+            {poLinesSorted.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No open purchase orders for this part.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-muted-foreground">
+                    <th className="py-1">PO</th>
+                    <th className="py-1">Vendor</th>
+                    <th className="py-1 text-right">Qty On Order</th>
+                    <th className="py-1">Status</th>
+                    <th className="py-1">Created</th>
+                    <th className="py-1"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {poLinesSorted.slice(0, 15).map(({ line, po, outstanding }) => {
+                    const vendor = vendors.find((v) => v.id === po.vendor_id);
+                    return (
+                      <tr key={line.id} className="border-t border-border/60">
+                        <td className="py-1 font-mono">{po.po_number || po.id}</td>
+                        <td className="py-1">{vendor?.vendor_name || '—'}</td>
+                        <td className="py-1 text-right">{outstanding}</td>
+                        <td className="py-1">{po.status}</td>
+                        <td className="py-1">{new Date(po.created_at).toLocaleDateString()}</td>
+                        <td className="py-1 text-right">
+                          <Button variant="link" size="sm" onClick={() => navigate(`/purchase-orders/${po.id}`)}>
+                            View
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="border border-border rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Cost History</h3>
+              <span className="text-xs text-muted-foreground">Last 15</span>
+            </div>
+            {partCostHistory.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No cost history yet.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-muted-foreground">
+                    <th className="py-1">Date</th>
+                    <th className="py-1">Vendor</th>
+                    <th className="py-1 text-right">Unit Cost</th>
+                    <th className="py-1 text-right">Qty</th>
+                    <th className="py-1">Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {partCostHistory.map((entry) => {
+                    const vendor = vendors.find((v) => v.id === entry.vendor_id);
+                    return (
+                      <tr key={entry.id} className="border-t border-border/60">
+                        <td className="py-1">{new Date(entry.created_at).toLocaleDateString()}</td>
+                        <td className="py-1">{vendor?.vendor_name || '—'}</td>
+                        <td className="py-1 text-right">${entry.unit_cost.toFixed(2)}</td>
+                        <td className="py-1 text-right">{entry.quantity ?? '—'}</td>
+                        <td className="py-1 uppercase text-xs text-muted-foreground">{entry.source}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="border border-border rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Recent Movements</h3>
+              <span className="text-xs text-muted-foreground">Last 20</span>
+            </div>
+            {!recentMovements || recentMovements.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No movements yet.</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="h-9">
+                    <TableHead>Date</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Delta</TableHead>
+                    <TableHead>Reason</TableHead>
+                    <TableHead>Ref</TableHead>
+                    <TableHead>By</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {recentMovements.map((m) => (
+                    <TableRow key={m.id}>
+                      <TableCell className="whitespace-nowrap">{new Date(m.performed_at).toLocaleString()}</TableCell>
+                      <TableCell className="uppercase text-xs font-semibold">{m.movement_type}</TableCell>
+                      <TableCell className={m.qty_delta < 0 ? 'text-destructive' : ''}>{m.qty_delta}</TableCell>
+                      <TableCell className="max-w-xs break-words">{m.reason || '—'}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {m.ref_type ? `${m.ref_type}${m.ref_id ? `:${m.ref_id}` : ''}` : '—'}
+                      </TableCell>
+                      <TableCell>{m.performed_by}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Quick Add Vendor Dialog */}
       <QuickAddDialog
@@ -1005,7 +1216,7 @@ export default function PartForm() {
           setAdjustDialogOpen(open);
           if (!open) {
             setAdjustReason('');
-            setPendingPartData(null);
+            setNewQoh('');
           }
         }}
         title="Inventory Adjustment"
@@ -1013,9 +1224,19 @@ export default function PartForm() {
         onCancel={() => {
           setAdjustDialogOpen(false);
           setAdjustReason('');
-          setPendingPartData(null);
+          setNewQoh('');
         }}
       >
+        <div>
+          <Label htmlFor="new_qoh">New QOH</Label>
+          <Input
+            id="new_qoh"
+            type="number"
+            value={newQoh}
+            onChange={(e) => setNewQoh(e.target.value)}
+            placeholder={part?.quantity_on_hand?.toString() || '0'}
+          />
+        </div>
         <div>
           <Label htmlFor="adjust_reason">Reason *</Label>
           <Textarea

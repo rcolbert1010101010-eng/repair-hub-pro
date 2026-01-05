@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
@@ -30,6 +30,7 @@ import { Label } from '@/components/ui/label';
 
 export default function Inventory() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const repos = useRepos();
   const { parts } = repos.parts;
   const { vendors } = repos.vendors;
@@ -120,8 +121,8 @@ export default function Inventory() {
             <span className="rounded-md bg-muted px-2 py-0.5">
               30d Δ {item.__delta30d > 0 ? `+${item.__delta30d}` : item.__delta30d}
             </span>
-            {item.__needsReorder && (
-              <span className="rounded-md bg-amber-100 text-amber-800 px-2 py-0.5">
+            {item.__needsReorder && Number.isFinite(item.__suggested) && item.__suggested > 0 && (
+              <span className="rounded-md bg-muted px-2 py-0.5">
                 Suggested {item.__suggested}
               </span>
             )}
@@ -345,6 +346,14 @@ export default function Inventory() {
 
   const filteredParts = useMemo(() => {
     let list = enhancedParts;
+    const searchQuery = (searchParams.get('search') || '').toLowerCase();
+    if (searchQuery) {
+      list = list.filter(
+        (p) =>
+          p.part_number.toLowerCase().includes(searchQuery) ||
+          (p.description || '').toLowerCase().includes(searchQuery)
+      );
+    }
     if (stockFilter !== 'ALL') {
       list = list.filter((p) => p.__stock === stockFilter);
     }
@@ -352,7 +361,7 @@ export default function Inventory() {
       list = list.filter((p) => p.__needsReorder);
     }
     return list;
-  }, [enhancedParts, stockFilter, needsReorderOnly]);
+  }, [enhancedParts, needsReorderOnly, searchParams, stockFilter]);
   const selectedParts = useMemo(
     () => filteredParts.filter((p) => selectedIds[p.id]),
     [filteredParts, selectedIds]
