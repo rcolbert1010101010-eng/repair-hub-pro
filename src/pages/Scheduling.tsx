@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { CalendarDays, Clock, User, AlertTriangle, Plus, ChevronLeft, ChevronRight, ClipboardList, Wrench } from 'lucide-react';
 import { useRepos } from '@/repos';
 import type { ScheduleItem, ScheduleItemStatus, ScheduleBlockType } from '@/types';
@@ -616,7 +616,7 @@ export default function Scheduling() {
     setDialogOpen(true);
   };
 
-  const handleOpenEdit = (item: ScheduleItem) => {
+  const handleOpenEdit = useCallback((item: ScheduleItem) => {
     setEditingId(item.id);
     setFormState({
       itemType: item.source_ref_type,
@@ -634,7 +634,7 @@ export default function Scheduling() {
     });
     setFormError(null);
     setDialogOpen(true);
-  };
+  }, [setDialogOpen]);
 
   const durationMinutes = Math.max(15, Math.round(Number(formState.durationHours || 0) * 60));
   const isoStart = formState.start ? new Date(formState.start).toISOString() : '';

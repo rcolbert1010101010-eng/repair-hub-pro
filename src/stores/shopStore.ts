@@ -182,6 +182,7 @@ interface ShopState {
   soMarkCoreReturned: (lineId: string) => { success: boolean; error?: string };
   soConvertToOpen: (orderId: string) => { success: boolean; error?: string };
   soInvoice: (orderId: string) => { success: boolean; error?: string };
+  soSetStatus: (orderId: string, status: SalesOrderStatus) => { success: boolean; error?: string };
   updateSalesOrderNotes: (orderId: string, notes: string | null) => void;
   getSalesOrderLines: (orderId: string) => SalesOrderLine[];
   salesOrderChargeLines: SalesOrderChargeLine[];
@@ -1683,7 +1684,7 @@ export const useShopStore = create<ShopState>()(
 
         const order = state.salesOrders.find((o) => o.id === line.sales_order_id);
         if (!order) return { success: false, error: 'Order not found' };
-        if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
+        if (order.status === 'INVOICED' || order.status === 'CANCELLED') return { success: false, error: 'Cannot modify locked order' };
 
         const delta = line.quantity - newQty;
         const lineTotal = newQty * line.unit_price;
@@ -1707,7 +1708,7 @@ export const useShopStore = create<ShopState>()(
 
         const order = state.salesOrders.find((o) => o.id === line.sales_order_id);
         if (!order) return { success: false, error: 'Order not found' };
-        if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
+        if (order.status === 'INVOICED' || order.status === 'CANCELLED') return { success: false, error: 'Cannot modify locked order' };
 
         if (!Number.isFinite(newUnitPrice) || newUnitPrice < 0) {
           return { success: false, error: 'Invalid unit price' };
@@ -1732,7 +1733,7 @@ export const useShopStore = create<ShopState>()(
 
         const order = state.salesOrders.find((o) => o.id === line.sales_order_id);
         if (!order) return { success: false, error: 'Order not found' };
-        if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
+        if (order.status === 'INVOICED' || order.status === 'CANCELLED') return { success: false, error: 'Cannot modify locked order' };
 
         set((state) => ({
           salesOrderLines: state.salesOrderLines.filter((l) => l.id !== lineId),
@@ -1749,7 +1750,7 @@ export const useShopStore = create<ShopState>()(
 
         const order = state.salesOrders.find((o) => o.id === line.sales_order_id);
         if (!order) return { success: false, error: 'Order not found' };
-        if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
+        if (order.status === 'INVOICED' || order.status === 'CANCELLED') return { success: false, error: 'Cannot modify locked order' };
 
         set((state) => ({
           salesOrderLines: state.salesOrderLines.map((l) =>
@@ -1768,7 +1769,7 @@ export const useShopStore = create<ShopState>()(
 
         const order = state.salesOrders.find((o) => o.id === line.sales_order_id);
         if (!order) return { success: false, error: 'Order not found' };
-        if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
+        if (order.status === 'INVOICED' || order.status === 'CANCELLED') return { success: false, error: 'Cannot modify locked order' };
 
         set((state) => ({
           salesOrderLines: state.salesOrderLines.map((l) =>
@@ -1912,6 +1913,21 @@ export const useShopStore = create<ShopState>()(
           ),
         }));
 
+        return { success: true };
+      },
+
+      soSetStatus: (orderId, status) => {
+        const order = get().salesOrders.find((o) => o.id === orderId);
+        if (!order) return { success: false, error: 'Order not found' };
+        if (order.status === 'INVOICED') return { success: false, error: 'Cannot change invoiced order' };
+        const allowed: SalesOrderStatus[] = ['OPEN', 'ESTIMATE', 'PARTIAL', 'COMPLETED', 'CANCELLED'];
+        if (!allowed.includes(status)) return { success: false, error: 'Unsupported status' };
+        const timestamp = now();
+        set((state) => ({
+          salesOrders: state.salesOrders.map((o) =>
+            o.id === orderId ? { ...o, status, updated_at: timestamp } : o
+          ),
+        }));
         return { success: true };
       },
 

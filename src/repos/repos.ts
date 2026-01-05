@@ -159,6 +159,7 @@ export interface SalesOrdersRepo {
   soToggleCoreReturned: (lineId: string) => { success: boolean; error?: string };
   soConvertToOpen: (orderId: string) => { success: boolean; error?: string };
   soInvoice: (orderId: string) => { success: boolean; error?: string };
+  soSetStatus: (orderId: string, status: SalesOrderStatus) => { success: boolean; error?: string };
   updateSalesOrderNotes: (orderId: string, notes: string | null) => void;
   getSalesOrderLines: (orderId: string) => SalesOrderLine[];
   getSalesOrderChargeLines: (orderId: string) => SalesOrderChargeLine[];

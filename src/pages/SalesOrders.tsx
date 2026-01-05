@@ -15,7 +15,7 @@ export default function SalesOrders() {
   const repos = useRepos();
   const { salesOrders } = repos.salesOrders;
   const { customers } = repos.customers;
-  const [statusFilter, setStatusFilter] = useState<'open' | 'estimate' | 'invoiced' | 'deleted'>('open');
+  const [statusFilter, setStatusFilter] = useState<'open' | 'estimate' | 'invoiced' | 'partial' | 'completed' | 'cancelled' | 'deleted'>('open');
 
   const tableData = useMemo<SalesOrderRow[]>(() => {
     return salesOrders.map((order) => {
@@ -65,6 +65,12 @@ export default function SalesOrders() {
           return order.is_active !== false && order.status === 'ESTIMATE';
         case 'invoiced':
           return order.is_active !== false && order.status === 'INVOICED';
+        case 'partial':
+          return order.is_active !== false && order.status === 'PARTIAL';
+        case 'completed':
+          return order.is_active !== false && order.status === 'COMPLETED';
+        case 'cancelled':
+          return order.is_active !== false && order.status === 'CANCELLED';
         case 'deleted':
           return order.is_active === false;
         default:
@@ -93,7 +99,7 @@ export default function SalesOrders() {
       />
 
       <div className="flex justify-end gap-2 mb-4">
-        {(['open', 'estimate', 'invoiced', 'deleted'] as const).map((filter) => (
+        {(['open', 'estimate', 'partial', 'completed', 'invoiced', 'cancelled', 'deleted'] as const).map((filter) => (
           <Button
             key={filter}
             variant={statusFilter === filter ? 'default' : 'outline'}
@@ -102,7 +108,10 @@ export default function SalesOrders() {
           >
             {filter === 'open' && 'Open'}
             {filter === 'estimate' && 'Estimates'}
+            {filter === 'partial' && 'Partial'}
+            {filter === 'completed' && 'Completed'}
             {filter === 'invoiced' && 'Invoiced'}
+            {filter === 'cancelled' && 'Cancelled'}
             {filter === 'deleted' && 'Deleted'}
           </Button>
         ))}

@@ -248,7 +248,7 @@ export interface TimeEntry {
 export type CoreStatus = 'CORE_OWED' | 'CORE_RETURNED' | 'CORE_CREDITED' | 'NOT_APPLICABLE';
 
 // Sales Order Status
-export type SalesOrderStatus = 'ESTIMATE' | 'OPEN' | 'INVOICED';
+export type SalesOrderStatus = 'ESTIMATE' | 'OPEN' | 'PARTIAL' | 'COMPLETED' | 'CANCELLED' | 'INVOICED';
 
 // Sales Order
 export interface SalesOrder {

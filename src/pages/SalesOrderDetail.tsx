@@ -31,6 +31,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useRepos } from '@/repos';
@@ -42,6 +43,11 @@ import { calcPartPriceForLevel } from '@/domain/pricing/partPricing';
 import { getPurchaseOrderDerivedStatus } from '@/services/purchaseOrderStatus';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { PurchaseOrderPreviewDialog } from '@/components/purchase-orders/PurchaseOrderPreviewDialog';
+import type { SalesOrderStatus } from '@/types';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 
 export default function SalesOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -61,7 +67,12 @@ export default function SalesOrderDetail() {
     soMarkCoreReturned,
     soConvertToOpen,
     soInvoice,
+    soSetStatus,
     updateSalesOrderNotes,
+    getSalesOrderChargeLines,
+    addSalesOrderChargeLine,
+    updateSalesOrderChargeLine,
+    removeSalesOrderChargeLine,
   } = repos.salesOrders;
   const { purchaseOrders, purchaseOrderLines } = repos.purchaseOrders;
   const { customers, addCustomer } = repos.customers;
@@ -127,7 +138,38 @@ export default function SalesOrderDetail() {
 
   const isInvoiced = currentOrder?.status === 'INVOICED';
   const isEstimate = currentOrder?.status === 'ESTIMATE';
+  const isCancelled = currentOrder?.status === 'CANCELLED';
+  const isLocked = isInvoiced || isCancelled;
   const isCustomerOnHold = Boolean(customer?.credit_hold);
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
+  const [quickMode, setQuickMode] = useState(false);
+  const [quickPartSearch, setQuickPartSearch] = useState('');
+  const [quickQty, setQuickQty] = useState('1');
+  const quickPartInputRef = useRef<HTMLInputElement | null>(null);
+  const statusLabel =
+    currentOrder?.status === 'INVOICED'
+      ? 'Invoiced'
+      : currentOrder?.status === 'ESTIMATE'
+      ? 'Estimate'
+      : currentOrder?.status === 'PARTIAL'
+      ? 'Partial'
+      : currentOrder?.status === 'COMPLETED'
+      ? 'Completed'
+      : currentOrder?.status === 'CANCELLED'
+      ? 'Cancelled'
+      : 'Open';
+  const orderLines = currentOrder ? getSalesOrderLines(currentOrder.id) : [];
+  const quickInvoiceIssues = useMemo(() => {
+    const issues: string[] = [];
+    if (!currentOrder) issues.push('Order missing');
+    if (isLocked) issues.push('Order is locked');
+    if (currentOrder?.status === 'ESTIMATE') issues.push('Convert estimate before invoicing');
+    if (isCustomerOnHold) issues.push('Customer on credit hold');
+    if (!orderLines.length) issues.push('Add at least one line');
+    const hasInvalidQty = orderLines.some((l) => l.quantity <= 0);
+    if (hasInvalidQty) issues.push('Line quantities must be > 0');
+    return issues;
+  }, [currentOrder, isCustomerOnHold, isLocked, orderLines]);
 
   if (!isNew && !currentOrder) {
     return (
@@ -152,6 +194,10 @@ export default function SalesOrderDetail() {
 
   const handleAddPart = () => {
     if (!selectedPartId || !currentOrder) return;
+    if (isLocked) {
+      toast({ title: 'Locked', description: 'Order is locked and cannot be edited.', variant: 'destructive' });
+      return;
+    }
     const qty = parseInt(partQty) || 1;
     const result = soAddPartLine(currentOrder.id, selectedPartId, qty);
     if (result.success) {
@@ -165,7 +211,51 @@ export default function SalesOrderDetail() {
     }
   };
 
+  const quickSelectedPart = useMemo(() => {
+    const search = quickPartSearch.trim().toLowerCase();
+    if (!search) return null;
+    return (
+      activeParts.find(
+        (p) => p.part_number.toLowerCase() === search || (p.barcode && p.barcode.toLowerCase() === search)
+      ) || null
+    );
+  }, [activeParts, quickPartSearch]);
+
+  const handleQuickAdd = () => {
+    if (!currentOrder) return;
+    if (isLocked) {
+      toast({ title: 'Locked', description: 'Order is locked and cannot be edited.', variant: 'destructive' });
+      return;
+    }
+    if (!quickSelectedPart) {
+      toast({ title: 'Select a part', variant: 'destructive' });
+      return;
+    }
+    const qtyNum = Number(quickQty);
+    if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
+      toast({ title: 'Invalid quantity', description: 'Quantity must be greater than 0', variant: 'destructive' });
+      return;
+    }
+    const result = soAddPartLine(currentOrder.id, quickSelectedPart.id, qtyNum);
+    if (!result.success) {
+      toast({ title: 'Error', description: result.error, variant: 'destructive' });
+      return;
+    }
+    setQuickQty('1');
+    setQuickPartSearch('');
+    setIsDirty(true);
+    toast({ title: 'Line Added', description: `${quickSelectedPart.part_number} added/updated` });
+    setTimeout(() => {
+      quickPartInputRef.current?.focus();
+      quickPartInputRef.current?.select();
+    }, 0);
+  };
+
   const handleUpdateQty = (lineId: string, newQty: number) => {
+    if (isLocked) {
+      toast({ title: 'Locked', description: 'Order is locked and cannot be edited.', variant: 'destructive' });
+      return;
+    }
     if (newQty <= 0) {
       handleRemoveLine(lineId);
       return;
@@ -178,7 +268,22 @@ export default function SalesOrderDetail() {
     }
   };
 
+  const handleSetStatus = (status: SalesOrderStatus) => {
+    if (!currentOrder) return;
+    const result = soSetStatus(currentOrder.id, status);
+    if (!result.success) {
+      toast({ title: 'Error', description: result.error, variant: 'destructive' });
+      return;
+    }
+    setOrder((prev) => (prev && prev.id === currentOrder.id ? { ...prev, status } : prev || currentOrder));
+    toast({ title: 'Status Updated', description: `Order marked ${status.toLowerCase()}` });
+  };
+
   const handleRemoveLine = (lineId: string) => {
+    if (isLocked) {
+      toast({ title: 'Locked', description: 'Order is locked and cannot be edited.', variant: 'destructive' });
+      return;
+    }
     const result = soRemovePartLine(lineId);
     if (!result.success) {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
@@ -205,6 +310,26 @@ export default function SalesOrderDetail() {
     } else {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
+  };
+
+  const handleQuickInvoiceAndPrint = () => {
+    if (quickInvoiceIssues.length > 0 || !currentOrder) return;
+    if (currentOrder.status === 'ESTIMATE') {
+      const convert = soConvertToOpen(currentOrder.id);
+      if (!convert.success) {
+        toast({ title: 'Error', description: convert.error, variant: 'destructive' });
+        return;
+      }
+      setOrder((prev) => (prev && prev.id === currentOrder.id ? { ...prev, status: 'OPEN' } : prev || currentOrder));
+    }
+    const result = soInvoice(currentOrder.id);
+    if (!result.success) {
+      toast({ title: 'Error', description: result.error, variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'Order Invoiced' });
+    setPrintMode('invoice');
+    setTimeout(() => window.print(), 0);
   };
 
   const handleQuickAddCustomer = () => {
@@ -379,7 +504,6 @@ export default function SalesOrderDetail() {
     setCoreReturnLineId(null);
   };
 
-  const orderLines = currentOrder ? getSalesOrderLines(currentOrder.id) : [];
   const poLinesByPo = useMemo(() => {
     return purchaseOrderLines.reduce<Record<string, typeof purchaseOrderLines>>((acc, line) => {
       acc[line.purchase_order_id] = acc[line.purchase_order_id] || [];
@@ -494,13 +618,7 @@ export default function SalesOrderDetail() {
     <div className="page-container">
       <PageHeader
         title={currentOrder?.order_number || 'Sales Order'}
-        subtitle={
-          currentOrder?.status === 'INVOICED'
-            ? 'Invoiced'
-            : currentOrder?.status === 'ESTIMATE'
-            ? 'Estimate'
-            : 'Open'
-        }
+        subtitle={statusLabel}
         backTo="/sales-orders"
         description={
           unit ? (
@@ -515,50 +633,92 @@ export default function SalesOrderDetail() {
           ) : undefined
         }
         actions={
-          !isInvoiced ? (
-            <>
-              <Button variant="outline" onClick={() => window.print()}>
-                <Printer className="w-4 h-4 mr-2" />
-                Print
+          <div className="flex flex-wrap gap-2">
+            {currentOrder && <StatusBadge status={currentOrder.status} />}
+            {currentOrder?.order_number && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  await navigator.clipboard.writeText(currentOrder.order_number);
+                  toast({ title: 'Copied', description: 'Sales order number copied' });
+                }}
+              >
+                Copy SO #
               </Button>
-              <Button variant="outline" onClick={() => {
+            )}
+            <Button variant="outline" onClick={() => window.print()}>
+              <Printer className="w-4 h-4 mr-2" />
+              Print
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
                 setPrintMode('picklist');
                 setTimeout(() => window.print(), 0);
-              }}>
-                <Printer className="w-4 h-4 mr-2" />
-                Pick List
-              </Button>
-              {isEstimate ? (
-                <Button onClick={handleConvertToOpen}>
-                  <Save className="w-4 h-4 mr-2" />
-                  Convert to Sales Order
-                </Button>
-              ) : (
-                <Button
-                  onClick={() => setShowInvoiceDialog(true)}
-                  disabled={isCustomerOnHold}
-                  title={isCustomerOnHold ? 'Customer is on credit hold' : undefined}
-                >
-                  <FileCheck className="w-4 h-4 mr-2" />
-                  Invoice
-                </Button>
-              )}
-            </>
-          ) : (
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => window.print()}>
-                <Printer className="w-4 h-4 mr-2" />
-                Print
-              </Button>
-              <Button variant="outline" onClick={() => {
-                setPrintMode('picklist');
-                setTimeout(() => window.print(), 0);
-              }}>
-                <Printer className="w-4 h-4 mr-2" />
-                Pick List
-              </Button>
-            </div>
-          )
+              }}
+            >
+              <Printer className="w-4 h-4 mr-2" />
+              Pick List
+            </Button>
+            {!isLocked && (
+              <>
+                {isEstimate ? (
+                  <Button onClick={handleConvertToOpen}>
+                    <Save className="w-4 h-4 mr-2" />
+                    Convert to Sales Order
+                  </Button>
+                ) : (
+                  <>
+                    <Button variant="outline" onClick={() => handleSetStatus('PARTIAL')}>
+                      Mark Partial
+                    </Button>
+                    <Button variant="outline" onClick={() => handleSetStatus('COMPLETED')}>
+                      Mark Completed
+                    </Button>
+                    <AlertDialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive">
+                          <Save className="w-4 h-4 mr-2" />
+                          Cancel Order
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Cancel sales order?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This will lock the order but keep history. Inventory will not change.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Keep Order</AlertDialogCancel>
+                          <AlertDialogAction asChild>
+                            <Button
+                              variant="destructive"
+                              onClick={() => {
+                                handleSetStatus('CANCELLED');
+                                setCancelDialogOpen(false);
+                              }}
+                            >
+                              Cancel Order
+                            </Button>
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                    <Button
+                      onClick={() => setShowInvoiceDialog(true)}
+                      disabled={isCustomerOnHold}
+                      title={isCustomerOnHold ? 'Customer is on credit hold' : undefined}
+                    >
+                      <FileCheck className="w-4 h-4 mr-2" />
+                      Invoice
+                    </Button>
+                  </>
+                )}
+              </>
+            )}
+          </div>
         }
       />
 
@@ -567,6 +727,117 @@ export default function SalesOrderDetail() {
           <AlertTitle>Customer is on Credit Hold</AlertTitle>
           <AlertDescription>{customer?.credit_hold_reason || 'Resolve hold before invoicing.'}</AlertDescription>
         </Alert>
+      )}
+      {isCancelled && (
+        <Alert variant="destructive" className="mb-4">
+          <AlertTitle>Order Cancelled</AlertTitle>
+          <AlertDescription>This order is cancelled and cannot be edited.</AlertDescription>
+        </Alert>
+      )}
+
+      {!isLocked && (
+        <Card className="mb-4 p-4 space-y-3 no-print">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold">Quick Sale Mode</h3>
+                {quickMode && <Badge variant="secondary">Quick</Badge>}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Fast add and invoice with keyboard-friendly flow.
+              </p>
+            </div>
+            <Button
+              variant={quickMode ? 'default' : 'outline'}
+              onClick={() => {
+                setQuickMode((prev) => {
+                  const next = !prev;
+                  if (next) {
+                    setTimeout(() => quickPartInputRef.current?.focus(), 0);
+                  } else {
+                    setQuickPartSearch('');
+                    setQuickQty('1');
+                  }
+                  return next;
+                });
+              }}
+            >
+              {quickMode ? 'Exit Quick Mode' : 'Enter Quick Mode'}
+            </Button>
+          </div>
+          {quickMode && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-[2fr_auto_auto] gap-3 items-end">
+                <div className="space-y-1">
+                  <Label>Part or Barcode</Label>
+                  <Input
+                    ref={quickPartInputRef}
+                    value={quickPartSearch}
+                    onChange={(e) => {
+                      setQuickPartSearch(e.target.value);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleQuickAdd();
+                      } else if (e.key === 'Tab') {
+                        // default behavior ok
+                      }
+                    }}
+                    placeholder="Scan or type part number"
+                    autoFocus
+                  />
+                  {quickSelectedPart && (
+                    <p className="text-xs text-muted-foreground">
+                      {quickSelectedPart.part_number} — {quickSelectedPart.description || 'No description'}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <Label>Qty</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={quickQty}
+                    onChange={(e) => setQuickQty(e.target.value)}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleQuickAdd();
+                      } else if (e.key === 'Tab') {
+                        // allow tab
+                      }
+                    }}
+                    className="w-24"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="invisible">Add</Label>
+                  <Button onClick={handleQuickAdd} className="w-full">
+                    Add / Increment
+                  </Button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 items-center">
+                <Button
+                  onClick={handleQuickInvoiceAndPrint}
+                  disabled={quickInvoiceIssues.length > 0}
+                  title={quickInvoiceIssues[0] || undefined}
+                >
+                  Invoice + Print Receipt
+                </Button>
+                {quickInvoiceIssues.length > 0 && (
+                  <ul className="list-disc list-inside text-destructive text-xs">
+                    {quickInvoiceIssues.map((issue) => (
+                      <li key={issue}>{issue}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+        </Card>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 no-print">
@@ -630,7 +901,7 @@ export default function SalesOrderDetail() {
           <div className="mt-4 pt-4 border-t border-border">
             <div className="flex items-center justify-between mb-2">
               <span className="text-muted-foreground text-sm">Notes:</span>
-              {!isInvoiced && !isEditingNotes && (
+              {!isLocked && !isEditingNotes && (
                 <Button variant="ghost" size="sm" onClick={handleEditNotes}>
                   <Edit className="w-3 h-3" />
                 </Button>
@@ -663,7 +934,7 @@ export default function SalesOrderDetail() {
         <div className="lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold">Parts</h2>
-            {!isInvoiced && (
+            {!isLocked && (
               <Button size="sm" onClick={() => setAddPartDialogOpen(true)}>
                 <Plus className="w-4 h-4 mr-2" />
                 Add Part
@@ -682,7 +953,7 @@ export default function SalesOrderDetail() {
                   <TableHead className="text-right">Qty</TableHead>
                   <TableHead className="text-right">Price</TableHead>
                   <TableHead className="text-right">Total</TableHead>
-                  {!isInvoiced && <TableHead className="w-10"></TableHead>}
+                  {!isLocked && <TableHead className="w-10"></TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -698,7 +969,7 @@ export default function SalesOrderDetail() {
                         <TableCell className="font-mono">{part?.part_number || '-'}</TableCell>
                         <TableCell>{part?.description || '-'}</TableCell>
                         <TableCell className="text-center">
-                          {!isInvoiced ? (
+                          {!isLocked ? (
                             <Checkbox
                               checked={line.is_warranty}
                               onCheckedChange={() => {
@@ -724,12 +995,12 @@ export default function SalesOrderDetail() {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          {isInvoiced ? line.quantity : (
+                          {isLocked ? line.quantity : (
                             <Input type="number" min="1" value={line.quantity} onChange={(e) => handleUpdateQty(line.id, parseInt(e.target.value) || 0)} className="w-16 text-right" />
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          {isInvoiced ? (
+                          {isLocked ? (
                             `$${line.unit_price.toFixed(2)}`
                           ) : editingPriceLineId === line.id ? (
                             <div className="flex items-center justify-end gap-2">
@@ -799,13 +1070,13 @@ export default function SalesOrderDetail() {
                         <TableCell className="text-right font-medium">
                           {line.is_warranty ? <span className="text-muted-foreground">$0.00</span> : `$${line.line_total.toFixed(2)}`}
                         </TableCell>
-                        {!isInvoiced && (
+                        {!isLocked && (
                           <TableCell>
-                          <Button variant="ghost" size="icon" onClick={() => handleRemoveLine(line.id)} className="text-destructive hover:text-destructive">
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </TableCell>
-                      )}
+                            <Button variant="ghost" size="icon" onClick={() => handleRemoveLine(line.id)} className="text-destructive hover:text-destructive">
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </TableCell>
+                        )}
                       </TableRow>
                     );
                   })

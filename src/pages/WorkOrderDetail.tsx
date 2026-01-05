@@ -157,6 +157,20 @@ export default function WorkOrderDetail() {
     !!currentOrder &&
     scheduleItems.some((s) => s.source_ref_type === 'WORK_ORDER' && s.source_ref_id === currentOrder.id);
   const isSchedulable = !!currentOrder && ['OPEN', 'IN_PROGRESS'].includes(currentOrder.status);
+  const handleSendToSchedule = () => {
+    if (!currentOrder) return;
+    const res = schedulingRepo.ensureScheduleItemForWorkOrder(currentOrder);
+    if (!res?.item) {
+      toast({
+        title: 'Not scheduled',
+        description: res?.reason || 'Could not create schedule item',
+        variant: 'destructive',
+      });
+      return;
+    }
+    toast({ title: 'Sent to Scheduling', description: 'Work order added to schedule' });
+    navigate(`/scheduling?focusScheduleItemId=${res.item.id}&open=1`);
+  };
   useEffect(() => {
     if (currentOrder) {
       plasmaRepo.createForWorkOrder(currentOrder.id);
@@ -200,7 +214,7 @@ export default function WorkOrderDetail() {
   const chargeLines = currentOrder ? workOrderRepo.getWorkOrderChargeLines(currentOrder.id) : [];
   const fabData = currentOrder ? fabricationRepo.getByWorkOrder(currentOrder.id) : null;
   const fabJob = fabData?.job;
-  const fabLines = fabData?.lines ?? [];
+  const fabLines = useMemo(() => fabData?.lines ?? [], [fabData?.lines]);
   const fabChargeLine = chargeLines.find(
     (line) => line.source_ref_type === 'FAB_JOB' && line.source_ref_id === fabJob?.id
   );
@@ -263,6 +277,15 @@ export default function WorkOrderDetail() {
   const plasmaAttachments = plasmaJob ? plasmaRepo.attachments.list(plasmaJob.id) : [];
   const [dxfAssistOpen, setDxfAssistOpen] = useState(false);
 
+  // Lines
+  const allPartLines = currentOrder ? getWorkOrderPartLines(currentOrder.id) : [];
+  const laborLines = currentOrder ? getWorkOrderLaborLines(currentOrder.id) : [];
+  const otherChargeLines = chargeLines.filter(
+    (line) => line.source_ref_type !== 'PLASMA_JOB' && line.source_ref_type !== 'FAB_JOB'
+  );
+  const partLines = allPartLines.filter((l) => !l.is_core_refund_line);
+  const refundLines = allPartLines.filter((l) => l.is_core_refund_line);
+
   // Time tracking data
   const timeEntries = currentOrder ? getTimeEntriesByWorkOrder(currentOrder.id) : [];
   const totalMinutes = timeEntries.reduce((sum, te) => sum + te.total_minutes, 0);
@@ -272,7 +295,7 @@ export default function WorkOrderDetail() {
     const hasContent =
       isInvoiced ||
       chargeLines.length > 0 ||
-      partLines.length > 0 ||
+      allPartLines.length > 0 ||
       laborLines.length > 0 ||
       fabLines.length > 0 ||
       plasmaLines.length > 0 ||
@@ -280,10 +303,11 @@ export default function WorkOrderDetail() {
       !!plasmaJob?.posted_at;
     setActiveTab(hasContent ? 'overview' : 'parts');
   }, [
-    currentOrder?.id,
+    currentOrder,
     isInvoiced,
     chargeLines.length,
-    partLines.length,
+    // partLines is defined after this effect; use allPartLines length instead to avoid TDZ
+    allPartLines.length,
     laborLines.length,
     fabLines.length,
     plasmaLines.length,
@@ -749,9 +773,6 @@ export default function WorkOrderDetail() {
   const customer = customers.find((c) => c.id === (currentOrder?.customer_id || selectedCustomerId));
   const isCustomerOnHold = Boolean(customer?.credit_hold);
   const unit = units.find((u) => u.id === (currentOrder?.unit_id || selectedUnitId));
-  const allPartLines = currentOrder ? getWorkOrderPartLines(currentOrder.id) : [];
-  const laborLines = currentOrder ? getWorkOrderLaborLines(currentOrder.id) : [];
-  const otherChargeLines = chargeLines.filter((line) => line.source_ref_type !== 'PLASMA_JOB' && line.source_ref_type !== 'FAB_JOB');
   const priceLevel = customer?.price_level ?? 'RETAIL';
   const priceLevelLabel =
     customer?.price_level === 'WHOLESALE'
@@ -759,10 +780,6 @@ export default function WorkOrderDetail() {
       : customer?.price_level === 'FLEET'
       ? 'Fleet'
       : 'Retail';
-  
-  // Separate part lines and refund lines for display
-  const partLines = allPartLines.filter((l) => !l.is_core_refund_line);
-  const refundLines = allPartLines.filter((l) => l.is_core_refund_line);
   const partsSubtotal = partLines.reduce((sum, line) => sum + line.line_total, 0);
   const laborSubtotal = laborLines.reduce((sum, line) => sum + line.line_total, 0);
   const otherCharges = otherChargeLines.reduce((sum, line) => sum + line.total_price, 0);
@@ -974,6 +991,12 @@ export default function WorkOrderDetail() {
                 <Printer className="w-4 h-4 mr-2" />
                 Pick List
               </Button>
+              {isSchedulable && (
+                <Button variant="default" onClick={handleSendToSchedule}>
+                  <ClipboardList className="w-4 h-4 mr-2" />
+                  Send to Schedule
+                </Button>
+              )}
               {isEstimate ? (
                 <Button
                   variant="default"
@@ -987,29 +1010,6 @@ export default function WorkOrderDetail() {
                   }}
                 >
                   Convert to Work Order
-                </Button>
-              ) : isSchedulable && !isScheduled ? (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    const res = schedulingRepo.ensureScheduleItemForWorkOrder(currentOrder);
-                    if (!res?.item) {
-                      toast({
-                        title: 'Not scheduled',
-                        description: res?.reason || 'Could not create schedule item',
-                        variant: 'destructive',
-                      });
-                      return;
-                    }
-                    toast({ title: 'Pushed to Scheduling', description: 'Work order added to schedule' });
-                    // navigate('/scheduling'); // optional navigation
-                  }}
-                >
-                  Push to Scheduling
-                </Button>
-              ) : isSchedulable && isScheduled ? (
-                <Button variant="outline" onClick={() => navigate('/scheduling')}>
-                  View in Scheduling
                 </Button>
               ) : (
                 <Button

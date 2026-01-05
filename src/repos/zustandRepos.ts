@@ -433,6 +433,9 @@ export const zustandRepos: Repos = {
     soInvoice(orderId) {
       return useShopStore.getState().soInvoice(orderId);
     },
+    soSetStatus(orderId, status) {
+      return useShopStore.getState().soSetStatus(orderId, status);
+    },
     updateSalesOrderNotes(orderId, notes) {
       return useShopStore.getState().updateSalesOrderNotes(orderId, notes);
     },

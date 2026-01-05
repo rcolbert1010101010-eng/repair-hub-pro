@@ -182,7 +182,7 @@ export function PMSection({ unit }: PMSectionProps) {
   // Compute status for each schedule
   const computedSchedules = useMemo(() => {
     return schedules.map((s) => computePMStatus(s, unit.mileage, unit.hours));
-  }, [schedules, unit.mileage, unit.hours, pmSchedules]);
+  }, [schedules, unit.mileage, unit.hours]);
 
   // Summary counts
   const summary = useMemo(() => {

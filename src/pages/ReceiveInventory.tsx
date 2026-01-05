@@ -37,6 +37,7 @@ export default function ReceiveInventory() {
   const [lines, setLines] = useState<Line[]>([]);
   const [selectedPart, setSelectedPart] = useState('');
   const [selectedQty, setSelectedQty] = useState('1');
+  const qtyRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const partsById = useMemo(() => new Map(parts.map((p) => [p.id, p])), [parts]);
   const availableParts = useMemo(() => {
@@ -85,6 +86,20 @@ export default function ReceiveInventory() {
 
   const updateLineQty = (id: string, value: string) => {
     setLines((prev) => prev.map((l) => (l.id === id ? { ...l, qty: value } : l)));
+  };
+  const focusNextQty = (lineId: string, direction: 'forward' | 'backward' = 'forward') => {
+    const idx = lines.findIndex((l) => l.id === lineId);
+    if (idx === -1) return;
+    const start = direction === 'forward' ? idx + 1 : idx - 1;
+    const step = direction === 'forward' ? 1 : -1;
+    for (let i = start; i >= 0 && i < lines.length; i += step) {
+      const ref = qtyRefs.current[lines[i].id];
+      if (ref && !ref.disabled && !ref.readOnly) {
+        ref.focus();
+        ref.select?.();
+        return;
+      }
+    }
   };
 
   const removeLine = (id: string) => setLines((prev) => prev.filter((l) => l.id !== id));
@@ -256,6 +271,26 @@ export default function ReceiveInventory() {
                           className="w-24 ml-auto"
                           value={line.qty}
                           onChange={(e) => updateLineQty(line.id, e.target.value)}
+                          onFocus={(e) => e.currentTarget.select()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === 'Tab') {
+                              e.preventDefault();
+                              focusNextQty(line.id, e.shiftKey ? 'backward' : 'forward');
+                              return;
+                            }
+                            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'enter') {
+                              e.preventDefault();
+                              if (hasValidLines && !posting) handlePost();
+                              return;
+                            }
+                            if (e.key === 'Escape') {
+                              e.currentTarget.blur();
+                              return;
+                            }
+                          }}
+                          ref={(el) => {
+                            qtyRefs.current[line.id] = el;
+                          }}
                         />
                         {errors.length > 0 && (
                           <p className="text-xs text-destructive mt-1 text-right">{errors.join(' • ')}</p>

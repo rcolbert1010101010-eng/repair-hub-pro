@@ -28,7 +28,7 @@ export default function PlasmaProjectDetail() {
 
   const plasmaData = id ? plasmaRepo.get(id) : null;
   const job = plasmaData?.job;
-  const lines = plasmaData?.lines ?? [];
+  const lines = useMemo(() => plasmaData?.lines ?? [], [plasmaData?.lines]);
   const salesOrders = salesOrderRepo.salesOrders;
   const customers = customersRepo.customers;
   const [warnings, setWarnings] = useState<string[]>([]);
@@ -59,9 +59,10 @@ export default function PlasmaProjectDetail() {
 
   const isInvoiced = linkedSalesOrder?.status === 'INVOICED';
   const plasmaLocked = isInvoiced || (job ? job.status !== 'DRAFT' && job.status !== 'QUOTED' : false);
+  const plasmaLines = useMemo(() => lines, [lines]);
   const plasmaTotal = useMemo(
-    () => lines.reduce((sum, line) => sum + (line.sell_price_total ?? 0), 0),
-    [lines]
+    () => plasmaLines.reduce((sum, line) => sum + (line.sell_price_total ?? 0), 0),
+    [plasmaLines]
   );
   const plasmaAttachments = job ? plasmaRepo.attachments.list(job.id) : [];
 
