@@ -289,13 +289,18 @@ export function PMSection({ unit }: PMSectionProps) {
   };
 
   return (
-    <div className="space-y-6 mt-8">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Preventive Maintenance</h2>
-        <Button onClick={handleAddNew} size="sm">
-          <Plus className="w-4 h-4 mr-2" />
-          Add PM Schedule
-        </Button>
+    <div className="space-y-6">
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-xl font-semibold">Preventive Maintenance</h2>
+          <Button onClick={handleAddNew} size="sm" variant="outline" className="h-9 px-3">
+            <Plus className="w-4 h-4 mr-2" />
+            Add PM Schedule
+          </Button>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Keep schedules on track and generate work when due.
+        </p>
       </div>
 
       {/* PM Summary */}
@@ -303,36 +308,32 @@ export function PMSection({ unit }: PMSectionProps) {
         <CardHeader className="pb-3">
           <CardTitle className="text-base">PM Summary</CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center p-3 rounded-lg bg-muted/50">
-              <div className="text-2xl font-bold">{computedSchedules.length}</div>
-              <div className="text-sm text-muted-foreground">Total Schedules</div>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="rounded-lg border p-3 bg-destructive/5 border-destructive/30">
+              <p className="text-xs uppercase text-muted-foreground tracking-wide">Overdue</p>
+              <p className="text-3xl font-semibold text-destructive leading-tight">{summary.overdue}</p>
             </div>
-            <div className="text-center p-3 rounded-lg bg-destructive/10">
-              <div className="text-2xl font-bold text-destructive">{summary.overdue}</div>
-              <div className="text-sm text-muted-foreground">Overdue</div>
+            <div className="rounded-lg border p-3 bg-amber-50">
+              <p className="text-xs uppercase text-muted-foreground tracking-wide">Due Soon</p>
+              <p className="text-3xl font-semibold text-amber-600 leading-tight">{summary.dueSoon}</p>
             </div>
-            <div className="text-center p-3 rounded-lg bg-amber-500/10">
-              <div className="text-2xl font-bold text-amber-600">{summary.dueSoon}</div>
-              <div className="text-sm text-muted-foreground">Due Soon</div>
+            <div className="rounded-lg border p-3 bg-muted/40">
+              <p className="text-xs uppercase text-muted-foreground tracking-wide">Total Schedules</p>
+              <p className="text-3xl font-semibold leading-tight">{computedSchedules.length}</p>
             </div>
-            <div className="text-center p-3 rounded-lg bg-secondary">
-              <div className="text-2xl font-bold">{summary.ok}</div>
-              <div className="text-sm text-muted-foreground">OK</div>
+            <div className="rounded-lg border p-3 bg-secondary">
+              <p className="text-xs uppercase text-muted-foreground tracking-wide">On Track</p>
+              <p className="text-3xl font-semibold leading-tight">{summary.ok}</p>
             </div>
           </div>
 
           {nextUpcoming && (
-            <div className="mt-4 p-3 border rounded-lg">
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/50 p-3">
               <div className="text-sm text-muted-foreground">Next Upcoming</div>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="font-medium">{nextUpcoming.schedule.name}</span>
-                {getStatusBadge(nextUpcoming.status)}
-                <span className="text-sm text-muted-foreground">
-                  — Due: {formatNextDue(nextUpcoming)}
-                </span>
-              </div>
+              <span className="font-medium">{nextUpcoming.schedule.name}</span>
+              {getStatusBadge(nextUpcoming.status)}
+              <span className="text-sm text-muted-foreground">Due: {formatNextDue(nextUpcoming)}</span>
             </div>
           )}
         </CardContent>
@@ -345,8 +346,12 @@ export function PMSection({ unit }: PMSectionProps) {
         </CardHeader>
         <CardContent>
           {computedSchedules.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              No PM schedules configured. Add your first schedule to get started.
+            <div className="flex items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm text-muted-foreground">
+              <span>No PM schedules configured.</span>
+              <Button size="sm" onClick={handleAddNew}>
+                <Plus className="w-4 h-4 mr-2" />
+                Add PM Schedule
+              </Button>
             </div>
           ) : (
             <Table>
@@ -414,16 +419,16 @@ export function PMSection({ unit }: PMSectionProps) {
       </Card>
 
       {/* PM History */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">PM History</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {history.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground">
-              No PM history yet. Mark a schedule complete to add history.
-            </div>
-          ) : (
+      {history.length === 0 ? (
+        <div className="text-sm text-muted-foreground px-1">
+          No PM history yet. Mark a schedule complete to add history.
+        </div>
+      ) : (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">PM History</CardTitle>
+          </CardHeader>
+          <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -448,9 +453,9 @@ export function PMSection({ unit }: PMSectionProps) {
                   ))}
               </TableBody>
             </Table>
-          )}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Dialogs */}
       <PMScheduleDialog
