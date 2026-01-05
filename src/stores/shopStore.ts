@@ -48,6 +48,9 @@ import type {
   InventoryMovementType,
   InventoryRefType,
   ReceivingReceipt,
+  WorkOrderJobLine,
+  WorkOrderActivityEvent,
+  WorkOrderJobStatus,
 } from '@/types';
 import { calculateFabJob, fabricationPricingDefaults, type FabricationPricingSettings } from '@/services/fabricationPricingService';
 import { calculatePlasmaJob, plasmaPricingDefaults, type PlasmaPricingSettings } from '@/services/plasmaPricingService';
@@ -196,6 +199,8 @@ interface ShopState {
   workOrders: WorkOrder[];
   workOrderPartLines: WorkOrderPartLine[];
   workOrderLaborLines: WorkOrderLaborLine[];
+  workOrderJobLines: WorkOrderJobLine[];
+  workOrderActivity: WorkOrderActivityEvent[];
   createWorkOrder: (customerId: string, unitId: string) => WorkOrder;
   woAddPartLine: (orderId: string, partId: string, qty: number) => { success: boolean; error?: string };
   woUpdatePartQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
@@ -214,6 +219,15 @@ interface ShopState {
   updateWorkOrderPromisedAt?: (orderId: string, promisedAt: string | null) => void;
   getWorkOrderPartLines: (orderId: string) => WorkOrderPartLine[];
   getWorkOrderLaborLines: (orderId: string) => WorkOrderLaborLine[];
+  getWorkOrderJobLines: (orderId: string) => WorkOrderJobLine[];
+  getWorkOrderActivity: (orderId: string) => WorkOrderActivityEvent[];
+  woEnsureDefaultJobLine: (orderId: string) => WorkOrderJobLine;
+  woCreateJobLine: (orderId: string, title: string) => WorkOrderJobLine;
+  woUpdateJobLine: (
+    jobLineId: string,
+    patch: Partial<Pick<WorkOrderJobLine, 'title' | 'complaint' | 'cause' | 'correction' | 'status' | 'is_active'>>
+  ) => WorkOrderJobLine | null;
+  woSetJobStatus: (jobLineId: string, status: WorkOrderJobStatus) => WorkOrderJobLine | null;
   recalculateSalesOrderTotals: (orderId: string) => void;
   recalculateWorkOrderTotals: (orderId: string) => void;
   workOrderChargeLines: WorkOrderChargeLine[];
@@ -630,6 +644,14 @@ export const useShopStore = create<ShopState>()(
           get().addWorkOrderChargeLine(payload);
         }
         get().recalculateWorkOrderTotals(params.orderId);
+      };
+
+      const logWorkOrderActivity = (event: Omit<WorkOrderActivityEvent, 'id' | 'created_at'>) => {
+        const timestamp = now();
+        const record: WorkOrderActivityEvent = { ...event, id: generateId(), created_at: timestamp };
+        set((state) => ({
+          workOrderActivity: [...state.workOrderActivity, record],
+        }));
       };
 
       const createPOsForNegativeInventory = (
@@ -2277,22 +2299,23 @@ export const useShopStore = create<ShopState>()(
         get().recalculatePlasmaJob(plasmaJobId);
         return { success: true };
       },
+        // Work Orders
+        workOrders: [],
+        workOrderPartLines: [],
+        workOrderLaborLines: [],
+        workOrderJobLines: [],
+        workOrderActivity: [],
+        workOrderChargeLines: [],
+        fabJobs: [],
+        fabJobLines: [],
+        plasmaJobs: [],
+        plasmaJobLines: [],
+        plasmaAttachments: [],
+        remnants: [],
+        plasmaTemplates: [],
+        plasmaTemplateLines: [],
 
-      // Work Orders
-      workOrders: [],
-      workOrderPartLines: [],
-      workOrderLaborLines: [],
-      workOrderChargeLines: [],
-      fabJobs: [],
-      fabJobLines: [],
-      plasmaJobs: [],
-      plasmaJobLines: [],
-      plasmaAttachments: [],
-      remnants: [],
-      plasmaTemplates: [],
-      plasmaTemplateLines: [],
-
-      createWorkOrder: (customerId, unitId) => {
+        createWorkOrder: (customerId, unitId) => {
         const state = get();
         const customer = state.customers.find((c) => c.id === customerId);
         const taxRate = resolveTaxRateForCustomer(customer, state.settings);
@@ -2759,6 +2782,76 @@ export const useShopStore = create<ShopState>()(
         get().recalculateWorkOrderTotals(line.work_order_id);
         return { success: true };
       },
+
+      getWorkOrderJobLines: (workOrderId) =>
+        get().workOrderJobLines.filter((job) => job.work_order_id === workOrderId && job.is_active),
+      getWorkOrderActivity: (workOrderId) =>
+        get()
+          .workOrderActivity.filter((event) => event.work_order_id === workOrderId)
+          .sort((a, b) => b.created_at.localeCompare(a.created_at)),
+      woEnsureDefaultJobLine: (workOrderId) => {
+        const state = get();
+        const existing = state.workOrderJobLines.find((job) => job.work_order_id === workOrderId && job.is_active);
+        if (existing) return existing;
+        return get().woCreateJobLine(workOrderId, 'General');
+      },
+      woCreateJobLine: (workOrderId, title) => {
+        const timestamp = now();
+        const jobLine: WorkOrderJobLine = {
+          id: generateId(),
+          work_order_id: workOrderId,
+          title: title.trim() || 'General',
+          complaint: null,
+          cause: null,
+          correction: null,
+          status: 'INTAKE',
+          is_active: true,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+        set((state) => ({
+          workOrderJobLines: [...state.workOrderJobLines, jobLine],
+        }));
+        logWorkOrderActivity({
+          work_order_id: workOrderId,
+          job_line_id: jobLine.id,
+          type: 'JOB_CREATED',
+          message: `Created job: ${jobLine.title}`,
+        });
+        return jobLine;
+      },
+      woUpdateJobLine: (jobLineId, patch) => {
+        const state = get();
+        const job = state.workOrderJobLines.find((j) => j.id === jobLineId);
+        if (!job) return null;
+        const updated: WorkOrderJobLine = {
+          ...job,
+          ...patch,
+          title: patch.title !== undefined ? patch.title.trim() || job.title : job.title,
+          complaint: patch.complaint !== undefined ? patch.complaint : job.complaint,
+          cause: patch.cause !== undefined ? patch.cause : job.cause,
+          correction: patch.correction !== undefined ? patch.correction : job.correction,
+          status: patch.status ?? job.status,
+          is_active: patch.is_active ?? job.is_active,
+          updated_at: now(),
+        };
+        set((state) => ({
+          workOrderJobLines: state.workOrderJobLines.map((j) => (j.id === jobLineId ? updated : j)),
+        }));
+        const eventType: WorkOrderActivityEventType =
+          patch.status && patch.status !== job.status ? 'JOB_STATUS_CHANGED' : 'JOB_UPDATED';
+        logWorkOrderActivity({
+          work_order_id: job.work_order_id,
+          job_line_id: jobLineId,
+          type: eventType,
+          message:
+            eventType === 'JOB_STATUS_CHANGED'
+              ? `Job ${updated.title} status changed to ${updated.status}`
+              : `Updated job: ${updated.title}`,
+        });
+        return updated;
+      },
+      woSetJobStatus: (jobLineId, status) => get().woUpdateJobLine(jobLineId, { status }),
 
       woToggleLaborWarranty: (lineId) => {
         const state = get();
