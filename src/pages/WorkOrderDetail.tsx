@@ -46,7 +46,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useShopStore } from '@/stores/shopStore';
 import { useToast } from '@/hooks/use-toast';
-import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Clock, Square, Shield, RotateCcw, Check, Pencil, X as XIcon, Info } from 'lucide-react';
+import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Clock, Square, Shield, RotateCcw, Check, Pencil, X as XIcon, Info, ClipboardList } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { PrintWorkOrder, PrintWorkOrderPickList } from '@/components/print/PrintInvoice';
 import { calcPartPriceForLevel } from '@/domain/pricing/partPricing';

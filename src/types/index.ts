@@ -242,6 +242,7 @@ export interface TimeEntry {
   created_at: string;
   updated_at: string;
   technician?: Technician;
+  job_line_id?: string | null;
 }
 
 // Core Status
@@ -479,6 +480,60 @@ export interface WorkOrderChargeLine {
   updated_at: string;
 }
 
+export type WorkOrderJobStatus =
+  | 'INTAKE'
+  | 'DIAGNOSING'
+  | 'ESTIMATING'
+  | 'WAITING_APPROVAL'
+  | 'WAITING_PARTS'
+  | 'READY'
+  | 'IN_PROGRESS'
+  | 'QA'
+  | 'COMPLETE'
+  | 'WARRANTY';
+
+export interface WorkOrderJobLine {
+  id: string;
+  work_order_id: string;
+  title: string;
+  complaint: string | null;
+  cause: string | null;
+  correction: string | null;
+  status: WorkOrderJobStatus;
+  priority?: number | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  assigned_technician_id?: string | null;
+}
+
+export type WorkOrderActivityEventType =
+  | 'JOB_CREATED'
+  | 'JOB_UPDATED'
+  | 'JOB_STATUS_CHANGED'
+  | 'PART_ADDED'
+  | 'PART_QTY_CHANGED'
+  | 'PART_REMOVED'
+  | 'LABOR_ADDED'
+  | 'LABOR_UPDATED'
+  | 'LABOR_REMOVED'
+  | 'CLOCK_IN'
+  | 'CLOCK_OUT'
+  | 'WO_INVOICED'
+  | 'WO_STATUS_CHANGED'
+  | 'NOTES_UPDATED';
+
+export interface WorkOrderActivityEvent {
+  id: string;
+  work_order_id: string;
+  job_line_id?: string | null;
+  type: WorkOrderActivityEventType;
+  message: string;
+  created_at: string;
+  actor_technician_id?: string | null;
+  meta?: Record<string, unknown>;
+}
+
 // Work Order
 export interface WorkOrder {
   id: string;
@@ -526,6 +581,7 @@ export interface WorkOrderPartLine {
   created_at: string;
   updated_at: string;
   part?: Part;
+  job_line_id?: string | null;
 }
 
 // Work Order Labor Line
@@ -540,6 +596,7 @@ export interface WorkOrderLaborLine {
   technician_id: string | null;
   created_at: string;
   updated_at: string;
+  job_line_id?: string | null;
 }
 
 // Scheduling
