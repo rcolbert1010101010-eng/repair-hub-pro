@@ -1479,40 +1479,6 @@ export default function WorkOrderDetail() {
               <p className="text-sm">{currentOrder?.notes || '-'}</p>
             )}
           </div>
-
-          {/* Time Tracking Section */}
-          {!isInvoiced && activeTechnicians.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-border">
-              <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                <Clock className="w-4 h-4" />
-                Time Tracking
-              </h3>
-              <div className="space-y-2">
-                {activeTechnicians.map((tech) => {
-                  const activeEntry = getActiveTimeEntry(tech.id);
-                  const isOnThisOrder = activeEntry?.work_order_id === currentOrder?.id;
-                  
-                  return (
-                    <div key={tech.id} className="flex items-center justify-between text-sm">
-                      <span>{tech.name}</span>
-                      {isOnThisOrder ? (
-                        <Button size="sm" variant="destructive" onClick={() => handleClockOut(tech.id)}>
-                          <Square className="w-3 h-3 mr-1" />
-                          Clock Out
-                        </Button>
-                      ) : (
-                        <Button size="sm" variant="outline" onClick={() => handleClockIn(tech.id)} disabled={!!activeEntry}>
-                          <Clock className="w-3 h-3 mr-1" />
-                          {activeEntry ? 'Busy' : 'Clock In'}
-                        </Button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              <p className="text-xs text-muted-foreground mt-3">Total tracked: {totalHours} hrs</p>
-            </div>
-          )}
         </div>
 
         {/* Parts & Labor */}
