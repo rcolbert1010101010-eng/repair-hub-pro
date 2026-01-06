@@ -1844,7 +1844,7 @@ export default function WorkOrderDetail() {
                         jobTechnicianSelection[job.id] || activeTechnicians[0]?.id || '';
                       return (
                         <Card key={job.id} className="border">
-                          <CardContent className="space-y-3">
+                          <CardContent className="p-4 pt-4 space-y-3">
                             <div className="flex flex-wrap gap-2">
                               <Input
                                 value={draft?.title ?? job.title}
@@ -1964,7 +1964,7 @@ export default function WorkOrderDetail() {
                                 Margin: ${jobSummary.margin.toFixed(2)} ({jobSummary.marginPercent.toFixed(1)}%)
                               </span>
                             </div>
-                            <div className="space-y-4">
+                            <div className="space-y-2">
                               {readiness.readiness === 'MISSING' && job.status !== 'WAITING_PARTS' && (
                                 <Alert variant="destructive" className="border-destructive/70 bg-destructive/10 text-destructive">
                                   <div className="flex flex-wrap items-center justify-between gap-2">

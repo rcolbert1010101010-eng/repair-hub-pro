@@ -691,6 +691,12 @@ export const useShopStore = create<ShopState>()(
         return Math.max(Math.round((endMs - startMs) / 1000), 0);
       };
 
+      const deriveTechnicianKey = (technicianId?: string | null, technicianName?: string | null) => {
+        if (technicianId) return `id:${technicianId}`;
+        if (technicianName) return `name:${technicianName}`;
+        return null;
+      };
+
       const finishTimeEntry = (entry: WorkOrderTimeEntry) => {
         const endedAt = now();
         const seconds = calculateEntrySeconds(entry, endedAt);
@@ -2902,15 +2908,9 @@ export const useShopStore = create<ShopState>()(
 
         const technician = technicianId ? state.technicians.find((t) => t.id === technicianId) : undefined;
         const techName = technicianName ?? technician?.name ?? null;
-
-        const activeEntry = state.workOrderTimeEntries.find(
-          (entry) =>
-            entry.work_order_id === workOrderId &&
-            entry.technician_id === technicianId &&
-            entry.ended_at == null
-        );
-        if (activeEntry) {
-          const finished = finishTimeEntry(activeEntry);
+        const techKey = deriveTechnicianKey(technicianId ?? null, techName ?? null);
+        const closeMatchingEntry = (entry: WorkOrderTimeEntry) => {
+          const finished = finishTimeEntry(entry);
           const finishedJob = state.workOrderJobLines.find((j) => j.id === finished.job_line_id);
           logWorkOrderActivity({
             work_order_id: finished.work_order_id,
@@ -2920,6 +2920,16 @@ export const useShopStore = create<ShopState>()(
               finishedJob?.title ?? 'Job'
             }`,
           });
+        };
+
+        if (techKey) {
+          state.workOrderTimeEntries
+            .filter(
+              (entry) =>
+                entry.ended_at == null &&
+                deriveTechnicianKey(entry.technician_id ?? null, entry.technician_name ?? null) === techKey
+            )
+            .forEach(closeMatchingEntry);
         }
 
         const timestamp = now();
