@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -25,22 +27,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter as ModalFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogClose,
-} from '@/components/ui/dialog';
 import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, Plus, Trash2, PackageCheck, Lock, ChevronsUpDown } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { getPurchaseOrderDerivedStatus } from '@/services/purchaseOrderStatus';
 import { StatusBadge } from '@/components/ui/status-badge';
+
+const formatCurrency = (value: number) => `$${value.toFixed(2)}`;
 
 export default function PurchaseOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -86,7 +80,6 @@ export default function PurchaseOrderDetail() {
   const [woStatusFilter, setWoStatusFilter] = useState<'all' | 'open' | 'estimate' | 'invoiced'>('open');
   const [showLinkConflictDialog, setShowLinkConflictDialog] = useState(false);
   const [showInvoicedDialog, setShowInvoicedDialog] = useState(false);
-  const [openWorkOrderPreview, setOpenWorkOrderPreview] = useState(false);
 
   const currentOrder = order || purchaseOrders.find((o) => o.id === id);
   const activeVendors = vendors.filter((v) => v.is_active);
@@ -149,11 +142,50 @@ export default function PurchaseOrderDetail() {
     }
   };
 
-  const lines = currentOrder ? getPurchaseOrderLines(currentOrder.id) : [];
+  const lines = useMemo(
+    () => (currentOrder ? getPurchaseOrderLines(currentOrder.id) : []),
+    [currentOrder, getPurchaseOrderLines]
+  );
   const vendor = vendors.find((v) => v.id === currentOrder?.vendor_id);
   const allReceived = lines.length > 0 && lines.every((l) => l.received_quantity >= l.ordered_quantity);
   const derivedStatus = currentOrder ? getPurchaseOrderDerivedStatus(currentOrder, lines) : 'OPEN';
   const linksLocked = derivedStatus === 'PARTIALLY_RECEIVED' || derivedStatus === 'RECEIVED';
+  const lineSummary = useMemo(() => {
+    const totals = {
+      totalLines: lines.length,
+      totalOrdered: 0,
+      totalReceived: 0,
+      totalRemaining: 0,
+      totalCost: 0,
+    };
+
+    lines.forEach((line) => {
+      totals.totalOrdered += line.ordered_quantity;
+      totals.totalReceived += line.received_quantity;
+      const remaining = Math.max(line.ordered_quantity - line.received_quantity, 0);
+      totals.totalRemaining += remaining;
+      totals.totalCost += (line.unit_cost ?? 0) * line.ordered_quantity;
+    });
+
+    return totals;
+  }, [lines]);
+  const linksDirty =
+    linkSalesOrderId !== (currentOrder?.sales_order_id || '') ||
+    linkWorkOrderId !== (currentOrder?.work_order_id || '');
+  const hasRemainingQty = lineSummary.totalRemaining > 0;
+  const derivedStatusLabel =
+    derivedStatus === 'PARTIALLY_RECEIVED'
+      ? 'Partially Received'
+      : derivedStatus === 'RECEIVED'
+      ? 'Received'
+      : 'Open';
+  const tableColumnCount = 6 + (isClosed ? 0 : 1);
+  const linkStatusMessage = linksLocked
+    ? 'Links locked once a PO is partially received or received.'
+    : linksDirty
+    ? 'Unsaved link changes.'
+    : 'Links are synced.';
+  const linkStatusBadge = linksLocked ? 'Locked' : linksDirty ? 'Unsaved' : 'Synced';
 
   useEffect(() => {
     setLinkSalesOrderId(currentOrder?.sales_order_id || '');
@@ -337,89 +369,106 @@ export default function PurchaseOrderDetail() {
   }
 
   return (
-    <div className="page-container">
+    <div className="page-container space-y-6">
       <PageHeader
         title={currentOrder?.po_number || 'Purchase Order'}
-        subtitle={isClosed ? 'Closed' : derivedStatus === 'PARTIALLY_RECEIVED' ? 'Partially Received' : 'Open'}
+        subtitle={
+          <div className="flex items-center gap-2">
+            <StatusBadge status={currentOrder?.status || 'OPEN'} />
+            <Badge variant="outline" className="text-xs uppercase tracking-wide">
+              {derivedStatusLabel}
+            </Badge>
+          </div>
+        }
+        description={
+          <p className="text-xs text-muted-foreground">
+            Vendor: {vendor?.vendor_name || 'Unassigned vendor'}
+          </p>
+        }
         backTo="/purchase-orders"
         actions={
-          !isClosed && (
-            <>
-              <Button size="sm" variant="outline" onClick={() => navigate(`/receiving?poId=${currentOrder?.id}`)}>
+          <div className="flex items-center gap-2">
+            {currentOrder && hasRemainingQty && (
+              <Button size="sm" onClick={() => navigate(`/receiving?poId=${currentOrder.id}`)}>
                 Receive
               </Button>
-              <Button size="sm" onClick={() => setAddPartOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" />
-                Add Part
+            )}
+            <Button size="sm" variant="outline" onClick={() => setAddPartOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              Add Part
+            </Button>
+            {allReceived && (
+              <Button size="sm" variant="outline" onClick={() => setShowCloseDialog(true)}>
+                Close PO
               </Button>
-              {allReceived && (
-                <Button onClick={() => setShowCloseDialog(true)}>
-                  <Lock className="w-4 h-4 mr-2" />
-                  Close PO
-                </Button>
-              )}
-            </>
-          )
+            )}
+          </div>
         }
       />
 
-      <div className="form-section mb-6 space-y-4 overflow-hidden w-full max-w-full">
-        <p className="text-sm text-muted-foreground">
-          Vendor:{' '}
-          <span className="font-medium text-foreground">
-            {vendor?.vendor_name}
-          </span>
-        </p>
-        {currentOrder && (
-          <div className="space-y-3">
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <div className="flex items-center justify-between gap-2 min-h-[24px]">
-                  <span className="text-sm text-muted-foreground min-w-0">Linked Sales Order</span>
-                  {currentOrder.sales_order_id ? (
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button variant="link" size="sm">
-                          View
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Sales Order Preview</DialogTitle>
-                          <DialogDescription className="space-y-1">
-                            <p className="font-medium text-foreground">{linkedSalesOrder?.order_number || linkedSalesOrder?.id}</p>
-                            <StatusBadge status={linkedSalesOrder?.status || 'OPEN'} />
-                          </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">Customer</span>
-                            <span className="font-medium">{linkedSalesCustomer?.company_name || '-'}</span>
-                          </div>
-                        </div>
-                        <ModalFooter>
-                          <DialogClose asChild>
-                            <Button variant="ghost">Close</Button>
-                          </DialogClose>
-                          <Button
-                            onClick={() => navigate(`/sales-orders/${currentOrder.sales_order_id}`)}
-                          >
-                            Open Sales Order
-                          </Button>
-                        </ModalFooter>
-                      </DialogContent>
-                    </Dialog>
-                  ) : (
-                    <span className="text-xs text-muted-foreground opacity-70">None</span>
-                  )}
-                </div>
+      <div className="flex flex-wrap gap-2 text-xs">
+        <Badge variant="outline" className="px-2 py-1">
+          Lines {lineSummary.totalLines}
+        </Badge>
+        <Badge variant="outline" className="px-2 py-1">
+          Ordered {lineSummary.totalOrdered}
+        </Badge>
+        <Badge variant="outline" className="px-2 py-1">
+          Received {lineSummary.totalReceived}
+        </Badge>
+        <Badge variant={lineSummary.totalRemaining > 0 ? 'destructive' : 'secondary'} className="px-2 py-1">
+          Remaining {lineSummary.totalRemaining}
+        </Badge>
+        <Badge variant="outline" className="px-2 py-1">
+          Total Cost {formatCurrency(lineSummary.totalCost)}
+        </Badge>
+      </div>
+
+      <Card className="overflow-hidden">
+        <CardContent className="p-4">
+          <div className="grid grid-cols-12 gap-x-4 gap-y-4">
+            <div className="col-span-12 lg:col-span-4">
+              <div className="flex items-center justify-between h-5">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground leading-none">Vendor</span>
+                <span aria-hidden="true" className="text-xs leading-none invisible">
+                  .
+                </span>
+              </div>
+              <div className="mt-2">
+                <Input
+                  value={vendor?.vendor_name || 'Unassigned vendor'}
+                  disabled
+                  readOnly
+                  className="h-10 w-full"
+                />
+              </div>
+            </div>
+            <div className="col-span-12 lg:col-span-5">
+              <div className="flex items-center justify-between h-5">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground leading-none">
+                  Linked Sales Order
+                </span>
+                {linkedSalesOrder ? (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="p-0 leading-none h-5"
+                    onClick={() => navigate(`/sales-orders/${linkedSalesOrder.id}`)}
+                  >
+                    View
+                  </Button>
+                ) : (
+                  <span className="text-xs font-medium text-muted-foreground leading-none opacity-70">None</span>
+                )}
+              </div>
+              <div className="mt-2">
                 <Popover open={openSalesOrderPicker} onOpenChange={setOpenSalesOrderPicker}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
                       role="combobox"
                       aria-expanded={openSalesOrderPicker}
-                      className="w-full justify-between h-9"
+                      className="w-full justify-between h-10"
                       disabled={linksLocked}
                     >
                       {getSalesOrderLabel(linkSalesOrderId)}
@@ -458,20 +507,18 @@ export default function PurchaseOrderDetail() {
                           >
                             None
                           </CommandItem>
-                          {salesOrderOptions.map((so) => {
-                            return (
-                              <CommandItem
-                                key={so.id}
-                                value={so.searchText}
-                                onSelect={() => {
-                                  setLinkSalesOrderId(so.id);
-                                  setOpenSalesOrderPicker(false);
-                                }}
-                              >
-                                {so.label}
-                              </CommandItem>
-                            );
-                          })}
+                          {salesOrderOptions.map((so) => (
+                            <CommandItem
+                              key={so.id}
+                              value={so.searchText}
+                              onSelect={() => {
+                                setLinkSalesOrderId(so.id);
+                                setOpenSalesOrderPicker(false);
+                              }}
+                            >
+                              {so.label}
+                            </CommandItem>
+                          ))}
                           {salesOrderOptions.length === 0 && (
                             <div className="px-2 py-1.5 text-sm text-muted-foreground">No results</div>
                           )}
@@ -480,69 +527,39 @@ export default function PurchaseOrderDetail() {
                     </Command>
                   </PopoverContent>
                 </Popover>
-                {conflictingSalesOrderPo && (
-                  <p className="text-sm text-destructive">
-                    This sales order is already linked to PO {conflictingSalesOrderPo.po_number || conflictingSalesOrderPo.id}.
-                  </p>
+              </div>
+              {conflictingSalesOrderPo && (
+                <p className="text-xs text-destructive">
+                  This sales order is already linked to PO {conflictingSalesOrderPo.po_number || conflictingSalesOrderPo.id}.
+                </p>
+              )}
+            </div>
+            <div className="col-span-12 lg:col-span-3">
+              <div className="flex items-center justify-between h-5">
+                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground leading-none">
+                  Linked Work Order
+                </span>
+                {linkedWorkOrder ? (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="p-0 leading-none h-5"
+                    onClick={() => navigate(`/work-orders/${linkedWorkOrder.id}`)}
+                  >
+                    View
+                  </Button>
+                ) : (
+                  <span className="text-xs font-medium text-muted-foreground leading-none opacity-70">None</span>
                 )}
               </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center justify-between gap-2 min-h-[24px]">
-                  <span className="text-sm text-muted-foreground min-w-0">Linked Work Order</span>
-                  {currentOrder.work_order_id ? (
-                    <Dialog open={openWorkOrderPreview} onOpenChange={setOpenWorkOrderPreview}>
-                      <DialogTrigger asChild>
-                        <Button variant="link" size="sm">
-                          View
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Work Order Preview</DialogTitle>
-                          <DialogDescription className="space-y-1">
-                            <p className="font-medium text-foreground">{linkedWorkOrder?.order_number || linkedWorkOrder?.id}</p>
-                            <StatusBadge status={linkedWorkOrder?.status || 'OPEN'} />
-                          </DialogDescription>
-                        </DialogHeader>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">Customer</span>
-                            <span className="font-medium">{linkedWorkCustomer?.company_name || '-'}</span>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-muted-foreground">Unit</span>
-                            <span className="font-medium">{linkedWorkUnitLabel}</span>
-                          </div>
-                        </div>
-                        <ModalFooter>
-                          <DialogClose asChild>
-                            <Button variant="ghost">Close</Button>
-                          </DialogClose>
-                          <Button
-                            onClick={() => {
-                              if (linkedWorkOrder?.id) {
-                                navigate(`/work-orders/${linkedWorkOrder.id}`);
-                                setOpenWorkOrderPreview(false);
-                              }
-                            }}
-                          >
-                            Open Work Order
-                          </Button>
-                        </ModalFooter>
-                      </DialogContent>
-                    </Dialog>
-                  ) : (
-                    <span className="text-xs text-muted-foreground opacity-70">None</span>
-                  )}
-                </div>
+              <div className="mt-2">
                 <Popover open={openWorkOrderPicker} onOpenChange={setOpenWorkOrderPicker}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
                       role="combobox"
                       aria-expanded={openWorkOrderPicker}
-                      className="w-full justify-between h-9"
+                      className="w-full justify-between h-10"
                       disabled={linksLocked}
                     >
                       {getWorkOrderLabel(linkWorkOrderId)}
@@ -581,20 +598,18 @@ export default function PurchaseOrderDetail() {
                           >
                             None
                           </CommandItem>
-                          {workOrderOptions.map((wo) => {
-                            return (
-                              <CommandItem
-                                key={wo.id}
-                                value={wo.searchText}
-                                onSelect={() => {
-                                  setLinkWorkOrderId(wo.id);
-                                  setOpenWorkOrderPicker(false);
-                                }}
-                              >
-                                {wo.label}
-                              </CommandItem>
-                            );
-                          })}
+                          {workOrderOptions.map((wo) => (
+                            <CommandItem
+                              key={wo.id}
+                              value={wo.searchText}
+                              onSelect={() => {
+                                setLinkWorkOrderId(wo.id);
+                                setOpenWorkOrderPicker(false);
+                              }}
+                            >
+                              {wo.label}
+                            </CommandItem>
+                          ))}
                           {workOrderOptions.length === 0 && (
                             <div className="px-2 py-1.5 text-sm text-muted-foreground">No results</div>
                           )}
@@ -603,59 +618,163 @@ export default function PurchaseOrderDetail() {
                     </Command>
                   </PopoverContent>
                 </Popover>
-                {conflictingWorkOrderPo && (
-                  <p className="text-sm text-destructive">
-                    This work order is already linked to PO {conflictingWorkOrderPo.po_number || conflictingWorkOrderPo.id}.
-                  </p>
-                )}
+              </div>
+              {conflictingWorkOrderPo && (
+                <p className="text-xs text-destructive">
+                  This work order is already linked to PO {conflictingWorkOrderPo.po_number || conflictingWorkOrderPo.id}.
+                </p>
+              )}
+            </div>
+            <div className="col-span-12 space-y-1">
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Link Status</p>
+                  <p className="text-sm text-muted-foreground">{linkStatusMessage}</p>
+                </div>
+                <Badge variant="outline" className="text-[11px] h-6 px-2 py-0.5 uppercase tracking-wide">
+                  {linkStatusBadge}
+                </Badge>
               </div>
             </div>
-            <div className="flex w-full max-w-full flex-wrap items-center gap-2 justify-end">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleSaveLinks}
-                className="shrink-0"
-                disabled={linksLocked}
-              >
+          </div>
+          {linksDirty && (
+            <div className="mt-4 border-t border-border pt-3 flex justify-end">
+              <Button size="sm" variant="outline" onClick={handleSaveLinks} disabled={linksLocked}>
                 Save Links
               </Button>
             </div>
-            {linksLocked && (
-              <p className="text-xs text-muted-foreground">
-                Links can’t be changed once a PO is partially received or received.
-              </p>
-            )}
-          </div>
-        )}
+          )}
+        </CardContent>
+      </Card>
 
-        {currentOrder && (
-          <div className="space-y-2 pt-2 border-t border-border">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium">Returns</h3>
-              <Button size="sm" variant="outline" onClick={handleCreateReturnForPo}>
-                Create Return for this PO
-              </Button>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,1.15fr)]">
+        <Card className="overflow-hidden">
+          <CardHeader className="flex items-center justify-between gap-2">
+            <CardTitle className="text-base font-semibold">PO Lines</CardTitle>
+            <Badge variant="secondary" className="text-xs px-2 py-1">
+              {lineSummary.totalLines} lines
+            </Badge>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="table-container">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Part #</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-right">Ordered</TableHead>
+                    <TableHead className="text-right">Received</TableHead>
+                    <TableHead className="text-right">Remaining</TableHead>
+                    <TableHead className="text-right">Unit Cost</TableHead>
+                    {!isClosed && <TableHead className="text-right w-32">Actions</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {lines.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={tableColumnCount} className="text-center py-8 text-muted-foreground space-y-3">
+                        <p>No parts added yet.</p>
+                        <Button size="sm" variant="outline" onClick={() => setAddPartOpen(true)}>
+                          <Plus className="w-3 h-3 mr-1" />
+                          Add Part
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    lines.map((line) => {
+                      const part = parts.find((p) => p.id === line.part_id);
+                      const remaining = Math.max(line.ordered_quantity - line.received_quantity, 0);
+                      const cost = line.unit_cost ?? 0;
+                      return (
+                        <TableRow key={line.id}>
+                          <TableCell className="font-mono">{part?.part_number}</TableCell>
+                          <TableCell>{part?.description || '-'}</TableCell>
+                          <TableCell className="text-right">{line.ordered_quantity}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex flex-col items-end gap-0.5">
+                              <span className="font-mono">{line.received_quantity}</span>
+                              <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                                {line.received_quantity}/{line.ordered_quantity}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Badge variant={remaining > 0 ? 'destructive' : 'secondary'} className="text-xs px-2 py-0.5">
+                              {remaining}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">{formatCurrency(cost)}</TableCell>
+                          {!isClosed && (
+                            <TableCell>
+                              <div className="flex items-center justify-end gap-2">
+                                {remaining > 0 ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      setReceiveLineId(line.id);
+                                      setReceiveQty(String(remaining));
+                                    }}
+                                  >
+                                    <PackageCheck className="w-3 h-3 mr-1" />
+                                    Receive
+                                  </Button>
+                                ) : (
+                                  <Badge variant="secondary" className="text-xs px-2 py-0.5">
+                                    Received
+                                  </Badge>
+                                )}
+                                {line.received_quantity === 0 && (
+                                  <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    className="text-destructive"
+                                    onClick={() => poRemoveLine(line.id)}
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
             </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base font-semibold">Returns</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
             {poReturns.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No returns linked to this PO.</p>
+              <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+                <span>No returns linked to this PO.</span>
+                <Button size="sm" variant="outline" onClick={handleCreateReturnForPo}>
+                  Create Return
+                </Button>
+              </div>
             ) : (
               <div className="space-y-2">
                 {poReturns.map((ret) => (
                   <div key={ret.id} className="flex items-center justify-between gap-2 text-sm">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono">{ret.rma_number || ret.id}</span>
+                      <span className="font-mono text-xs">{ret.rma_number || ret.id}</span>
                       <StatusBadge status={ret.status} />
                     </div>
-                    <Button variant="outline" size="sm" onClick={() => navigate(`/returns/${ret.id}`)}>
-                      Open
+                    <Button variant="ghost" size="sm" onClick={() => navigate(`/returns/${ret.id}`)}>
+                      View
                     </Button>
                   </div>
                 ))}
               </div>
             )}
-          </div>
-        )}
+          </CardContent>
+        </Card>
       </div>
 
       <AlertDialog open={showInvoicedDialog} onOpenChange={setShowInvoicedDialog}>
@@ -663,7 +782,7 @@ export default function PurchaseOrderDetail() {
           <AlertDialogHeader>
             <AlertDialogTitle>Linking to an Invoiced Order</AlertDialogTitle>
             <AlertDialogDescription>
-              You’re about to link this Purchase Order to an invoiced Sales/Work Order. This is allowed, but double-check it’s intentional.
+              You're about to link this Purchase Order to an invoiced Sales/Work Order. This is allowed, but double-check it's intentional.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -717,74 +836,6 @@ export default function PurchaseOrderDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      <div className="table-container">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Part #</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead className="text-right">Ordered</TableHead>
-              <TableHead className="text-right">Received</TableHead>
-              <TableHead className="text-right">Unit Cost</TableHead>
-              {!isClosed && <TableHead className="w-32">Actions</TableHead>}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {lines.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                  No parts added
-                </TableCell>
-              </TableRow>
-            ) : (
-              lines.map((line) => {
-                const part = parts.find((p) => p.id === line.part_id);
-                const remaining = line.ordered_quantity - line.received_quantity;
-                return (
-                  <TableRow key={line.id}>
-                    <TableCell className="font-mono">{part?.part_number}</TableCell>
-                    <TableCell>{part?.description || '-'}</TableCell>
-                    <TableCell className="text-right">{line.ordered_quantity}</TableCell>
-                    <TableCell className="text-right">{line.received_quantity}</TableCell>
-                    <TableCell className="text-right">${line.unit_cost.toFixed(2)}</TableCell>
-                    {!isClosed && (
-                      <TableCell>
-                        <div className="flex gap-2">
-                          {remaining > 0 && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                setReceiveLineId(line.id);
-                                setReceiveQty(String(remaining));
-                              }}
-                            >
-                              <PackageCheck className="w-3 h-3 mr-1" />
-                              Receive
-                            </Button>
-                          )}
-                          {line.received_quantity === 0 && (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="text-destructive"
-                              onClick={() => poRemoveLine(line.id)}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
       {/* Add Part Dialog */}
       <QuickAddDialog
         open={addPartOpen}

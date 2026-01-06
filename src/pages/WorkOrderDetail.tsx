@@ -46,7 +46,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useShopStore } from '@/stores/shopStore';
 import { useToast } from '@/hooks/use-toast';
-import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Clock, Square, Shield, RotateCcw, Check, Pencil, X as XIcon, Info } from 'lucide-react';
+import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Clock, Square, Shield, RotateCcw, Check, Pencil, X as XIcon, Info, ClipboardList } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { PrintWorkOrder, PrintWorkOrderPickList } from '@/components/print/PrintInvoice';
 import { calcPartPriceForLevel } from '@/domain/pricing/partPricing';
@@ -56,7 +56,28 @@ import { PurchaseOrderPreviewDialog } from '@/components/purchase-orders/Purchas
 import { AddUnitDialog } from '@/components/units/AddUnitDialog';
 import { useRepos } from '@/repos';
 import { summarizeFabJob } from '@/services/fabJobSummary';
-import type { FabJobLine, PlasmaJobLine } from '@/types';
+import type { FabJobLine, PlasmaJobLine, WorkOrderJobLine, WorkOrderJobStatus } from '@/types';
+
+type JobDraft = {
+  title: string;
+  complaint: string;
+  cause: string;
+  correction: string;
+  status: WorkOrderJobStatus;
+};
+
+const JOB_STATUS_OPTIONS: { value: WorkOrderJobStatus; label: string }[] = [
+  { value: 'INTAKE', label: 'Intake' },
+  { value: 'DIAGNOSING', label: 'Diagnosing' },
+  { value: 'ESTIMATING', label: 'Estimating' },
+  { value: 'WAITING_APPROVAL', label: 'Waiting Approval' },
+  { value: 'WAITING_PARTS', label: 'Waiting on Parts' },
+  { value: 'READY', label: 'Ready' },
+  { value: 'IN_PROGRESS', label: 'In Progress' },
+  { value: 'QA', label: 'QA' },
+  { value: 'COMPLETE', label: 'Complete' },
+  { value: 'WARRANTY', label: 'Warranty' },
+];
 
 export default function WorkOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -73,6 +94,8 @@ export default function WorkOrderDetail() {
     categories,
     getWorkOrderPartLines,
     getWorkOrderLaborLines,
+    getWorkOrderJobLines,
+    getWorkOrderActivity,
     getTimeEntriesByWorkOrder,
     getActiveTimeEntry,
     createWorkOrder,
@@ -86,6 +109,9 @@ export default function WorkOrderDetail() {
     woAddLaborLine,
     woRemoveLaborLine,
     woToggleLaborWarranty,
+    woEnsureDefaultJobLine,
+    woCreateJobLine,
+    woUpdateJobLine,
     woUpdateStatus,
     woInvoice,
     updateWorkOrderNotes,
@@ -148,6 +174,19 @@ export default function WorkOrderDetail() {
   const [coreReturnLineId, setCoreReturnLineId] = useState<string | null>(null);
   const [createClaimOpen, setCreateClaimOpen] = useState(false);
   const [selectedClaimVendor, setSelectedClaimVendor] = useState('');
+  const [jobDrafts, setJobDrafts] = useState<
+    Record<
+      string,
+      {
+        title: string;
+        complaint: string;
+        cause: string;
+        correction: string;
+        status: WorkOrderJobStatus;
+      }
+    >
+  >({});
+  const [newJobTitle, setNewJobTitle] = useState('');
   const [fabWarnings, setFabWarnings] = useState<string[]>([]);
   const [plasmaWarnings, setPlasmaWarnings] = useState<string[]>([]);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
@@ -177,6 +216,83 @@ export default function WorkOrderDetail() {
       fabricationRepo.createForWorkOrder(currentOrder.id);
     }
   }, [currentOrder, fabricationRepo, plasmaRepo]);
+  const jobLines = currentOrder ? getWorkOrderJobLines(currentOrder.id) : [];
+  const activityEvents = currentOrder ? getWorkOrderActivity(currentOrder.id) : [];
+  const jobMap = useMemo(
+    () =>
+      jobLines.reduce<Record<string, WorkOrderJobLine>>((acc, job) => {
+        acc[job.id] = job;
+        return acc;
+      }, {}),
+    [jobLines]
+  );
+
+  useEffect(() => {
+    if (!isNew && currentOrder?.id) {
+      woEnsureDefaultJobLine(currentOrder.id);
+    }
+  }, [currentOrder?.id, isNew, woEnsureDefaultJobLine]);
+
+  useEffect(() => {
+    if (jobLines.length === 0) return;
+    setJobDrafts((prev) => {
+      const next = { ...prev };
+      let updated = false;
+      jobLines.forEach((job) => {
+        if (!next[job.id]) {
+          next[job.id] = {
+            title: job.title,
+            complaint: job.complaint ?? '',
+            cause: job.cause ?? '',
+            correction: job.correction ?? '',
+            status: job.status,
+          };
+          updated = true;
+        }
+      });
+      return updated ? next : prev;
+    });
+  }, [jobLines]);
+
+  const handleJobDraftChange = <K extends keyof JobDraft>(jobId: string, field: K, value: JobDraft[K]) => {
+    setJobDrafts((prev) => ({
+      ...prev,
+      [jobId]: {
+        ...prev[jobId],
+        [field]: value,
+      },
+    }));
+  };
+
+  const handleSaveJob = (jobId: string) => {
+    const draft = jobDrafts[jobId];
+    if (!draft) return;
+    const job = jobLines.find((j) => j.id === jobId);
+    woUpdateJobLine(jobId, {
+      title: draft.title.trim() || job?.title || 'Job',
+      complaint: draft.complaint || null,
+      cause: draft.cause || null,
+      correction: draft.correction || null,
+      status: draft.status,
+    });
+  };
+
+  const handleAddJob = () => {
+    if (!currentOrder || !newJobTitle.trim()) return;
+    const job = woCreateJobLine(currentOrder.id, newJobTitle.trim());
+    setNewJobTitle('');
+    setJobDrafts((prev) => ({
+      ...prev,
+      [job.id]: {
+        title: job.title,
+        complaint: job.complaint ?? '',
+        cause: job.cause ?? '',
+        correction: job.correction ?? '',
+        status: job.status,
+      },
+    }));
+    setActiveTab('jobs');
+  };
   const activeCustomers = customers.filter((c) => c.is_active && c.id !== 'walkin');
   const customerUnits = useMemo(() => {
     const custId = selectedCustomerId || currentOrder?.customer_id;
@@ -785,7 +901,9 @@ export default function WorkOrderDetail() {
   const otherCharges = otherChargeLines.reduce((sum, line) => sum + line.total_price, 0);
   const fabricationTotal = fabTotal;
   const overviewGrandTotal = partsSubtotal + laborSubtotal + fabricationTotal + plasmaTotal + otherCharges;
-  const [activeTab, setActiveTab] = useState<'overview' | 'parts' | 'labor' | 'fabrication' | 'plasma' | 'time'>('parts');
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'jobs' | 'activity' | 'parts' | 'labor' | 'fabrication' | 'plasma' | 'time'
+  >('parts');
   const printStyles = `
     @media print {
       aside,
@@ -1175,14 +1293,16 @@ export default function WorkOrderDetail() {
         {/* Parts & Labor */}
         <div className="lg:col-span-2">
           <Tabs value={activeTab} onValueChange={(val) => setActiveTab(val as typeof activeTab)} className="w-full">
-            <TabsList className="mb-4 print:hidden">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="parts">Parts ({partLines.length})</TabsTrigger>
-              <TabsTrigger value="labor">Labor ({laborLines.length})</TabsTrigger>
-              <TabsTrigger value="fabrication">Fabrication ({fabLines.length})</TabsTrigger>
-              <TabsTrigger value="plasma">Plasma ({plasmaLines.length})</TabsTrigger>
-              {timeEntries.length > 0 && <TabsTrigger value="time">Time ({timeEntries.length})</TabsTrigger>}
-            </TabsList>
+          <TabsList className="mb-4 print:hidden">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="jobs">Jobs</TabsTrigger>
+            <TabsTrigger value="activity">Activity</TabsTrigger>
+            <TabsTrigger value="parts">Parts ({partLines.length})</TabsTrigger>
+            <TabsTrigger value="labor">Labor ({laborLines.length})</TabsTrigger>
+            <TabsTrigger value="fabrication">Fabrication ({fabLines.length})</TabsTrigger>
+            <TabsTrigger value="plasma">Plasma ({plasmaLines.length})</TabsTrigger>
+            {timeEntries.length > 0 && <TabsTrigger value="time">Time ({timeEntries.length})</TabsTrigger>}
+          </TabsList>
 
             <TabsContent value="overview">
               <div className="flex justify-end mb-4 print:hidden">
@@ -1484,6 +1604,106 @@ export default function WorkOrderDetail() {
                 </div>
               </div>
             </div>
+            </TabsContent>
+
+            <TabsContent value="jobs">
+              <div className="space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <Input
+                    placeholder="New job title"
+                    value={newJobTitle}
+                    onChange={(event) => setNewJobTitle(event.target.value)}
+                    className="flex-1 min-w-[200px]"
+                  />
+                  <Button size="sm" onClick={handleAddJob} disabled={!newJobTitle.trim() || !currentOrder}>
+                    Add Job
+                  </Button>
+                </div>
+                {jobLines.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No jobs created yet.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {jobLines.map((job) => {
+                      const draft = jobDrafts[job.id];
+                      return (
+                        <Card key={job.id} className="border">
+                          <CardContent className="space-y-3">
+                            <div className="flex flex-wrap gap-2">
+                              <Input
+                                value={draft?.title ?? job.title}
+                                onChange={(event) => handleJobDraftChange(job.id, 'title', event.target.value)}
+                                placeholder="Job title"
+                                className="flex-1 min-w-[180px] h-10"
+                              />
+                              <Select
+                                value={(draft?.status ?? job.status) as WorkOrderJobStatus}
+                                onValueChange={(value) =>
+                                  handleJobDraftChange(job.id, 'status', value as WorkOrderJobStatus)
+                                }
+                              >
+                                <SelectTrigger className="h-10 w-40">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {JOB_STATUS_OPTIONS.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                      {option.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Button size="sm" onClick={() => handleSaveJob(job.id)}>
+                                Save
+                              </Button>
+                            </div>
+                            <div className="grid gap-2 md:grid-cols-3">
+                              <Textarea
+                                value={draft?.complaint ?? job.complaint ?? ''}
+                                onChange={(event) => handleJobDraftChange(job.id, 'complaint', event.target.value)}
+                                placeholder="Complaint"
+                                className="h-24"
+                              />
+                              <Textarea
+                                value={draft?.cause ?? job.cause ?? ''}
+                                onChange={(event) => handleJobDraftChange(job.id, 'cause', event.target.value)}
+                                placeholder="Cause"
+                                className="h-24"
+                              />
+                              <Textarea
+                                value={draft?.correction ?? job.correction ?? ''}
+                                onChange={(event) => handleJobDraftChange(job.id, 'correction', event.target.value)}
+                                placeholder="Correction"
+                                className="h-24"
+                              />
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </TabsContent>
+            <TabsContent value="activity">
+              <div className="space-y-3">
+                {activityEvents.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No activity yet.</p>
+                ) : (
+                  activityEvents.map((event) => (
+                    <div key={event.id} className="flex items-center justify-between gap-4 rounded-lg border px-4 py-3">
+                      <div>
+                        <p className="text-sm font-medium">{event.message}</p>
+                        <p className="text-xs text-muted-foreground">{new Date(event.created_at).toLocaleString()}</p>
+                      </div>
+                      {event.job_line_id && jobMap[event.job_line_id] && (
+                        <Badge variant="outline" className="text-[10px] px-2 py-0.5 uppercase tracking-wide">
+                          {jobMap[event.job_line_id].title}
+                        </Badge>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
             </TabsContent>
 
             <TabsContent value="parts">
