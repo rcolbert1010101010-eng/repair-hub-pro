@@ -117,6 +117,12 @@ const JOB_STATUS_OPTIONS: { value: WorkOrderJobStatus; label: string }[] = [
 
 type BlockerChip = { label: string; variant?: 'outline' | 'secondary' | 'destructive' };
 
+function computeEntryHours(entry: WorkOrderTimeEntry): number {
+  const startMs = new Date(entry.started_at).getTime();
+  const endMs = entry.ended_at ? new Date(entry.ended_at).getTime() : Date.now();
+  return Math.max((endMs - startMs) / 3600000, 0);
+}
+
 export default function WorkOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -344,12 +350,7 @@ export default function WorkOrderDetail() {
       marginPercent: revenue > 0 ? (totals.margin / revenue) * 100 : 0,
     };
   }, [jobProfitSummaries]);
-  const computeEntryHours = (entry: WorkOrderTimeEntry) => {
-    const startMs = new Date(entry.started_at).getTime();
-    const endMs = entry.ended_at ? new Date(entry.ended_at).getTime() : Date.now();
-    return Math.max((endMs - startMs) / 3600000, 0);
-  };
-  const jobReadinessValues = Object.values(jobReadinessById);
+const jobReadinessValues = Object.values(jobReadinessById);
   const hasWaitingPartsStatus = jobLines.some((job) => job.status === 'WAITING_PARTS');
   const hasWaitingApprovalStatus = jobLines.some((job) => job.status === 'WAITING_APPROVAL');
   const hasQAStatus = jobLines.some((job) => job.status === 'QA');
