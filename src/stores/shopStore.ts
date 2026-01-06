@@ -51,6 +51,8 @@ import type {
   WorkOrderJobLine,
   WorkOrderActivityEvent,
   WorkOrderJobStatus,
+  WorkOrderJobPartsStatus,
+  WorkOrderJobPartsReadiness,
 } from '@/types';
 import { calculateFabJob, fabricationPricingDefaults, type FabricationPricingSettings } from '@/services/fabricationPricingService';
 import { calculatePlasmaJob, plasmaPricingDefaults, type PlasmaPricingSettings } from '@/services/plasmaPricingService';
@@ -227,6 +229,7 @@ interface ShopState {
   getWorkOrderLaborLines: (orderId: string) => WorkOrderLaborLine[];
   getWorkOrderJobLines: (orderId: string) => WorkOrderJobLine[];
   getWorkOrderActivity: (orderId: string) => WorkOrderActivityEvent[];
+  getJobPartReadiness: (jobLineId: string) => WorkOrderJobPartsStatus;
   woEnsureDefaultJobLine: (orderId: string) => WorkOrderJobLine;
   woCreateJobLine: (orderId: string, title: string) => WorkOrderJobLine;
   woUpdateJobLine: (
@@ -2802,6 +2805,33 @@ export const useShopStore = create<ShopState>()(
         get()
           .workOrderActivity.filter((event) => event.work_order_id === workOrderId)
           .sort((a, b) => b.created_at.localeCompare(a.created_at)),
+      getJobPartReadiness: (jobLineId) => {
+        const state = get();
+        const jobPartLines = state.workOrderPartLines.filter(
+          (line) => line.job_line_id === jobLineId && !line.is_core_refund_line
+        );
+        let missing = 0;
+        let risk = 0;
+        jobPartLines.forEach((line) => {
+          const part = state.parts.find((p) => p.id === line.part_id);
+          const qoh = part?.quantity_on_hand ?? 0;
+          if (qoh < line.quantity) {
+            missing += 1;
+          }
+          if (qoh < 0 || qoh - line.quantity < 0) {
+            risk += 1;
+          }
+        });
+        const readiness: WorkOrderJobPartsReadiness =
+          missing > 0 ? 'MISSING' : risk > 0 ? 'RISK' : 'OK';
+        return {
+          job_line_id: jobLineId,
+          partsRequiredCount: jobPartLines.length,
+          partsMissingCount: missing,
+          partsRiskCount: risk,
+          readiness,
+        };
+      },
       woEnsureDefaultJobLine: (workOrderId) => {
         const state = get();
         const existing = state.workOrderJobLines.find((jobLine) => jobLine.work_order_id === workOrderId && jobLine.is_active);

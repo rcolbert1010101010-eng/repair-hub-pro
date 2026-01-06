@@ -505,6 +505,16 @@ export interface WorkOrderJobLine {
   updated_at: string;
 }
 
+export type WorkOrderJobPartsReadiness = 'OK' | 'RISK' | 'MISSING';
+
+export interface WorkOrderJobPartsStatus {
+  job_line_id: string;
+  partsRequiredCount: number;
+  partsMissingCount: number;
+  partsRiskCount: number;
+  readiness: WorkOrderJobPartsReadiness;
+}
+
 export type WorkOrderActivityEventType =
   | 'JOB_CREATED'
   | 'JOB_UPDATED'

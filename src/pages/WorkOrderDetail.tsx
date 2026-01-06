@@ -57,7 +57,7 @@ import { PurchaseOrderPreviewDialog } from '@/components/purchase-orders/Purchas
 import { AddUnitDialog } from '@/components/units/AddUnitDialog';
 import { useRepos } from '@/repos';
 import { summarizeFabJob } from '@/services/fabJobSummary';
-import type { FabJobLine, PlasmaJobLine, WorkOrderJobLine, WorkOrderJobStatus } from '@/types';
+import type { FabJobLine, PlasmaJobLine, WorkOrderJobLine, WorkOrderJobPartsStatus, WorkOrderJobStatus } from '@/types';
 
 type JobDraft = {
   title: string;
@@ -80,6 +80,8 @@ const JOB_STATUS_OPTIONS: { value: WorkOrderJobStatus; label: string }[] = [
   { value: 'WARRANTY', label: 'Warranty' },
 ];
 
+type BlockerChip = { label: string; variant?: 'outline' | 'secondary' | 'destructive' };
+
 export default function WorkOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -97,6 +99,7 @@ export default function WorkOrderDetail() {
     getWorkOrderLaborLines,
     getWorkOrderJobLines,
     getWorkOrderActivity,
+    getJobPartReadiness,
     getTimeEntriesByWorkOrder,
     getActiveTimeEntry,
     createWorkOrder,
@@ -113,6 +116,7 @@ export default function WorkOrderDetail() {
     woEnsureDefaultJobLine,
     woCreateJobLine,
     woUpdateJobLine,
+    woSetJobStatus,
     woUpdateStatus,
     woInvoice,
     updateWorkOrderNotes,
@@ -229,6 +233,23 @@ export default function WorkOrderDetail() {
       }, {}),
     [jobLines]
   );
+  const jobReadinessById = jobLines.reduce<Record<string, WorkOrderJobPartsStatus>>((acc, job) => {
+    acc[job.id] = getJobPartReadiness(job.id);
+    return acc;
+  }, {});
+  const jobReadinessValues = Object.values(jobReadinessById);
+  const hasWaitingPartsStatus = jobLines.some((job) => job.status === 'WAITING_PARTS');
+  const hasWaitingApprovalStatus = jobLines.some((job) => job.status === 'WAITING_APPROVAL');
+  const hasQAStatus = jobLines.some((job) => job.status === 'QA');
+  const hasPartsMissingReadiness = jobReadinessValues.some((status) => status.readiness === 'MISSING');
+  const hasPartsRiskReadiness = jobReadinessValues.some((status) => status.readiness === 'RISK');
+  const blockerChips = [
+    hasWaitingPartsStatus && { label: 'Waiting on Parts', variant: 'outline' },
+    hasWaitingApprovalStatus && { label: 'Waiting Approval', variant: 'outline' },
+    hasQAStatus && { label: 'QA', variant: 'outline' },
+    hasPartsMissingReadiness && { label: 'Parts Missing', variant: 'destructive' },
+    hasPartsRiskReadiness && { label: 'Parts Risk', variant: 'secondary' },
+  ].filter((chip): chip is BlockerChip => Boolean(chip));
 
   useEffect(() => {
     if (!isNew && currentOrder?.id) {
@@ -295,6 +316,13 @@ export default function WorkOrderDetail() {
       },
     }));
     setActiveTab('jobs');
+  };
+  const handleMarkJobWaitingParts = (job: WorkOrderJobLine) => {
+    if (job.status === 'WAITING_PARTS') return;
+    const updated = woSetJobStatus(job.id, 'WAITING_PARTS');
+    if (updated) {
+      toast({ title: 'Job status updated', description: `Job '${updated.title}' marked Waiting on Parts` });
+    }
   };
   const activeCustomers = customers.filter((c) => c.is_active && c.id !== 'walkin');
   const customerUnits = useMemo(() => {
@@ -1250,6 +1278,20 @@ export default function WorkOrderDetail() {
                 </div>
               )}
             </div>
+            <div className="pt-4 border-t border-border">
+              <p className="text-sm font-medium">Blockers</p>
+              {blockerChips.length === 0 ? (
+                <p className="text-xs text-muted-foreground mt-1">None</p>
+              ) : (
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {blockerChips.map((chip) => (
+                    <Badge key={chip.label} variant={chip.variant ?? 'outline'} className="text-[11px] font-normal">
+                      {chip.label}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
           
           {/* Notes Section */}
@@ -1647,6 +1689,29 @@ export default function WorkOrderDetail() {
                       const draft = jobDrafts[job.id];
                       const jobPartLines = partLines.filter((line) => line.job_line_id === job.id);
                       const jobLaborLines = laborLines.filter((line) => line.job_line_id === job.id);
+                      const readiness =
+                        jobReadinessById[job.id] ?? {
+                          job_line_id: job.id,
+                          partsRequiredCount: 0,
+                          partsMissingCount: 0,
+                          partsRiskCount: 0,
+                          readiness: 'OK' as const,
+                        };
+                      const readinessBadgeLabel =
+                        readiness.readiness === 'MISSING'
+                          ? 'Parts Missing'
+                          : readiness.readiness === 'RISK'
+                          ? 'Parts Risk'
+                          : 'Parts Ready';
+                      const readinessBadgeVariant =
+                        readiness.readiness === 'MISSING'
+                          ? 'destructive'
+                          : readiness.readiness === 'RISK'
+                          ? 'secondary'
+                          : 'outline';
+                      const laborHours = jobLaborLines.reduce((sum, line) => sum + line.hours, 0);
+                      const partsQty = jobPartLines.reduce((sum, line) => sum + line.quantity, 0);
+                      const partsTotal = jobPartLines.reduce((sum, line) => sum + line.line_total, 0);
                       return (
                         <Card key={job.id} className="border">
                           <CardContent className="space-y-3">
@@ -1698,7 +1763,43 @@ export default function WorkOrderDetail() {
                                 className="h-24"
                               />
                             </div>
+                            <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Badge variant={readinessBadgeVariant} className="uppercase tracking-wide text-[11px]">
+                                      {readinessBadgeLabel}
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <div className="flex flex-col gap-1 text-xs">
+                                      <span>Required: {readiness.partsRequiredCount}</span>
+                                      <span>Missing: {readiness.partsMissingCount}</span>
+                                      <span>Risk: {readiness.partsRiskCount}</span>
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                                <span className="text-[11px]">Lines: {readiness.partsRequiredCount}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                                <span>{laborHours.toFixed(2)}h</span>
+                                <span>•</span>
+                                <span>{partsQty} parts</span>
+                                <span>•</span>
+                                <span>${partsTotal.toFixed(2)}</span>
+                              </div>
+                            </div>
                             <div className="space-y-4">
+                              {readiness.readiness === 'MISSING' && job.status !== 'WAITING_PARTS' && (
+                                <Alert variant="destructive" className="border-destructive/70 bg-destructive/10 text-destructive">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="text-sm">Parts are missing. Mark job as Waiting on Parts?</p>
+                                    <Button size="sm" variant="outline" onClick={() => handleMarkJobWaitingParts(job)}>
+                                      Set WAITING_PARTS
+                                    </Button>
+                                  </div>
+                                </Alert>
+                              )}
                               <div className="flex items-center justify-between">
                                 <h4 className="text-sm font-medium">Parts</h4>
                                 {!isInvoiced && (
