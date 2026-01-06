@@ -515,12 +515,28 @@ export interface WorkOrderJobPartsStatus {
   readiness: WorkOrderJobPartsReadiness;
 }
 
+export interface WorkOrderTimeEntry {
+  id: string;
+  work_order_id: string;
+  job_line_id: string;
+  technician_id?: string | null;
+  technician_name?: string | null;
+  started_at: string;
+  ended_at?: string | null;
+  seconds: number;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export type WorkOrderActivityEventType =
   | 'JOB_CREATED'
   | 'JOB_UPDATED'
   | 'JOB_STATUS_CHANGED'
   | 'WO_INVOICED'
-  | 'WO_STATUS_CHANGED';
+  | 'WO_STATUS_CHANGED'
+  | 'CLOCK_IN'
+  | 'CLOCK_OUT';
 
 export interface WorkOrderActivityEvent {
   id: string;

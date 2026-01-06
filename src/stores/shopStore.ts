@@ -51,6 +51,9 @@ import type {
   WorkOrderJobLine,
   WorkOrderActivityEvent,
   WorkOrderJobStatus,
+  WorkOrderTimeEntry,
+  WorkOrderJobPartsStatus,
+  WorkOrderJobPartsReadiness,
   WorkOrderJobPartsStatus,
   WorkOrderJobPartsReadiness,
 } from '@/types';
@@ -203,6 +206,12 @@ interface ShopState {
   workOrderLaborLines: WorkOrderLaborLine[];
   workOrderJobLines: WorkOrderJobLine[];
   workOrderActivity: WorkOrderActivityEvent[];
+  workOrderTimeEntries: WorkOrderTimeEntry[];
+  getWorkOrderTimeEntries: (workOrderId: string) => WorkOrderTimeEntry[];
+  getJobTimeEntries: (jobLineId: string) => WorkOrderTimeEntry[];
+  getActiveJobTimers: (workOrderId: string) => WorkOrderTimeEntry[];
+  getJobActualHours: (jobLineId: string) => number;
+  getWorkOrderActualHours: (workOrderId: string) => number;
   createWorkOrder: (customerId: string, unitId: string) => WorkOrder;
   woAddPartLine: (orderId: string, partId: string, qty: number, jobLineId?: string | null) => { success: boolean; error?: string };
   woUpdatePartQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
@@ -237,6 +246,18 @@ interface ShopState {
     patch: Partial<Pick<WorkOrderJobLine, 'title' | 'complaint' | 'cause' | 'correction' | 'status' | 'is_active'>>
   ) => WorkOrderJobLine | null;
   woSetJobStatus: (jobLineId: string, status: WorkOrderJobStatus) => WorkOrderJobLine | null;
+  woClockIn: (
+    workOrderId: string,
+    jobLineId: string,
+    technicianId?: string,
+    technicianName?: string | null
+  ) => { success: boolean; entry?: WorkOrderTimeEntry; error?: string };
+  woClockOut: (timeEntryId: string) => { success: boolean; entry?: WorkOrderTimeEntry; error?: string };
+  woClockOutActiveForJob: (
+    workOrderId: string,
+    jobLineId: string,
+    technicianId?: string
+  ) => { success: boolean; entry?: WorkOrderTimeEntry; error?: string };
   recalculateSalesOrderTotals: (orderId: string) => void;
   recalculateWorkOrderTotals: (orderId: string) => void;
   workOrderChargeLines: WorkOrderChargeLine[];
@@ -661,6 +682,30 @@ export const useShopStore = create<ShopState>()(
         set((state) => ({
           workOrderActivity: [...state.workOrderActivity, record],
         }));
+      };
+
+      const calculateEntrySeconds = (entry: WorkOrderTimeEntry, endedAt?: string | null) => {
+        const startMs = new Date(entry.started_at).getTime();
+        const endTimestamp = endedAt ?? entry.ended_at ?? now();
+        const endMs = new Date(endTimestamp).getTime();
+        return Math.max(Math.round((endMs - startMs) / 1000), 0);
+      };
+
+      const finishTimeEntry = (entry: WorkOrderTimeEntry) => {
+        const endedAt = now();
+        const seconds = calculateEntrySeconds(entry, endedAt);
+        const updatedEntry: WorkOrderTimeEntry = {
+          ...entry,
+          ended_at: endedAt,
+          seconds,
+          updated_at: now(),
+        };
+        set((state) => ({
+          workOrderTimeEntries: state.workOrderTimeEntries.map((te) =>
+            te.id === entry.id ? updatedEntry : te
+          ),
+        }));
+        return updatedEntry;
       };
 
       const createPOsForNegativeInventory = (
@@ -1450,6 +1495,7 @@ export const useShopStore = create<ShopState>()(
 
       // Time Entries
       timeEntries: [],
+      workOrderTimeEntries: [],
 
       clockIn: (technicianId, workOrderId) => {
         const state = get();
@@ -2805,6 +2851,19 @@ export const useShopStore = create<ShopState>()(
         get()
           .workOrderActivity.filter((event) => event.work_order_id === workOrderId)
           .sort((a, b) => b.created_at.localeCompare(a.created_at)),
+      getWorkOrderTimeEntries: (workOrderId) =>
+        get().workOrderTimeEntries.filter((entry) => entry.work_order_id === workOrderId),
+      getJobTimeEntries: (jobLineId) => get().workOrderTimeEntries.filter((entry) => entry.job_line_id === jobLineId),
+      getActiveJobTimers: (workOrderId) =>
+        get().workOrderTimeEntries.filter((entry) => entry.work_order_id === workOrderId && entry.ended_at == null),
+      getJobActualHours: (jobLineId) =>
+        get()
+          .workOrderTimeEntries.filter((entry) => entry.job_line_id === jobLineId)
+          .reduce((sum, entry) => sum + calculateEntrySeconds(entry) / 3600, 0),
+      getWorkOrderActualHours: (workOrderId) =>
+        get()
+          .workOrderTimeEntries.filter((entry) => entry.work_order_id === workOrderId)
+          .reduce((sum, entry) => sum + calculateEntrySeconds(entry) / 3600, 0),
       getJobPartReadiness: (jobLineId) => {
         const state = get();
         const jobPartLines = state.workOrderPartLines.filter(
@@ -2831,6 +2890,93 @@ export const useShopStore = create<ShopState>()(
           partsRiskCount: risk,
           readiness,
         };
+      },
+      woClockIn: (workOrderId, jobLineId, technicianId, technicianName) => {
+        const state = get();
+        const workOrder = state.workOrders.find((wo) => wo.id === workOrderId);
+        if (!workOrder) return { success: false, error: 'Work order not found' };
+        if (workOrder.status === 'INVOICED') return { success: false, error: 'Cannot track time on invoiced order' };
+
+        if (!jobLineId) return { success: false, error: 'Job is required' };
+        const job = state.workOrderJobLines.find((j) => j.id === jobLineId);
+
+        const technician = technicianId ? state.technicians.find((t) => t.id === technicianId) : undefined;
+        const techName = technicianName ?? technician?.name ?? null;
+
+        const activeEntry = state.workOrderTimeEntries.find(
+          (entry) =>
+            entry.work_order_id === workOrderId &&
+            entry.technician_id === technicianId &&
+            entry.ended_at == null
+        );
+        if (activeEntry) {
+          const finished = finishTimeEntry(activeEntry);
+          const finishedJob = state.workOrderJobLines.find((j) => j.id === finished.job_line_id);
+          logWorkOrderActivity({
+            work_order_id: finished.work_order_id,
+            job_line_id: finished.job_line_id,
+            type: 'CLOCK_OUT',
+            message: `Clock out: ${finished.technician_name || 'Technician'} → ${
+              finishedJob?.title ?? 'Job'
+            }`,
+          });
+        }
+
+        const timestamp = now();
+        const newEntry: WorkOrderTimeEntry = {
+          id: generateId(),
+          work_order_id: workOrderId,
+          job_line_id: jobLineId,
+          technician_id: technicianId ?? null,
+          technician_name: techName,
+          started_at: timestamp,
+          ended_at: null,
+          seconds: 0,
+          notes: null,
+          created_at: timestamp,
+          updated_at: timestamp,
+        };
+
+        set((state) => ({
+          workOrderTimeEntries: [...state.workOrderTimeEntries, newEntry],
+        }));
+
+        logWorkOrderActivity({
+          work_order_id: workOrderId,
+          job_line_id: jobLineId,
+          type: 'CLOCK_IN',
+          message: `Clock in: ${techName ?? 'Technician'} → ${job?.title ?? 'Job'}`,
+        });
+
+        return { success: true, entry: newEntry };
+      },
+      woClockOut: (timeEntryId) => {
+        const state = get();
+        const entry = state.workOrderTimeEntries.find((te) => te.id === timeEntryId);
+        if (!entry) return { success: false, error: 'Time entry not found' };
+        if (entry.ended_at) return { success: false, error: 'Time entry already ended' };
+
+        const updatedEntry = finishTimeEntry(entry);
+        const job = state.workOrderJobLines.find((j) => j.id === entry.job_line_id);
+        logWorkOrderActivity({
+          work_order_id: updatedEntry.work_order_id,
+          job_line_id: updatedEntry.job_line_id,
+          type: 'CLOCK_OUT',
+          message: `Clock out: ${updatedEntry.technician_name || 'Technician'} → ${job?.title ?? 'Job'}`,
+        });
+        return { success: true, entry: updatedEntry };
+      },
+      woClockOutActiveForJob: (workOrderId, jobLineId, technicianId) => {
+        const state = get();
+        const entry = state.workOrderTimeEntries.find(
+          (te) =>
+            te.work_order_id === workOrderId &&
+            te.job_line_id === jobLineId &&
+            te.ended_at == null &&
+            (technicianId ? te.technician_id === technicianId : true)
+        );
+        if (!entry) return { success: false, error: 'No active timer found' };
+        return get().woClockOut(entry.id);
       },
       woEnsureDefaultJobLine: (workOrderId) => {
         const state = get();

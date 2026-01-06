@@ -57,7 +57,16 @@ import { PurchaseOrderPreviewDialog } from '@/components/purchase-orders/Purchas
 import { AddUnitDialog } from '@/components/units/AddUnitDialog';
 import { useRepos } from '@/repos';
 import { summarizeFabJob } from '@/services/fabJobSummary';
-import type { FabJobLine, PlasmaJobLine, WorkOrderJobLine, WorkOrderJobPartsStatus, WorkOrderJobStatus } from '@/types';
+import type {
+  FabJobLine,
+  PlasmaJobLine,
+  WorkOrderJobLine,
+  WorkOrderJobPartsStatus,
+  WorkOrderJobStatus,
+  WorkOrderPartLine,
+  WorkOrderLaborLine,
+  WorkOrderTimeEntry,
+} from '@/types';
 
 type JobDraft = {
   title: string;
@@ -65,6 +74,32 @@ type JobDraft = {
   cause: string;
   correction: string;
   status: WorkOrderJobStatus;
+};
+
+type JobProfitSummary = {
+  jobPartLines: WorkOrderPartLine[];
+  jobLaborLines: WorkOrderLaborLine[];
+  jobActualHours: number;
+  partsRevenue: number;
+  partsCost: number;
+  laborRevenue: number;
+  laborCost: number;
+  hasLaborCost: boolean;
+  margin: number;
+  marginPercent: number;
+};
+
+const DEFAULT_JOB_PROFIT_SUMMARY: JobProfitSummary = {
+  jobPartLines: [],
+  jobLaborLines: [],
+  jobActualHours: 0,
+  partsRevenue: 0,
+  partsCost: 0,
+  laborRevenue: 0,
+  laborCost: 0,
+  hasLaborCost: false,
+  margin: 0,
+  marginPercent: 0,
 };
 
 const JOB_STATUS_OPTIONS: { value: WorkOrderJobStatus; label: string }[] = [
@@ -100,6 +135,10 @@ export default function WorkOrderDetail() {
     getWorkOrderJobLines,
     getWorkOrderActivity,
     getJobPartReadiness,
+    getJobTimeEntries,
+    getActiveJobTimers,
+    getJobActualHours,
+    getWorkOrderActualHours,
     getTimeEntriesByWorkOrder,
     getActiveTimeEntry,
     createWorkOrder,
@@ -117,6 +156,8 @@ export default function WorkOrderDetail() {
     woCreateJobLine,
     woUpdateJobLine,
     woSetJobStatus,
+    woClockIn,
+    woClockOut,
     woUpdateStatus,
     woInvoice,
     updateWorkOrderNotes,
@@ -194,6 +235,7 @@ export default function WorkOrderDetail() {
     >
   >({});
   const [newJobTitle, setNewJobTitle] = useState('');
+  const [jobTechnicianSelection, setJobTechnicianSelection] = useState<Record<string, string>>({});
   const [fabWarnings, setFabWarnings] = useState<string[]>([]);
   const [plasmaWarnings, setPlasmaWarnings] = useState<string[]>([]);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
@@ -237,6 +279,76 @@ export default function WorkOrderDetail() {
     acc[job.id] = getJobPartReadiness(job.id);
     return acc;
   }, {});
+  const allPartLines = currentOrder ? getWorkOrderPartLines(currentOrder.id) : [];
+  const laborLines = currentOrder ? getWorkOrderLaborLines(currentOrder.id) : [];
+  const partLines = allPartLines.filter((l) => !l.is_core_refund_line);
+  const activeJobTimers = currentOrder ? getActiveJobTimers(currentOrder.id) : [];
+  const workOrderActualHours = currentOrder ? getWorkOrderActualHours(currentOrder.id) : 0;
+  const jobProfitSummaries = useMemo(() => {
+    const summary: Record<string, JobProfitSummary> = {};
+    jobLines.forEach((job) => {
+      const jobPartLines = partLines.filter((line) => line.job_line_id === job.id);
+      const jobLaborLines = laborLines.filter((line) => line.job_line_id === job.id);
+      const jobTimeEntries = getJobTimeEntries(job.id);
+      const jobActualHours = getJobActualHours(job.id);
+      const partsRevenue = jobPartLines.reduce((sum, line) => sum + line.line_total, 0);
+      const partsCost = jobPartLines.reduce((sum, line) => {
+        const part = parts.find((p) => p.id === line.part_id);
+        return sum + line.quantity * (part?.cost ?? 0);
+      }, 0);
+      let laborCost = 0;
+      let hasLaborCost = false;
+      jobTimeEntries.forEach((entry) => {
+        const entryHours = computeEntryHours(entry);
+        const technician = entry.technician_id ? technicians.find((t) => t.id === entry.technician_id) : undefined;
+        const rate = technician?.hourly_cost_rate ?? 0;
+        if (technician && rate > 0) {
+          hasLaborCost = true;
+          laborCost += entryHours * rate;
+        }
+      });
+      const laborRevenue = jobActualHours * settings.default_labor_rate;
+      const revenue = partsRevenue + laborRevenue;
+      const cost = partsCost + laborCost;
+      const margin = revenue - cost;
+      const marginPercent = revenue > 0 ? (margin / revenue) * 100 : 0;
+      summary[job.id] = {
+        jobPartLines,
+        jobLaborLines,
+        jobActualHours,
+        partsRevenue,
+        partsCost,
+        laborRevenue,
+        laborCost,
+        hasLaborCost,
+        margin,
+        marginPercent,
+      };
+    });
+    return summary;
+  }, [jobLines, partLines, laborLines, parts, technicians, settings.default_labor_rate, getJobTimeEntries, getJobActualHours]);
+  const woProfitTotals = useMemo(() => {
+    const totals = Object.values(jobProfitSummaries).reduce(
+      (acc, summary) => ({
+        partsRevenue: acc.partsRevenue + summary.partsRevenue,
+        partsCost: acc.partsCost + summary.partsCost,
+        laborRevenue: acc.laborRevenue + summary.laborRevenue,
+        laborCost: acc.laborCost + summary.laborCost,
+        margin: acc.margin + summary.margin,
+      }),
+      { partsRevenue: 0, partsCost: 0, laborRevenue: 0, laborCost: 0, margin: 0 }
+    );
+    const revenue = totals.partsRevenue + totals.laborRevenue;
+    return {
+      ...totals,
+      marginPercent: revenue > 0 ? (totals.margin / revenue) * 100 : 0,
+    };
+  }, [jobProfitSummaries]);
+  const computeEntryHours = (entry: WorkOrderTimeEntry) => {
+    const startMs = new Date(entry.started_at).getTime();
+    const endMs = entry.ended_at ? new Date(entry.ended_at).getTime() : Date.now();
+    return Math.max((endMs - startMs) / 3600000, 0);
+  };
   const jobReadinessValues = Object.values(jobReadinessById);
   const hasWaitingPartsStatus = jobLines.some((job) => job.status === 'WAITING_PARTS');
   const hasWaitingApprovalStatus = jobLines.some((job) => job.status === 'WAITING_APPROVAL');
@@ -316,6 +428,29 @@ export default function WorkOrderDetail() {
       },
     }));
     setActiveTab('jobs');
+  };
+  const handleJobClockIn = (jobId: string) => {
+    if (!currentOrder) return;
+    const technicianId = jobTechnicianSelection[jobId] || activeTechnicians[0]?.id;
+    const technicianName = technicians.find((t) => t.id === technicianId)?.name ?? null;
+    const result = woClockIn(currentOrder.id, jobId, technicianId, technicianName);
+    if (result.success) {
+      const techLabel = result.entry?.technician_name || 'Technician';
+      const jobTitle = jobMap[jobId]?.title || 'Job';
+      toast({ title: 'Clocked In', description: `${techLabel} started ${jobTitle}` });
+    } else {
+      toast({ title: 'Error', description: result.error, variant: 'destructive' });
+    }
+  };
+  const handleJobClockOut = (timeEntryId: string) => {
+    const result = woClockOut(timeEntryId);
+    if (result.success) {
+      const techLabel = result.entry?.technician_name || 'Technician';
+      const jobTitle = jobMap[result.entry?.job_line_id || '']?.title || 'Job';
+      toast({ title: 'Clocked Out', description: `${techLabel} stopped ${jobTitle}` });
+    } else {
+      toast({ title: 'Error', description: result.error, variant: 'destructive' });
+    }
   };
   const handleMarkJobWaitingParts = (job: WorkOrderJobLine) => {
     if (job.status === 'WAITING_PARTS') return;
@@ -425,12 +560,9 @@ export default function WorkOrderDetail() {
   const [dxfAssistOpen, setDxfAssistOpen] = useState(false);
 
   // Lines
-  const allPartLines = currentOrder ? getWorkOrderPartLines(currentOrder.id) : [];
-  const laborLines = currentOrder ? getWorkOrderLaborLines(currentOrder.id) : [];
   const otherChargeLines = chargeLines.filter(
     (line) => line.source_ref_type !== 'PLASMA_JOB' && line.source_ref_type !== 'FAB_JOB'
   );
-  const partLines = allPartLines.filter((l) => !l.is_core_refund_line);
   const refundLines = allPartLines.filter((l) => l.is_core_refund_line);
 
   // Time tracking data
@@ -1292,6 +1424,37 @@ export default function WorkOrderDetail() {
                 </div>
               )}
             </div>
+            {activeJobTimers.length > 0 && (
+              <div className="pt-2 border-t border-border">
+                <p className="text-sm font-medium">Active Timers</p>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {activeJobTimers.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs font-medium"
+                    >
+                      <span>
+                        {entry.technician_name || 'Technician'} · {jobMap[entry.job_line_id]?.title || 'Job'}
+                      </span>
+                      <Button size="sm" variant="ghost" onClick={() => handleJobClockOut(entry.id)}>
+                        Clock Out
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="pt-2 border-t border-border">
+              <p className="text-sm font-medium">Work Order Rollups</p>
+              <div className="flex flex-wrap gap-4 text-xs text-muted-foreground mt-2">
+                <span>Actual Hours: {workOrderActualHours.toFixed(2)}h</span>
+                <span>Labor Revenue: ${woProfitTotals.laborRevenue.toFixed(2)}</span>
+                <span>Parts Revenue: ${woProfitTotals.partsRevenue.toFixed(2)}</span>
+                <span>
+                  Margin: ${woProfitTotals.margin.toFixed(2)} ({woProfitTotals.marginPercent.toFixed(1)}%)
+                </span>
+              </div>
+            </div>
           </div>
           
           {/* Notes Section */}
@@ -1687,8 +1850,7 @@ export default function WorkOrderDetail() {
                   <div className="space-y-4">
                     {jobLines.map((job) => {
                       const draft = jobDrafts[job.id];
-                      const jobPartLines = partLines.filter((line) => line.job_line_id === job.id);
-                      const jobLaborLines = laborLines.filter((line) => line.job_line_id === job.id);
+                      const jobSummary = jobProfitSummaries[job.id] ?? DEFAULT_JOB_PROFIT_SUMMARY;
                       const readiness =
                         jobReadinessById[job.id] ?? {
                           job_line_id: job.id,
@@ -1709,9 +1871,11 @@ export default function WorkOrderDetail() {
                           : readiness.readiness === 'RISK'
                           ? 'secondary'
                           : 'outline';
-                      const laborHours = jobLaborLines.reduce((sum, line) => sum + line.hours, 0);
-                      const partsQty = jobPartLines.reduce((sum, line) => sum + line.quantity, 0);
-                      const partsTotal = jobPartLines.reduce((sum, line) => sum + line.line_total, 0);
+                      const estimatedHours = jobSummary.jobLaborLines.reduce((sum, line) => sum + line.hours, 0);
+                      const partsQty = jobSummary.jobPartLines.reduce((sum, line) => sum + line.quantity, 0);
+                      const activeTimer = activeJobTimers.find((entry) => entry.job_line_id === job.id);
+                      const selectedTechnicianId =
+                        jobTechnicianSelection[job.id] || activeTechnicians[0]?.id || '';
                       return (
                         <Card key={job.id} className="border">
                           <CardContent className="space-y-3">
@@ -1763,6 +1927,46 @@ export default function WorkOrderDetail() {
                                 className="h-24"
                               />
                             </div>
+                            <div className="flex flex-wrap items-center gap-3">
+                              {activeTechnicians.length > 0 ? (
+                                <Select
+                                  value={selectedTechnicianId}
+                                  onValueChange={(value) =>
+                                    setJobTechnicianSelection((prev) => ({ ...prev, [job.id]: value }))
+                                  }
+                                >
+                                  <SelectTrigger className="h-9 min-w-[170px]">
+                                    <SelectValue placeholder="Select Technician" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {activeTechnicians.map((tech) => (
+                                      <SelectItem key={tech.id} value={tech.id}>
+                                        {tech.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">No active technicians</span>
+                              )}
+                              {activeTimer ? (
+                                <Button size="sm" variant="destructive" onClick={() => handleJobClockOut(activeTimer.id)}>
+                                  Clock Out
+                                </Button>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleJobClockIn(job.id)}
+                                  disabled={activeTechnicians.length > 0 && !selectedTechnicianId}
+                                >
+                                  Clock In
+                                </Button>
+                              )}
+                              <span className="text-[11px] text-muted-foreground">
+                                Actual: {jobSummary.jobActualHours.toFixed(2)}h
+                                {estimatedHours > 0 ? ` · Est: ${estimatedHours.toFixed(2)}h` : ''}
+                              </span>
+                            </div>
                             <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
                               <div className="flex flex-wrap items-center gap-2">
                                 <Tooltip>
@@ -1781,13 +1985,18 @@ export default function WorkOrderDetail() {
                                 </Tooltip>
                                 <span className="text-[11px]">Lines: {readiness.partsRequiredCount}</span>
                               </div>
-                              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                                <span>{laborHours.toFixed(2)}h</span>
-                                <span>•</span>
+                              <div className="flex flex-wrap items-center gap-2 text-[11px]">
                                 <span>{partsQty} parts</span>
-                                <span>•</span>
-                                <span>${partsTotal.toFixed(2)}</span>
+                                <span>${jobSummary.partsRevenue.toFixed(2)}</span>
                               </div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                              <span>Labor Revenue: ${jobSummary.laborRevenue.toFixed(2)}</span>
+                              <span>Labor Cost{jobSummary.hasLaborCost ? '' : ' (est)'}: ${jobSummary.laborCost.toFixed(2)}</span>
+                              <span>Parts Cost: ${jobSummary.partsCost.toFixed(2)}</span>
+                              <span>
+                                Margin: ${jobSummary.margin.toFixed(2)} ({jobSummary.marginPercent.toFixed(1)}%)
+                              </span>
                             </div>
                             <div className="space-y-4">
                               {readiness.readiness === 'MISSING' && job.status !== 'WAITING_PARTS' && (
@@ -1809,7 +2018,7 @@ export default function WorkOrderDetail() {
                                   </Button>
                                 )}
                               </div>
-                              {jobPartLines.length === 0 ? (
+                              {jobSummary.jobPartLines.length === 0 ? (
                                 <p className="text-sm text-muted-foreground">No parts added to this job yet.</p>
                               ) : (
                                 <div className="table-container">
@@ -1823,7 +2032,7 @@ export default function WorkOrderDetail() {
                                       </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                      {jobPartLines.map((line) => {
+                                      {jobSummary.jobPartLines.map((line) => {
                                         const part = parts.find((p) => p.id === line.part_id);
                                         return (
                                           <TableRow key={line.id}>
@@ -1853,7 +2062,7 @@ export default function WorkOrderDetail() {
                                   </Button>
                                 )}
                               </div>
-                              {jobLaborLines.length === 0 ? (
+                              {jobSummary.jobLaborLines.length === 0 ? (
                                 <p className="text-sm text-muted-foreground">No labor recorded for this job yet.</p>
                               ) : (
                                 <div className="table-container">
@@ -1867,7 +2076,7 @@ export default function WorkOrderDetail() {
                                       </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                      {jobLaborLines.map((line) => {
+                                      {jobSummary.jobLaborLines.map((line) => {
                                         const tech = technicians.find((t) => t.id === line.technician_id);
                                         return (
                                           <TableRow key={line.id}>
