@@ -443,7 +443,7 @@ export default function PurchaseOrderDetail() {
                 />
               </div>
             </div>
-            <div className="col-span-12 lg:col-span-5">
+            <div className="col-span-12 lg:col-span-4">
               <div className="flex items-center justify-between h-5">
                 <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground leading-none">
                   Linked Sales Order
@@ -475,7 +475,7 @@ export default function PurchaseOrderDetail() {
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="p-0 w-72">
+                  <PopoverContent className="p-0 w-[--radix-popover-trigger-width]">
                     <div className="border-b p-2 flex flex-wrap items-center gap-2 max-w-full">
                       {(['all', 'open', 'estimate', 'invoiced'] as const).map((filter) => (
                         <Button
@@ -534,7 +534,7 @@ export default function PurchaseOrderDetail() {
                 </p>
               )}
             </div>
-            <div className="col-span-12 lg:col-span-3">
+            <div className="col-span-12 lg:col-span-4">
               <div className="flex items-center justify-between h-5">
                 <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground leading-none">
                   Linked Work Order
@@ -566,7 +566,7 @@ export default function PurchaseOrderDetail() {
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="p-0 w-72">
+                  <PopoverContent className="p-0 w-[--radix-popover-trigger-width]">
                     <div className="border-b p-2 flex flex-wrap items-center gap-2 max-w-full">
                       {(['all', 'open', 'estimate', 'invoiced'] as const).map((filter) => (
                         <Button
@@ -650,7 +650,7 @@ export default function PurchaseOrderDetail() {
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,1.15fr)]">
         <Card className="overflow-hidden">
           <CardHeader className="flex items-center justify-between gap-2">
-            <CardTitle className="text-base font-semibold">PO Lines</CardTitle>
+            <CardTitle className="text-base font-semibold">Purchase Order Lines</CardTitle>
             <Badge variant="secondary" className="text-xs px-2 py-1">
               {lineSummary.totalLines} lines
             </Badge>
