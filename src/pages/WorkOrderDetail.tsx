@@ -163,6 +163,8 @@ export default function WorkOrderDetail() {
   const [laborDescription, setLaborDescription] = useState('');
   const [laborHours, setLaborHours] = useState('1');
   const [laborTechnicianId, setLaborTechnicianId] = useState('');
+  const [partDialogJobLineId, setPartDialogJobLineId] = useState<string | null>(null);
+  const [laborDialogJobLineId, setLaborDialogJobLineId] = useState<string | null>(null);
 
   const [quickAddCustomerOpen, setQuickAddCustomerOpen] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
@@ -408,29 +410,15 @@ export default function WorkOrderDetail() {
   const totalMinutes = timeEntries.reduce((sum, te) => sum + te.total_minutes, 0);
   const totalHours = (totalMinutes / 60).toFixed(2);
   useEffect(() => {
-    if (!currentOrder) return;
-    const hasContent =
-      isInvoiced ||
-      chargeLines.length > 0 ||
-      allPartLines.length > 0 ||
-      laborLines.length > 0 ||
-      fabLines.length > 0 ||
-      plasmaLines.length > 0 ||
-      !!fabJob?.posted_at ||
-      !!plasmaJob?.posted_at;
-    setActiveTab(hasContent ? 'overview' : 'parts');
-  }, [
-    currentOrder,
-    isInvoiced,
-    chargeLines.length,
-    // partLines is defined after this effect; use allPartLines length instead to avoid TDZ
-    allPartLines.length,
-    laborLines.length,
-    fabLines.length,
-    plasmaLines.length,
-    fabJob?.posted_at,
-    plasmaJob?.posted_at,
-  ]);
+    const orderId = currentOrder?.id;
+    if (orderId && orderId !== prevOrderIdRef.current) {
+      setActiveTab('overview');
+    }
+    if (!orderId && prevOrderIdRef.current) {
+      setActiveTab('overview');
+    }
+    prevOrderIdRef.current = orderId;
+  }, [currentOrder?.id]);
 
   if (!isNew && !currentOrder) {
     return (
@@ -460,14 +448,26 @@ export default function WorkOrderDetail() {
   const handleAddPart = () => {
     if (!selectedPartId || !currentOrder) return;
     const qty = parseInt(partQty) || 1;
-    const result = woAddPartLine(currentOrder.id, selectedPartId, qty);
+    const result = woAddPartLine(currentOrder.id, selectedPartId, qty, partDialogJobLineId ?? null);
     if (result.success) {
       toast({ title: 'Part Added' });
-      setAddPartDialogOpen(false);
+      handlePartDialogOpenChange(false);
       setSelectedPartId('');
       setPartQty('1');
     } else {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
+    }
+  };
+
+  const openPartDialog = (jobLineId: string | null) => {
+    setPartDialogJobLineId(jobLineId);
+    setAddPartDialogOpen(true);
+  };
+
+  const handlePartDialogOpenChange = (open: boolean) => {
+    setAddPartDialogOpen(open);
+    if (!open) {
+      setPartDialogJobLineId(null);
     }
   };
 
@@ -553,15 +553,33 @@ export default function WorkOrderDetail() {
   const handleAddLabor = () => {
     if (!laborDescription.trim() || !currentOrder) return;
     const hours = parseFloat(laborHours) || 1;
-    const result = woAddLaborLine(currentOrder.id, laborDescription.trim(), hours, laborTechnicianId || undefined);
+    const result = woAddLaborLine(
+      currentOrder.id,
+      laborDescription.trim(),
+      hours,
+      laborTechnicianId || undefined,
+      laborDialogJobLineId ?? null
+    );
     if (result.success) {
       toast({ title: 'Labor Added' });
-      setAddLaborDialogOpen(false);
+      handleLaborDialogOpenChange(false);
       setLaborDescription('');
       setLaborHours('1');
       setLaborTechnicianId('');
     } else {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
+    }
+  };
+
+  const openLaborDialog = (jobLineId: string | null) => {
+    setLaborDialogJobLineId(jobLineId);
+    setAddLaborDialogOpen(true);
+  };
+
+  const handleLaborDialogOpenChange = (open: boolean) => {
+    setAddLaborDialogOpen(open);
+    if (!open) {
+      setLaborDialogJobLineId(null);
     }
   };
 
@@ -902,9 +920,10 @@ export default function WorkOrderDetail() {
   const otherCharges = otherChargeLines.reduce((sum, line) => sum + line.total_price, 0);
   const fabricationTotal = fabTotal;
   const overviewGrandTotal = partsSubtotal + laborSubtotal + fabricationTotal + plasmaTotal + otherCharges;
+  const prevOrderIdRef = useRef<string | undefined>(undefined);
   const [activeTab, setActiveTab] = useState<
     'overview' | 'jobs' | 'activity' | 'parts' | 'labor' | 'fabrication' | 'plasma' | 'time'
-  >('parts');
+  >('overview');
   const printStyles = `
     @media print {
       aside,
@@ -1626,6 +1645,8 @@ export default function WorkOrderDetail() {
                   <div className="space-y-4">
                     {jobLines.map((job) => {
                       const draft = jobDrafts[job.id];
+                      const jobPartLines = partLines.filter((line) => line.job_line_id === job.id);
+                      const jobLaborLines = laborLines.filter((line) => line.job_line_id === job.id);
                       return (
                         <Card key={job.id} className="border">
                           <CardContent className="space-y-3">
@@ -1677,6 +1698,96 @@ export default function WorkOrderDetail() {
                                 className="h-24"
                               />
                             </div>
+                            <div className="space-y-4">
+                              <div className="flex items-center justify-between">
+                                <h4 className="text-sm font-medium">Parts</h4>
+                                {!isInvoiced && (
+                                  <Button size="sm" onClick={() => openPartDialog(job.id)}>
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    Add Part
+                                  </Button>
+                                )}
+                              </div>
+                              {jobPartLines.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">No parts added to this job yet.</p>
+                              ) : (
+                                <div className="table-container">
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Part #</TableHead>
+                                        <TableHead>Description</TableHead>
+                                        <TableHead className="text-right">Qty</TableHead>
+                                        <TableHead className="text-right">Total</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {jobPartLines.map((line) => {
+                                        const part = parts.find((p) => p.id === line.part_id);
+                                        return (
+                                          <TableRow key={line.id}>
+                                            <TableCell className="font-mono">{part?.part_number || '-'}</TableCell>
+                                            <TableCell>{part?.description || line.description || '-'}</TableCell>
+                                            <TableCell className="text-right">{line.quantity}</TableCell>
+                                            <TableCell className="text-right font-medium">
+                                              {line.is_warranty ? (
+                                                <span className="text-muted-foreground">$0.00</span>
+                                              ) : (
+                                                `$${line.line_total.toFixed(2)}`
+                                              )}
+                                            </TableCell>
+                                          </TableRow>
+                                        );
+                                      })}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              )}
+                              <div className="flex items-center justify-between">
+                                <h4 className="text-sm font-medium">Labor</h4>
+                                {!isInvoiced && (
+                                  <Button size="sm" onClick={() => openLaborDialog(job.id)}>
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    Add Labor
+                                  </Button>
+                                )}
+                              </div>
+                              {jobLaborLines.length === 0 ? (
+                                <p className="text-sm text-muted-foreground">No labor recorded for this job yet.</p>
+                              ) : (
+                                <div className="table-container">
+                                  <Table>
+                                    <TableHeader>
+                                      <TableRow>
+                                        <TableHead>Description</TableHead>
+                                        <TableHead>Technician</TableHead>
+                                        <TableHead className="text-right">Hours</TableHead>
+                                        <TableHead className="text-right">Total</TableHead>
+                                      </TableRow>
+                                    </TableHeader>
+                                    <TableBody>
+                                      {jobLaborLines.map((line) => {
+                                        const tech = technicians.find((t) => t.id === line.technician_id);
+                                        return (
+                                          <TableRow key={line.id}>
+                                            <TableCell>{line.description}</TableCell>
+                                            <TableCell>{tech?.name || '-'}</TableCell>
+                                            <TableCell className="text-right">{line.hours}</TableCell>
+                                            <TableCell className="text-right font-medium">
+                                              {line.is_warranty ? (
+                                                <span className="text-muted-foreground">$0.00</span>
+                                              ) : (
+                                                `$${line.line_total.toFixed(2)}`
+                                              )}
+                                            </TableCell>
+                                          </TableRow>
+                                        );
+                                      })}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              )}
+                            </div>
                           </CardContent>
                         </Card>
                       );
@@ -1711,7 +1822,7 @@ export default function WorkOrderDetail() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-medium">Parts</h3>
                 {!isInvoiced && (
-                  <Button size="sm" onClick={() => setAddPartDialogOpen(true)}>
+                  <Button size="sm" onClick={() => openPartDialog(null)}>
                     <Plus className="w-4 h-4 mr-2" />
                     Add Part
                   </Button>
@@ -1858,7 +1969,7 @@ export default function WorkOrderDetail() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-medium">Labor (Rate: ${settings.default_labor_rate}/hr)</h3>
                 {!isInvoiced && (
-                  <Button size="sm" onClick={() => setAddLaborDialogOpen(true)}>
+                  <Button size="sm" onClick={() => openLaborDialog(null)}>
                     <Plus className="w-4 h-4 mr-2" />
                     Add Labor
                   </Button>
@@ -2960,7 +3071,7 @@ export default function WorkOrderDetail() {
       )}
 
       {/* Add Part Dialog */}
-      <QuickAddDialog open={addPartDialogOpen} onOpenChange={setAddPartDialogOpen} title="Add Part" onSave={handleAddPart} onCancel={() => setAddPartDialogOpen(false)}>
+      <QuickAddDialog open={addPartDialogOpen} onOpenChange={handlePartDialogOpenChange} title="Add Part" onSave={handleAddPart} onCancel={() => handlePartDialogOpenChange(false)}>
         <div className="space-y-4">
           <div className="space-y-2">
             <Label>Part *</Label>
@@ -3072,7 +3183,7 @@ export default function WorkOrderDetail() {
       </QuickAddDialog>
 
       {/* Add Labor Dialog */}
-      <QuickAddDialog open={addLaborDialogOpen} onOpenChange={setAddLaborDialogOpen} title="Add Labor" onSave={handleAddLabor} onCancel={() => setAddLaborDialogOpen(false)}>
+      <QuickAddDialog open={addLaborDialogOpen} onOpenChange={handleLaborDialogOpenChange} title="Add Labor" onSave={handleAddLabor} onCancel={() => handleLaborDialogOpenChange(false)}>
         <div className="space-y-4">
           <div>
             <Label>Description *</Label>

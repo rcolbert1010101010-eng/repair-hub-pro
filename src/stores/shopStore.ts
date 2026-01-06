@@ -202,14 +202,20 @@ interface ShopState {
   workOrderJobLines: WorkOrderJobLine[];
   workOrderActivity: WorkOrderActivityEvent[];
   createWorkOrder: (customerId: string, unitId: string) => WorkOrder;
-  woAddPartLine: (orderId: string, partId: string, qty: number) => { success: boolean; error?: string };
+  woAddPartLine: (orderId: string, partId: string, qty: number, jobLineId?: string | null) => { success: boolean; error?: string };
   woUpdatePartQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
   woUpdateLineUnitPrice: (lineId: string, newUnitPrice: number) => { success: boolean; error?: string };
   woRemovePartLine: (lineId: string) => { success: boolean; error?: string };
   woTogglePartWarranty: (lineId: string) => { success: boolean; error?: string };
   woToggleCoreReturned: (lineId: string) => { success: boolean; error?: string };
   woMarkCoreReturned: (lineId: string) => { success: boolean; error?: string };
-  woAddLaborLine: (orderId: string, description: string, hours: number, technicianId?: string) => { success: boolean; error?: string };
+  woAddLaborLine: (
+    orderId: string,
+    description: string,
+    hours: number,
+    technicianId?: string,
+    jobLineId?: string | null
+  ) => { success: boolean; error?: string };
   woUpdateLaborLine: (lineId: string, description: string, hours: number) => { success: boolean; error?: string };
   woRemoveLaborLine: (lineId: string) => { success: boolean; error?: string };
   woToggleLaborWarranty: (lineId: string) => { success: boolean; error?: string };
@@ -2345,9 +2351,10 @@ export const useShopStore = create<ShopState>()(
         return newOrder;
       },
 
-      woAddPartLine: (orderId, partId, qty) => {
+      woAddPartLine: (orderId, partId, qty, jobLineId) => {
         const state = get();
         const order = state.workOrders.find((o) => o.id === orderId);
+        const normalizedJobLineId = jobLineId ?? null;
         
         if (!order) return { success: false, error: 'Order not found' };
         if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
@@ -2361,7 +2368,10 @@ export const useShopStore = create<ShopState>()(
         const unitPrice = suggested ?? part.selling_price;
 
         const existingLine = state.workOrderPartLines.find(
-          (l) => l.work_order_id === orderId && l.part_id === partId
+          (l) =>
+            l.work_order_id === orderId &&
+            l.part_id === partId &&
+            l.job_line_id === normalizedJobLineId
         );
 
         if (existingLine) {
@@ -2427,6 +2437,7 @@ export const useShopStore = create<ShopState>()(
             description: null,
             created_at: timestamp,
             updated_at: timestamp,
+            job_line_id: normalizedJobLineId,
           };
 
           set((state) => ({
@@ -2716,9 +2727,10 @@ export const useShopStore = create<ShopState>()(
         return { success: true };
       },
 
-      woAddLaborLine: (orderId, description, hours, technicianId) => {
+      woAddLaborLine: (orderId, description, hours, technicianId, jobLineId) => {
         const state = get();
         const order = state.workOrders.find((o) => o.id === orderId);
+        const normalizedJobLineId = jobLineId ?? null;
         
         if (!order) return { success: false, error: 'Order not found' };
         if (order.status === 'INVOICED') return { success: false, error: 'Cannot modify invoiced order' };
@@ -2733,6 +2745,7 @@ export const useShopStore = create<ShopState>()(
           line_total: hours * rate,
           is_warranty: false,
           technician_id: technicianId || null,
+          job_line_id: normalizedJobLineId,
           created_at: now(),
           updated_at: now(),
         };
@@ -2791,9 +2804,22 @@ export const useShopStore = create<ShopState>()(
           .sort((a, b) => b.created_at.localeCompare(a.created_at)),
       woEnsureDefaultJobLine: (workOrderId) => {
         const state = get();
-        const existing = state.workOrderJobLines.find((job) => job.work_order_id === workOrderId && job.is_active);
-        if (existing) return existing;
-        return get().woCreateJobLine(workOrderId, 'General');
+        const existing = state.workOrderJobLines.find((jobLine) => jobLine.work_order_id === workOrderId && jobLine.is_active);
+        const job = existing ?? get().woCreateJobLine(workOrderId, 'General');
+        const jobId = job.id;
+        set((state) => ({
+          workOrderLaborLines: state.workOrderLaborLines.map((line) =>
+            line.work_order_id === workOrderId && line.job_line_id == null
+              ? { ...line, job_line_id: jobId }
+              : line
+          ),
+          workOrderPartLines: state.workOrderPartLines.map((line) =>
+            line.work_order_id === workOrderId && line.job_line_id == null
+              ? { ...line, job_line_id: jobId }
+              : line
+          ),
+        }));
+        return job;
       },
       woCreateJobLine: (workOrderId, title) => {
         const timestamp = now();
