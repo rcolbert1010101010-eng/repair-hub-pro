@@ -24,3 +24,7 @@ dist-ssr
 *.sw?
 .ai/
 scripts/
+
+# Local backups
+*.bak
+
