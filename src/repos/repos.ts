@@ -175,13 +175,19 @@ export interface WorkOrdersRepo {
   workOrderLaborLines: WorkOrderLaborLine[];
   workOrderChargeLines: WorkOrderChargeLine[];
   createWorkOrder: (customerId: string, unitId: string) => WorkOrder;
-  woAddPartLine: (orderId: string, partId: string, qty: number) => { success: boolean; error?: string };
+  woAddPartLine: (orderId: string, partId: string, qty: number, jobLineId?: string | null) => { success: boolean; error?: string };
   woUpdatePartQty: (lineId: string, newQty: number) => { success: boolean; error?: string };
   woUpdateLineUnitPrice: (lineId: string, newUnitPrice: number) => { success: boolean; error?: string };
   woRemovePartLine: (lineId: string) => { success: boolean; error?: string };
   woTogglePartWarranty: (lineId: string) => { success: boolean; error?: string };
   woToggleCoreReturned: (lineId: string) => { success: boolean; error?: string };
-  woAddLaborLine: (orderId: string, description: string, hours: number, technicianId?: string) => { success: boolean; error?: string };
+  woAddLaborLine: (
+    orderId: string,
+    description: string,
+    hours: number,
+    technicianId?: string,
+    jobLineId?: string | null
+  ) => { success: boolean; error?: string };
   woUpdateLaborLine: (lineId: string, description: string, hours: number) => { success: boolean; error?: string };
   woRemoveLaborLine: (lineId: string) => { success: boolean; error?: string };
   woToggleLaborWarranty: (lineId: string) => { success: boolean; error?: string };

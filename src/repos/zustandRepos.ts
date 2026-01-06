@@ -476,8 +476,8 @@ export const zustandRepos: Repos = {
       ensureScheduleItemForWorkOrder(wo);
       return wo;
     },
-    woAddPartLine(orderId, partId, qty) {
-      return useShopStore.getState().woAddPartLine(orderId, partId, qty);
+    woAddPartLine(orderId, partId, qty, jobLineId) {
+      return useShopStore.getState().woAddPartLine(orderId, partId, qty, jobLineId);
     },
     woUpdatePartQty(lineId, newQty) {
       return useShopStore.getState().woUpdatePartQty(lineId, newQty);
@@ -494,8 +494,8 @@ export const zustandRepos: Repos = {
     woToggleCoreReturned(lineId) {
       return useShopStore.getState().woToggleCoreReturned(lineId);
     },
-    woAddLaborLine(orderId, description, hours, technicianId) {
-      return useShopStore.getState().woAddLaborLine(orderId, description, hours, technicianId);
+    woAddLaborLine(orderId, description, hours, technicianId, jobLineId) {
+      return useShopStore.getState().woAddLaborLine(orderId, description, hours, technicianId, jobLineId);
     },
     woUpdateLaborLine(lineId, description, hours) {
       return useShopStore.getState().woUpdateLaborLine(lineId, description, hours);
