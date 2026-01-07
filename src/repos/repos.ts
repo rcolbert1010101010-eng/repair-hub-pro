@@ -134,7 +134,7 @@ export interface VendorCostHistoryRepo {
 
 export interface TechniciansRepo {
   technicians: Technician[];
-  addTechnician: (technician: Omit<Technician, 'id' | 'is_active' | 'created_at' | 'updated_at'>) => Technician;
+  addTechnician: (technician: Omit<Technician, 'id' | 'created_at' | 'updated_at'> & Partial<Pick<Technician, 'is_active' | 'employment_type' | 'skill_tags' | 'work_schedule' | 'certifications'>>) => Technician;
   updateTechnician: (id: string, technician: Partial<Technician>) => void;
   deactivateTechnician: (id: string) => void;
 }
