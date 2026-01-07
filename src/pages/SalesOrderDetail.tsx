@@ -64,7 +64,6 @@ export default function SalesOrderDetail() {
     soRemovePartLine,
     soToggleWarranty,
     soToggleCoreReturned,
-    soMarkCoreReturned,
     soConvertToOpen,
     soInvoice,
     soSetStatus,
@@ -341,6 +340,9 @@ export default function SalesOrderDetail() {
       email: null,
       address: null,
       notes: null,
+      price_level: 'RETAIL',
+      is_tax_exempt: false,
+      tax_rate_override: null,
     });
     if (!result.success || !result.customer) {
       toast({ title: 'Unable to add customer', description: result.error, variant: 'destructive' });
@@ -406,6 +408,7 @@ export default function SalesOrderDetail() {
       bin_location: null,
       model: null,
       serial_number: null,
+      is_kit: false,
       barcode: null,
     });
 

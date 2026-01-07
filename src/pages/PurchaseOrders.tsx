@@ -63,7 +63,7 @@ export default function PurchaseOrders() {
       key: 'derived_status',
       header: 'Derived Status',
       sortable: true,
-      render: (item) => <StatusBadge status={item.derived_status} variant={item.derived_status === 'RECEIVED' ? 'success' : 'warning'} />,
+      render: (item) => <StatusBadge status={item.derived_status as any} variant={item.derived_status === 'RECEIVED' ? 'success' : 'warning'} />,
     },
     {
       key: 'vendor_name',

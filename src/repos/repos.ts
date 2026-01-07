@@ -12,6 +12,7 @@ import type {
   TimeEntry,
   SalesOrder,
   SalesOrderLine,
+  SalesOrderStatus,
   WorkOrder,
   WorkOrderPartLine,
   WorkOrderLaborLine,
@@ -225,7 +226,6 @@ export interface PlasmaRepo {
   plasmaAttachments: PlasmaJobAttachment[];
   plasmaTemplates: PlasmaTemplate[];
   plasmaTemplateLines: PlasmaTemplateLine[];
-  remnants: Remnant[];
   createForWorkOrder: (workOrderId: string) => PlasmaJob;
   getByWorkOrder: (workOrderId: string) => { job: PlasmaJob; lines: PlasmaJobLine[] } | null;
   createStandalone: (payload?: { sales_order_id?: string | null }) => PlasmaJob;

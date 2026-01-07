@@ -43,7 +43,7 @@ export default function ReturnsWarrantyReport() {
       />
 
       <div className="flex flex-wrap gap-3">
-        <Select value={range} onValueChange={setRange}>
+        <Select value={range} onValueChange={(v) => setRange(v as typeof range)}>
           <SelectTrigger className="w-48">
             <SelectValue placeholder="Date range" />
           </SelectTrigger>

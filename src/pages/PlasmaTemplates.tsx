@@ -21,8 +21,6 @@ export default function PlasmaTemplates() {
       description: newTemplateDesc.trim() || null,
       default_material_type: null,
       default_thickness: null,
-      created_at: '',
-      updated_at: '',
     });
     setNewTemplateName('');
     setNewTemplateDesc('');

@@ -12,6 +12,7 @@ import type {
   Part,
   SalesOrder,
   SalesOrderLine,
+  SalesOrderStatus,
   WorkOrder,
   WorkOrderPartLine,
   WorkOrderLaborLine,
@@ -36,6 +37,9 @@ import type {
   FabJobLine,
   PlasmaJob,
   PlasmaJobLine,
+  PlasmaTemplate,
+  PlasmaTemplateLine,
+  Remnant,
   WorkOrderChargeLine,
   WorkOrderChargeSourceType,
   SalesOrderChargeLine,
@@ -54,6 +58,8 @@ import type {
   WorkOrderTimeEntry,
   WorkOrderJobPartsStatus,
   WorkOrderJobPartsReadiness,
+  CycleCountSession,
+  CycleCountLine,
 } from '@/types';
 import { calculateFabJob, fabricationPricingDefaults, type FabricationPricingSettings } from '@/services/fabricationPricingService';
 import { calculatePlasmaJob, plasmaPricingDefaults, type PlasmaPricingSettings } from '@/services/plasmaPricingService';
@@ -196,7 +202,6 @@ interface ShopState {
   addSalesOrderChargeLine: (line: Omit<SalesOrderChargeLine, 'id' | 'created_at' | 'updated_at'> & { id?: string }) => SalesOrderChargeLine | null;
   updateSalesOrderChargeLine: (id: string, patch: Partial<SalesOrderChargeLine>) => void;
   removeSalesOrderChargeLine: (id: string) => void;
-  postPlasmaJobToSalesOrder: (plasmaJobId: string) => { success: boolean; error?: string };
 
   // Work Orders
   workOrders: WorkOrder[];
@@ -353,8 +358,7 @@ interface ShopState {
     source_type?: 'PURCHASE_ORDER' | 'MANUAL';
     source_id?: string | null;
   }) => { success: boolean; error?: string };
-    vendorCostHistory: VendorCostHistory[];
-    inventoryMovements: [],
+  vendorCostHistory: VendorCostHistory[];
   returns: Return[];
   returnLines: ReturnLine[];
   warrantyPolicies: WarrantyPolicy[];

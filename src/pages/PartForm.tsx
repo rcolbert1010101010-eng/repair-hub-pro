@@ -346,6 +346,7 @@ export default function PartForm() {
       category_id: formData.category_id,
       cost: parseFloat(formData.cost) || 0,
       selling_price: parseFloat(formData.selling_price) || 0,
+      quantity_on_hand: part?.quantity_on_hand ?? 0,
       core_required: formData.core_required,
       core_charge: parseFloat(formData.core_charge) || 0,
       barcode: formData.barcode.trim() ? formData.barcode.trim() : null,
