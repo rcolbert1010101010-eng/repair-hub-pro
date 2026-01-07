@@ -251,6 +251,7 @@ interface ShopState {
     patch: Partial<Pick<WorkOrderJobLine, 'title' | 'complaint' | 'cause' | 'correction' | 'status' | 'is_active'>>
   ) => WorkOrderJobLine | null;
   woSetJobStatus: (jobLineId: string, status: WorkOrderJobStatus) => WorkOrderJobLine | null;
+  woDeleteJobLine: (jobLineId: string) => { success: boolean; error?: string };
   woClockIn: (
     workOrderId: string,
     jobLineId: string,
@@ -3068,6 +3069,41 @@ export const useShopStore = create<ShopState>()(
         return updated;
       },
       woSetJobStatus: (jobLineId, status) => get().woUpdateJobLine(jobLineId, { status }),
+
+      woDeleteJobLine: (jobLineId) => {
+        const state = get();
+        const job = state.workOrderJobLines.find((j) => j.id === jobLineId);
+        if (!job) return { success: false, error: 'Job not found' };
+        
+        const order = state.workOrders.find((o) => o.id === job.work_order_id);
+        if (!order) return { success: false, error: 'Work order not found' };
+        if (order.status === 'INVOICED') return { success: false, error: 'Cannot delete job on invoiced order' };
+        
+        // Check for time entries on this job
+        const hasTimeEntries = state.workOrderTimeEntries.some((e) => e.job_line_id === jobLineId);
+        if (hasTimeEntries) return { success: false, error: 'Cannot delete job with time entries' };
+        
+        // Check for part lines on this job
+        const hasPartLines = state.workOrderPartLines.some((l) => l.job_line_id === jobLineId);
+        if (hasPartLines) return { success: false, error: 'Cannot delete job with part lines' };
+        
+        // Check for labor lines on this job
+        const hasLaborLines = state.workOrderLaborLines.some((l) => l.job_line_id === jobLineId);
+        if (hasLaborLines) return { success: false, error: 'Cannot delete job with labor lines' };
+        
+        set((state) => ({
+          workOrderJobLines: state.workOrderJobLines.filter((j) => j.id !== jobLineId),
+        }));
+        
+        logWorkOrderActivity({
+          work_order_id: job.work_order_id,
+          job_line_id: null,
+          type: 'JOB_UPDATED',
+          message: `Deleted job: ${job.title}`,
+        });
+        
+        return { success: true };
+      },
 
       woToggleLaborWarranty: (lineId) => {
         const state = get();

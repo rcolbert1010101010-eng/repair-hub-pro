@@ -216,6 +216,7 @@ export default function WorkOrderDetail() {
     woCreateJobLine,
     woUpdateJobLine,
     woSetJobStatus,
+    woDeleteJobLine,
     woClockIn,
     woClockOut,
     woUpdateStatus,
@@ -296,6 +297,10 @@ export default function WorkOrderDetail() {
       }
     >
   >({});
+  const [jobEditingMode, setJobEditingMode] = useState<Record<string, boolean>>({});
+  const [jobSaving, setJobSaving] = useState<Record<string, boolean>>({});
+  const [deleteJobDialog, setDeleteJobDialog] = useState<{ open: boolean; jobId: string | null; jobTitle: string }>({ open: false, jobId: null, jobTitle: '' });
+  const [deleteJobConfirmText, setDeleteJobConfirmText] = useState('');
   const [newJobTitle, setNewJobTitle] = useState('');
   const [jobTechnicianSelection, setJobTechnicianSelection] = useState<Record<string, string>>({});
   const [fabWarnings, setFabWarnings] = useState<string[]>([]);
@@ -466,6 +471,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
     const draft = jobDrafts[jobId];
     if (!draft) return;
     const job = jobLines.find((j) => j.id === jobId);
+    setJobSaving((prev) => ({ ...prev, [jobId]: true }));
     woUpdateJobLine(jobId, {
       title: draft.title.trim() || job?.title || 'Job',
       complaint: draft.complaint || null,
@@ -473,6 +479,60 @@ const jobReadinessValues = Object.values(jobReadinessById);
       correction: draft.correction || null,
       status: draft.status,
     });
+    // Switch to read-only mode after save
+    setJobEditingMode((prev) => ({ ...prev, [jobId]: false }));
+    setJobSaving((prev) => ({ ...prev, [jobId]: false }));
+    toast({ title: 'Job Saved', description: `${draft.title.trim() || job?.title || 'Job'} has been saved` });
+  };
+
+  const handleEditJob = (jobId: string) => {
+    const job = jobLines.find((j) => j.id === jobId);
+    if (!job) return;
+    // Initialize draft from current job state if not already in drafts
+    setJobDrafts((prev) => ({
+      ...prev,
+      [jobId]: prev[jobId] ?? {
+        title: job.title,
+        complaint: job.complaint ?? '',
+        cause: job.cause ?? '',
+        correction: job.correction ?? '',
+        status: job.status,
+      },
+    }));
+    setJobEditingMode((prev) => ({ ...prev, [jobId]: true }));
+  };
+
+  const handleCancelEditJob = (jobId: string) => {
+    const job = jobLines.find((j) => j.id === jobId);
+    if (!job) return;
+    // Reset draft to current job state
+    setJobDrafts((prev) => ({
+      ...prev,
+      [jobId]: {
+        title: job.title,
+        complaint: job.complaint ?? '',
+        cause: job.cause ?? '',
+        correction: job.correction ?? '',
+        status: job.status,
+      },
+    }));
+    setJobEditingMode((prev) => ({ ...prev, [jobId]: false }));
+  };
+
+  const handleDeleteJob = (jobId: string) => {
+    const result = woDeleteJobLine(jobId);
+    if (result.success) {
+      toast({ title: 'Job Deleted', description: 'The job has been removed' });
+      setDeleteJobDialog({ open: false, jobId: null, jobTitle: '' });
+      setDeleteJobConfirmText('');
+    } else {
+      toast({ title: 'Cannot Delete Job', description: result.error, variant: 'destructive' });
+    }
+  };
+
+  const openDeleteJobDialog = (job: WorkOrderJobLine) => {
+    setDeleteJobDialog({ open: true, jobId: job.id, jobTitle: job.title });
+    setDeleteJobConfirmText('');
   };
 
   const handleAddJob = () => {
@@ -489,11 +549,17 @@ const jobReadinessValues = Object.values(jobReadinessById);
         status: job.status,
       },
     }));
+    // New jobs start in editing mode
+    setJobEditingMode((prev) => ({ ...prev, [job.id]: true }));
     setActiveTab('jobs');
   };
   const handleJobClockIn = (jobId: string) => {
     if (!currentOrder) return;
-    const technicianId = jobTechnicianSelection[jobId] || activeTechnicians[0]?.id;
+    const technicianId = jobTechnicianSelection[jobId];
+    if (!technicianId) {
+      toast({ title: 'Error', description: 'Please select a technician first', variant: 'destructive' });
+      return;
+    }
     const technicianName = technicians.find((t) => t.id === technicianId)?.name ?? null;
     const result = woClockIn(currentOrder.id, jobId, technicianId, technicianName);
     if (result.success) {
@@ -1821,6 +1887,8 @@ const jobReadinessValues = Object.values(jobReadinessById);
                   <div className="space-y-4">
                     {jobLines.map((job) => {
                       const draft = jobDrafts[job.id];
+                      const isEditing = jobEditingMode[job.id] ?? false;
+                      const isSaving = jobSaving[job.id] ?? false;
                       const jobSummary = jobProfitSummaries[job.id] ?? DEFAULT_JOB_PROFIT_SUMMARY;
                       const readiness =
                         jobReadinessById[job.id] ?? {
@@ -1845,59 +1913,106 @@ const jobReadinessValues = Object.values(jobReadinessById);
                       const estimatedHours = jobSummary.jobLaborLines.reduce((sum, line) => sum + line.hours, 0);
                       const partsQty = jobSummary.jobPartLines.reduce((sum, line) => sum + line.quantity, 0);
                       const activeTimer = activeJobTimers.find((entry) => entry.job_line_id === job.id);
-                      const selectedTechnicianId =
-                        jobTechnicianSelection[job.id] || activeTechnicians[0]?.id || '';
+                      // Tech dropdown: empty by default, only show selection if explicitly chosen
+                      const selectedTechnicianId = jobTechnicianSelection[job.id] || '';
+                      // Clock In gating: disabled if no tech selected
+                      const clockInDisabled = !selectedTechnicianId || activeTechnicians.length === 0;
+                      const clockInHelperText = !selectedTechnicianId 
+                        ? 'Select a technician to enable Clock In' 
+                        : null;
                       return (
                         <Card key={job.id} className="border">
                           <CardContent className="p-4 pt-4 space-y-3">
-                            <div className="flex flex-wrap gap-2">
-                              <Input
-                                value={draft?.title ?? job.title}
-                                onChange={(event) => handleJobDraftChange(job.id, 'title', event.target.value)}
-                                placeholder="Job title"
-                                className="flex-1 min-w-[180px] h-10"
-                              />
-                              <Select
-                                value={(draft?.status ?? job.status) as WorkOrderJobStatus}
-                                onValueChange={(value) =>
-                                  handleJobDraftChange(job.id, 'status', value as WorkOrderJobStatus)
-                                }
-                              >
-                                <SelectTrigger className="h-10 w-40">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {JOB_STATUS_OPTIONS.map((option) => (
-                                    <SelectItem key={option.value} value={option.value}>
-                                      {option.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <Button size="sm" onClick={() => handleSaveJob(job.id)}>
-                                Save
-                              </Button>
+                            <div className="flex flex-wrap gap-2 items-center">
+                              {isEditing ? (
+                                <>
+                                  <Input
+                                    value={draft?.title ?? job.title}
+                                    onChange={(event) => handleJobDraftChange(job.id, 'title', event.target.value)}
+                                    placeholder="Job title"
+                                    className="flex-1 min-w-[180px] h-10"
+                                  />
+                                  <Select
+                                    value={(draft?.status ?? job.status) as WorkOrderJobStatus}
+                                    onValueChange={(value) =>
+                                      handleJobDraftChange(job.id, 'status', value as WorkOrderJobStatus)
+                                    }
+                                  >
+                                    <SelectTrigger className="h-10 w-40">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {JOB_STATUS_OPTIONS.map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                          {option.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <Button size="sm" onClick={() => handleSaveJob(job.id)} disabled={isSaving}>
+                                    <Save className="w-4 h-4 mr-1" />
+                                    Save
+                                  </Button>
+                                  <Button size="sm" variant="ghost" onClick={() => handleCancelEditJob(job.id)}>
+                                    <X className="w-4 h-4" />
+                                  </Button>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="flex-1 min-w-[180px]">
+                                    <span className="font-medium">{job.title}</span>
+                                    <Badge variant="outline" className="ml-2 text-[10px]">
+                                      {JOB_STATUS_OPTIONS.find((o) => o.value === job.status)?.label || job.status}
+                                    </Badge>
+                                  </div>
+                                  {!isInvoiced && (
+                                    <>
+                                      <Button size="sm" variant="outline" onClick={() => handleEditJob(job.id)}>
+                                        <Edit className="w-4 h-4 mr-1" />
+                                        Edit
+                                      </Button>
+                                      <Button 
+                                        size="sm" 
+                                        variant="ghost" 
+                                        className="text-destructive hover:text-destructive"
+                                        onClick={() => openDeleteJobDialog(job)}
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    </>
+                                  )}
+                                </>
+                              )}
                             </div>
-                            <div className="grid gap-2 md:grid-cols-3">
-                              <Textarea
-                                value={draft?.complaint ?? job.complaint ?? ''}
-                                onChange={(event) => handleJobDraftChange(job.id, 'complaint', event.target.value)}
-                                placeholder="Complaint"
-                                className="h-24"
-                              />
-                              <Textarea
-                                value={draft?.cause ?? job.cause ?? ''}
-                                onChange={(event) => handleJobDraftChange(job.id, 'cause', event.target.value)}
-                                placeholder="Cause"
-                                className="h-24"
-                              />
-                              <Textarea
-                                value={draft?.correction ?? job.correction ?? ''}
-                                onChange={(event) => handleJobDraftChange(job.id, 'correction', event.target.value)}
-                                placeholder="Correction"
-                                className="h-24"
-                              />
-                            </div>
+                            {isEditing && (
+                              <div className="grid gap-2 md:grid-cols-3">
+                                <Textarea
+                                  value={draft?.complaint ?? job.complaint ?? ''}
+                                  onChange={(event) => handleJobDraftChange(job.id, 'complaint', event.target.value)}
+                                  placeholder="Complaint"
+                                  className="h-24"
+                                />
+                                <Textarea
+                                  value={draft?.cause ?? job.cause ?? ''}
+                                  onChange={(event) => handleJobDraftChange(job.id, 'cause', event.target.value)}
+                                  placeholder="Cause"
+                                  className="h-24"
+                                />
+                                <Textarea
+                                  value={draft?.correction ?? job.correction ?? ''}
+                                  onChange={(event) => handleJobDraftChange(job.id, 'correction', event.target.value)}
+                                  placeholder="Correction"
+                                  className="h-24"
+                                />
+                              </div>
+                            )}
+                            {!isEditing && (job.complaint || job.cause || job.correction) && (
+                              <div className="grid gap-2 md:grid-cols-3 text-sm text-muted-foreground">
+                                {job.complaint && <div><span className="font-medium">Complaint:</span> {job.complaint}</div>}
+                                {job.cause && <div><span className="font-medium">Cause:</span> {job.cause}</div>}
+                                {job.correction && <div><span className="font-medium">Correction:</span> {job.correction}</div>}
+                              </div>
+                            )}
                             <div className="flex flex-wrap items-center gap-3">
                               {activeTechnicians.length > 0 ? (
                                 <Select
@@ -1907,7 +2022,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                                   }
                                 >
                                   <SelectTrigger className="h-9 min-w-[170px]">
-                                    <SelectValue placeholder="Select Technician" />
+                                    <SelectValue placeholder="Select tech…" />
                                   </SelectTrigger>
                                   <SelectContent>
                                     {activeTechnicians.map((tech) => (
@@ -1922,16 +2037,23 @@ const jobReadinessValues = Object.values(jobReadinessById);
                               )}
                               {activeTimer ? (
                                 <Button size="sm" variant="destructive" onClick={() => handleJobClockOut(activeTimer.id)}>
+                                  <Square className="w-3 h-3 mr-1" />
                                   Clock Out
                                 </Button>
                               ) : (
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleJobClockIn(job.id)}
-                                  disabled={activeTechnicians.length > 0 && !selectedTechnicianId}
-                                >
-                                  Clock In
-                                </Button>
+                                <div className="flex flex-col gap-1">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleJobClockIn(job.id)}
+                                    disabled={clockInDisabled}
+                                  >
+                                    <Clock className="w-3 h-3 mr-1" />
+                                    Clock In
+                                  </Button>
+                                  {clockInHelperText && (
+                                    <span className="text-[10px] text-muted-foreground">{clockInHelperText}</span>
+                                  )}
+                                </div>
                               )}
                               <span className="text-[11px] text-muted-foreground">
                                 Actual: {jobSummary.jobActualHours.toFixed(2)}h
@@ -3512,6 +3634,44 @@ const jobReadinessValues = Object.values(jobReadinessById);
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmMarkCoreReturned}>Mark Returned</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Job Confirmation Dialog */}
+      <AlertDialog open={deleteJobDialog.open} onOpenChange={(open) => {
+        if (!open) {
+          setDeleteJobDialog({ open: false, jobId: null, jobTitle: '' });
+          setDeleteJobConfirmText('');
+        }
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Job: {deleteJobDialog.jobTitle}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove this job from the work order. This action cannot be undone.
+              <br /><br />
+              <strong>Note:</strong> Jobs with time entries, parts, or labor lines cannot be deleted. Remove those items first.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-2">
+            <Label className="text-sm text-muted-foreground">Type DELETE to confirm:</Label>
+            <Input 
+              value={deleteJobConfirmText} 
+              onChange={(e) => setDeleteJobConfirmText(e.target.value)}
+              placeholder="DELETE"
+              className="mt-1"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => deleteJobDialog.jobId && handleDeleteJob(deleteJobDialog.jobId)}
+              disabled={deleteJobConfirmText !== 'DELETE'}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete Job
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
