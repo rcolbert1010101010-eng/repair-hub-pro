@@ -113,6 +113,8 @@ export function PMScheduleDialog({
         default_labor_description: formData.default_labor_description.trim() || null,
         default_labor_hours: defaultHours,
         notes: formData.notes.trim() || null,
+        last_generated_due_key: null,
+        last_generated_work_order_id: null,
       };
 
       if (schedule) {

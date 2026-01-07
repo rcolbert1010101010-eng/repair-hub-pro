@@ -156,6 +156,7 @@ export interface CycleCountSession {
   created_by: string;
   posted_at: string | null;
   posted_by: string | null;
+  updated_at?: string | null;
 }
 
 export interface CycleCountLine {

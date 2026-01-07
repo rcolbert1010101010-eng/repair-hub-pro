@@ -148,7 +148,7 @@ interface ShopState {
   parts: Part[];
   addPart: (part: Omit<Part, 'id' | 'is_active' | 'created_at' | 'updated_at' | 'last_cost' | 'avg_cost' | 'barcode'> & Partial<Pick<Part, 'last_cost' | 'avg_cost' | 'barcode'>>) => Part;
   updatePart: (id: string, part: Partial<Part>) => void;
-  updatePartWithQohAdjustment: (id: string, part: Partial<Part>, meta: { reason: string; adjusted_by: string }) => void;
+  updatePartWithQohAdjustment: (id: string, part: Partial<Part>, meta: { reason: string; adjusted_by: string }) => { success: boolean; warning?: string; error?: string };
   deactivatePart: (id: string) => void;
   reactivatePart: (id: string) => void;
   kitComponents: PartKitComponent[];
@@ -235,6 +235,7 @@ interface ShopState {
   woRemoveLaborLine: (lineId: string) => { success: boolean; error?: string };
   woToggleLaborWarranty: (lineId: string) => { success: boolean; error?: string };
   woUpdateStatus: (orderId: string, status: 'IN_PROGRESS') => { success: boolean; error?: string };
+  woConvertToOpen: (orderId: string) => { success: boolean; error?: string };
   woInvoice: (orderId: string) => { success: boolean; error?: string };
   updateWorkOrderNotes: (orderId: string, notes: string | null) => void;
   updateWorkOrderPromisedAt?: (orderId: string, promisedAt: string | null) => void;
@@ -599,8 +600,8 @@ const SAMPLE_TECHNICIANS: Technician[] = [
 ];
 
 export const useShopStore = create<ShopState>()(
-  persist(
-    (set, get) => {
+  persist<ShopState>(
+    (set, get): ShopState => {
       const upsertPlasmaChargeLine = (params: {
         target: 'WORK_ORDER' | 'SALES_ORDER';
         orderId: string;
