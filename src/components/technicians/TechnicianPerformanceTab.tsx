@@ -1,11 +1,15 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { StatCard } from '@/components/ui/stat-card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 import { useShopStore } from '@/stores/shopStore';
 import { 
   calculatePerformanceMetrics, 
   calculateTrendData,
+  calculateJobEfficiency,
   type TrendPeriod 
 } from '@/services/technicianPerformance';
 import type { Technician } from '@/types';
@@ -32,6 +36,7 @@ interface TechnicianPerformanceTabProps {
 }
 
 export function TechnicianPerformanceTab({ technician }: TechnicianPerformanceTabProps) {
+  const navigate = useNavigate();
   const [period, setPeriod] = useState<TrendPeriod>(30);
   
   const workOrders = useShopStore((s) => s.workOrders);
@@ -62,6 +67,17 @@ export function TechnicianPerformanceTab({ technician }: TechnicianPerformanceTa
     [technician, laborLines, woTimeEntries, workOrders, period]
   );
 
+  const jobEfficiency = useMemo(
+    () => calculateJobEfficiency(
+      technician.id,
+      laborLines,
+      woTimeEntries,
+      workOrders,
+      period
+    ),
+    [technician.id, laborLines, woTimeEntries, workOrders, period]
+  );
+
   const getEfficiencyVariant = (percent: number) => {
     if (percent >= 100) return 'success';
     if (percent >= 80) return 'default';
@@ -78,6 +94,18 @@ export function TechnicianPerformanceTab({ technician }: TechnicianPerformanceTa
     if (Math.abs(hours) < 0.1) return 'On target';
     if (hours > 0) return `Over estimate by ${hours}h`;
     return `Under estimate by ${Math.abs(hours)}h`;
+  };
+
+  const getEfficiencyBadgeVariant = (percent: number) => {
+    if (percent >= 100) return 'secondary';
+    if (percent >= 80) return 'default';
+    return 'destructive';
+  };
+
+  const formatVariance = (hours: number) => {
+    if (Math.abs(hours) < 0.1) return '—';
+    if (hours > 0) return `+${hours}h`;
+    return `${hours}h`;
   };
 
   return (
@@ -216,6 +244,66 @@ export function TechnicianPerformanceTab({ technician }: TechnicianPerformanceTa
             <div className="h-64 flex items-center justify-center text-muted-foreground">
               <p className="text-sm">No job data available for this period</p>
             </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Job-Level Breakdown Table */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Job-Level Breakdown</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {jobEfficiency.length > 0 ? (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Work Order</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead className="text-right">Est.</TableHead>
+                    <TableHead className="text-right">Actual</TableHead>
+                    <TableHead className="text-right">Variance</TableHead>
+                    <TableHead className="text-right">Efficiency</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {jobEfficiency.slice(0, 10).map((job) => (
+                    <TableRow 
+                      key={job.jobLineId}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => navigate(`/work-orders/${job.workOrderId}`)}
+                    >
+                      <TableCell className="font-medium text-primary">
+                        {job.workOrderNumber}
+                      </TableCell>
+                      <TableCell className="max-w-[200px] truncate">
+                        {job.description || '—'}
+                      </TableCell>
+                      <TableCell className="text-right">{job.estimatedHours}h</TableCell>
+                      <TableCell className="text-right">{job.actualHours}h</TableCell>
+                      <TableCell className={`text-right ${job.variance > 0 ? 'text-warning' : job.variance < 0 ? 'text-success' : ''}`}>
+                        {formatVariance(job.variance)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Badge variant={getEfficiencyBadgeVariant(job.efficiencyPercent)}>
+                          {job.efficiencyPercent}%
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {jobEfficiency.length > 10 && (
+                <p className="text-xs text-muted-foreground mt-2 text-center">
+                  Showing 10 of {jobEfficiency.length} jobs
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              No job data available for this period
+            </p>
           )}
         </CardContent>
       </Card>

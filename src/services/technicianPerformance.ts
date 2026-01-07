@@ -27,6 +27,18 @@ export interface TrendDataPoint {
   estimatedHours: number;
 }
 
+export interface JobEfficiencyRecord {
+  jobLineId: string;
+  workOrderId: string;
+  workOrderNumber: string;
+  description: string;
+  estimatedHours: number;
+  actualHours: number;
+  efficiencyPercent: number;
+  variance: number; // positive = over, negative = under
+  date: string;
+}
+
 export type TrendPeriod = 7 | 30 | 90;
 
 const DEFAULT_SCHEDULE: TechnicianWorkSchedule = {
@@ -280,4 +292,77 @@ export function calculateTrendData(
   }
 
   return dataPoints;
+}
+
+/**
+ * Calculate job-level efficiency breakdown for a technician
+ */
+export function calculateJobEfficiency(
+  technicianId: string,
+  laborLines: WorkOrderLaborLine[],
+  woTimeEntries: WorkOrderTimeEntry[],
+  workOrders: WorkOrder[],
+  periodDays?: TrendPeriod
+): JobEfficiencyRecord[] {
+  const endDate = startOfDay(new Date());
+  const startDate = periodDays ? subDays(endDate, periodDays) : undefined;
+
+  // Get technician's labor lines
+  const techLaborLines = getTechnicianLaborLines(
+    technicianId,
+    laborLines,
+    workOrders,
+    startDate,
+    endDate
+  );
+
+  // Build a map of job_line_id -> actual seconds from time entries
+  const actualSecondsMap = new Map<string, number>();
+  woTimeEntries.forEach((entry) => {
+    if (entry.technician_id !== technicianId) return;
+    if (startDate && endDate && entry.started_at) {
+      const entryDate = parseISO(entry.started_at);
+      if (!isWithinInterval(entryDate, { start: startDate, end: endDate })) return;
+    }
+    const jobLineId = entry.job_line_id;
+    if (jobLineId) {
+      actualSecondsMap.set(jobLineId, (actualSecondsMap.get(jobLineId) || 0) + entry.seconds);
+    }
+  });
+
+  // Build job efficiency records
+  const records: JobEfficiencyRecord[] = [];
+
+  techLaborLines.forEach((laborLine) => {
+    const wo = workOrders.find((w) => w.id === laborLine.work_order_id);
+    if (!wo) return;
+
+    const jobLineId = laborLine.job_line_id || laborLine.id;
+    const actualSeconds = actualSecondsMap.get(jobLineId) || 0;
+    const actualHours = actualSeconds / 3600;
+    const estimatedHours = laborLine.hours;
+
+    const efficiencyPercent = actualHours > 0
+      ? Math.round((estimatedHours / actualHours) * 100)
+      : estimatedHours > 0 ? 100 : 0;
+
+    const variance = actualHours - estimatedHours;
+
+    records.push({
+      jobLineId,
+      workOrderId: wo.id,
+      workOrderNumber: wo.order_number,
+      description: laborLine.description,
+      estimatedHours: Math.round(estimatedHours * 10) / 10,
+      actualHours: Math.round(actualHours * 10) / 10,
+      efficiencyPercent,
+      variance: Math.round(variance * 10) / 10,
+      date: wo.created_at.split('T')[0],
+    });
+  });
+
+  // Sort by date descending (most recent first)
+  records.sort((a, b) => b.date.localeCompare(a.date));
+
+  return records;
 }
