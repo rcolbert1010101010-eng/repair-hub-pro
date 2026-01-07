@@ -33,6 +33,9 @@ import { Wrench, ShoppingCart, AlertTriangle, DollarSign, Shield, ClipboardList,
 import type { ScheduleItem, WorkOrder } from '@/types';
 
 const VIEW_STORAGE_KEY = 'dashboard-view';
+const PIPELINE_VIEW_STORAGE_KEY = 'dashboard.pipelineView';
+
+type PipelineViewMode = 'pipeline' | 'kanban';
 
 type FocusKey = 'blocked' | 'waitingApproval' | 'waitingParts' | 'unassigned';
 
@@ -134,6 +137,11 @@ export default function Dashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(Date.now());
   const [now, setNow] = useState(Date.now());
+  const [pipelineView, setPipelineView] = useState<PipelineViewMode>(() => {
+    if (typeof window === 'undefined') return 'pipeline';
+    const saved = window.localStorage.getItem(PIPELINE_VIEW_STORAGE_KEY);
+    return saved === 'kanban' ? 'kanban' : 'pipeline';
+  });
 
   useEffect(() => {
     const timer = setTimeout(() => setIsHydrating(false), 200);
@@ -144,6 +152,11 @@ export default function Dashboard() {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(VIEW_STORAGE_KEY, selectedViewId);
   }, [selectedViewId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(PIPELINE_VIEW_STORAGE_KEY, pipelineView);
+  }, [pipelineView]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -763,13 +776,18 @@ export default function Dashboard() {
                 variant="outline"
                 size="sm"
                 className="text-xs"
-                onClick={() => navigate('/work-orders')}
+                onClick={() => setPipelineView(pipelineView === 'pipeline' ? 'kanban' : 'pipeline')}
               >
-                Kanban view
+                {pipelineView === 'pipeline' ? 'Kanban view' : 'List view'}
               </Button>
             </CardHeader>
             <CardContent>
-              <DashboardKanban columns={pipelineColumns} loading={isHydrating} emptyState={pipelineEmptyState} />
+              <DashboardKanban
+                columns={pipelineColumns}
+                loading={isHydrating}
+                emptyState={pipelineEmptyState}
+                layout={pipelineView === 'kanban' ? 'kanban' : 'grid'}
+              />
             </CardContent>
           </Card>
         </div>
