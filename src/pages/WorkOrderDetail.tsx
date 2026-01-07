@@ -2006,11 +2006,34 @@ const jobReadinessValues = Object.values(jobReadinessById);
                                 />
                               </div>
                             )}
-                            {!isEditing && (job.complaint || job.cause || job.correction) && (
-                              <div className="grid gap-2 md:grid-cols-3 text-sm text-muted-foreground">
-                                {job.complaint && <div><span className="font-medium">Complaint:</span> {job.complaint}</div>}
-                                {job.cause && <div><span className="font-medium">Cause:</span> {job.cause}</div>}
-                                {job.correction && <div><span className="font-medium">Correction:</span> {job.correction}</div>}
+                            {!isEditing && (
+                              <div className="border rounded-md p-3 bg-muted/30 space-y-2">
+                                <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2 text-sm">
+                                  <div>
+                                    <span className="text-muted-foreground">Job Name:</span>{' '}
+                                    <span className="font-medium">{job.title}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Status:</span>{' '}
+                                    <span className="font-medium">
+                                      {JOB_STATUS_OPTIONS.find((o) => o.value === job.status)?.label || job.status}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="grid gap-2 md:grid-cols-3 text-sm">
+                                  <div>
+                                    <span className="text-muted-foreground">Complaint:</span>{' '}
+                                    <span>{job.complaint || '—'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Cause:</span>{' '}
+                                    <span>{job.cause || '—'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Correction:</span>{' '}
+                                    <span>{job.correction || '—'}</span>
+                                  </div>
+                                </div>
                               </div>
                             )}
                             <div className="flex flex-wrap items-center gap-3">
