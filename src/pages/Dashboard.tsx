@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -121,6 +122,9 @@ export default function Dashboard() {
     timeEntries,
     customers,
     units,
+    woConvertToOpen,
+    woUpdateStatus,
+    woInvoice,
   } = useShopStore();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -459,6 +463,102 @@ export default function Dashboard() {
     [scheduleMap]
   );
 
+  const handleKanbanItemMove = useCallback(
+    (itemId: string, fromColumnId: string, toColumnId: string) => {
+      // Map column transitions to work order status changes
+      const workOrder = workOrders.find((wo) => wo.id === itemId);
+      if (!workOrder) {
+        toast.error('Work order not found');
+        return;
+      }
+
+      // Determine what action to take based on the target column
+      let result: { success: boolean; error?: string } = { success: false, error: 'Invalid move' };
+      let actionTaken = '';
+
+      switch (toColumnId) {
+        case 'new':
+        case 'waitingApproval':
+          // These are ESTIMATE status - can't move back to estimate easily
+          toast.error('Cannot move to this column. Work orders in this status are determined by their approval state.');
+          return;
+
+        case 'waitingParts':
+          // This is determined by inventory, not status
+          toast.error('This column is determined by parts availability, not work order status.');
+          return;
+
+        case 'scheduled':
+        case 'inProgress':
+          // Moving to scheduled or in-progress
+          if (workOrder.status === 'ESTIMATE') {
+            // First convert to OPEN
+            result = woConvertToOpen(workOrder.id);
+            if (result.success && toColumnId === 'inProgress') {
+              result = woUpdateStatus(workOrder.id, 'IN_PROGRESS');
+              actionTaken = 'Approved and started';
+            } else {
+              actionTaken = 'Approved';
+            }
+          } else if (workOrder.status === 'OPEN') {
+            if (toColumnId === 'inProgress') {
+              result = woUpdateStatus(workOrder.id, 'IN_PROGRESS');
+              actionTaken = 'Started work';
+            } else {
+              result = { success: true };
+              actionTaken = 'Moved to scheduled';
+            }
+          } else {
+            result = { success: true };
+          }
+          break;
+
+        case 'qa':
+          // QA is typically marked via notes or schedule status
+          if (workOrder.status === 'ESTIMATE') {
+            result = woConvertToOpen(workOrder.id);
+            if (result.success) {
+              result = woUpdateStatus(workOrder.id, 'IN_PROGRESS');
+            }
+          } else if (workOrder.status === 'OPEN') {
+            result = woUpdateStatus(workOrder.id, 'IN_PROGRESS');
+          } else {
+            result = { success: true };
+          }
+          actionTaken = 'Moved to QA';
+          break;
+
+        case 'readyToInvoice':
+          // Work order should be IN_PROGRESS to be ready for invoice
+          if (workOrder.status === 'ESTIMATE') {
+            result = woConvertToOpen(workOrder.id);
+            if (result.success) {
+              result = woUpdateStatus(workOrder.id, 'IN_PROGRESS');
+              actionTaken = 'Approved and ready for invoice';
+            }
+          } else if (workOrder.status === 'OPEN') {
+            result = woUpdateStatus(workOrder.id, 'IN_PROGRESS');
+            actionTaken = 'Ready for invoice';
+          } else {
+            result = { success: true };
+            actionTaken = 'Ready for invoice';
+          }
+          break;
+
+        default:
+          toast.error('Unknown column');
+          return;
+      }
+
+      if (result.success) {
+        toast.success(actionTaken || `Moved ${workOrder.order_number || 'work order'}`);
+      } else {
+        toast.error(result.error || 'Could not move work order');
+      }
+    },
+    [workOrders, woConvertToOpen, woUpdateStatus]
+  );
+
   const pipelineColumns = useMemo(() => {
     const schema: DashboardKanbanColumn[] = [
       { id: 'new', label: 'New', items: [] },
@@ -787,6 +887,7 @@ export default function Dashboard() {
                 loading={isHydrating}
                 emptyState={pipelineEmptyState}
                 layout={pipelineView === 'kanban' ? 'kanban' : 'grid'}
+                onItemMove={handleKanbanItemMove}
               />
             </CardContent>
           </Card>
