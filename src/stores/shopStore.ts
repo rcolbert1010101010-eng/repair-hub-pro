@@ -7,6 +7,8 @@ import type {
   Customer,
   CustomerContact,
   Unit,
+  UnitAttachment,
+  UnitAttachmentTag,
   Vendor,
   PartCategory,
   Part,
@@ -131,6 +133,15 @@ interface ShopState {
   updateUnit: (id: string, unit: Partial<Unit>) => void;
   deactivateUnit: (id: string) => void;
   getUnitsByCustomer: (customerId: string) => Unit[];
+
+  // Unit Attachments (images)
+  unitAttachments: UnitAttachment[];
+  listUnitAttachments: (unitId: string) => UnitAttachment[];
+  addUnitAttachment: (unitId: string, file: File, options?: { tag?: UnitAttachmentTag; notes?: string | null }) => { success: boolean; attachment?: UnitAttachment; error?: string };
+  removeUnitAttachment: (attachmentId: string) => void;
+  updateUnitAttachment: (attachmentId: string, patch: Partial<Pick<UnitAttachment, 'tag' | 'notes' | 'is_primary' | 'sort_order'>>) => void;
+  setUnitAttachmentPrimary: (attachmentId: string) => void;
+  reorderUnitAttachments: (unitId: string, orderedIds: string[]) => void;
 
   // Vendors
   vendors: Vendor[];
@@ -1147,6 +1158,114 @@ export const useShopStore = create<ShopState>()(
 
       getUnitsByCustomer: (customerId) =>
         get().units.filter((u) => u.customer_id === customerId && u.is_active),
+
+      // Unit Attachments
+      unitAttachments: [],
+
+      listUnitAttachments: (unitId) =>
+        get()
+          .unitAttachments.filter((att) => att.unit_id === unitId)
+          .sort((a, b) => {
+            if (a.is_primary && !b.is_primary) return -1;
+            if (!a.is_primary && b.is_primary) return 1;
+            return a.sort_order - b.sort_order;
+          }),
+
+      addUnitAttachment: (unitId, file, options) => {
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+        const sizeLimit = 10 * 1024 * 1024; // 10MB
+
+        if (!file.type.startsWith('image/') && !allowedTypes.some((t) => file.type === t)) {
+          return { success: false, error: 'Only image files are allowed' };
+        }
+        if (file.size > sizeLimit) {
+          return { success: false, error: 'File too large. Max 10MB.' };
+        }
+
+        const existingAttachments = get().unitAttachments.filter((a) => a.unit_id === unitId);
+        const maxSortOrder = existingAttachments.reduce((max, a) => Math.max(max, a.sort_order), 0);
+
+        const attachment: UnitAttachment = {
+          id: generateId(),
+          unit_id: unitId,
+          filename: file.name,
+          mime_type: file.type || 'application/octet-stream',
+          size_bytes: file.size,
+          local_url: URL.createObjectURL(file),
+          tag: options?.tag ?? 'GENERAL',
+          notes: options?.notes ?? null,
+          is_primary: existingAttachments.length === 0, // First image is primary by default
+          sort_order: maxSortOrder + 1,
+          created_at: now(),
+          updated_at: now(),
+        };
+
+        set((state) => ({
+          unitAttachments: [...state.unitAttachments, attachment],
+        }));
+
+        return { success: true, attachment };
+      },
+
+      removeUnitAttachment: (attachmentId) => {
+        const att = get().unitAttachments.find((a) => a.id === attachmentId);
+        if (!att) return;
+
+        if (att.local_url) {
+          URL.revokeObjectURL(att.local_url);
+        }
+
+        const wasPrimary = att.is_primary;
+        const unitId = att.unit_id;
+
+        set((state) => ({
+          unitAttachments: state.unitAttachments.filter((a) => a.id !== attachmentId),
+        }));
+
+        // If deleted was primary, make first remaining image primary
+        if (wasPrimary) {
+          const remaining = get().unitAttachments.filter((a) => a.unit_id === unitId);
+          if (remaining.length > 0) {
+            const sorted = [...remaining].sort((a, b) => a.sort_order - b.sort_order);
+            get().setUnitAttachmentPrimary(sorted[0].id);
+          }
+        }
+      },
+
+      updateUnitAttachment: (attachmentId, patch) => {
+        set((state) => ({
+          unitAttachments: state.unitAttachments.map((att) =>
+            att.id === attachmentId ? { ...att, ...patch, updated_at: now() } : att
+          ),
+        }));
+      },
+
+      setUnitAttachmentPrimary: (attachmentId) => {
+        const att = get().unitAttachments.find((a) => a.id === attachmentId);
+        if (!att) return;
+
+        set((state) => ({
+          unitAttachments: state.unitAttachments.map((a) => {
+            if (a.unit_id !== att.unit_id) return a;
+            return {
+              ...a,
+              is_primary: a.id === attachmentId,
+              updated_at: a.id === attachmentId ? now() : a.updated_at,
+            };
+          }),
+        }));
+      },
+
+      reorderUnitAttachments: (unitId, orderedIds) => {
+        set((state) => ({
+          unitAttachments: state.unitAttachments.map((att) => {
+            if (att.unit_id !== unitId) return att;
+            const newOrder = orderedIds.indexOf(att.id);
+            if (newOrder === -1) return att;
+            return { ...att, sort_order: newOrder, updated_at: now() };
+          }),
+        }));
+      },
 
       // Vendors
       vendors: [...SAMPLE_VENDORS],

@@ -34,6 +34,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { LucideIcon } from 'lucide-react';
 import { Save, X, Trash2, Edit, Wrench, ShoppingCart, Clock3, Timer, CalendarPlus } from 'lucide-react';
 import { PMSection } from '@/components/pm/PMSection';
+import { UnitImagesSection } from '@/components/units/UnitImagesSection';
 import { useShopStore } from '@/stores/shopStore';
 
 export default function UnitForm() {
@@ -805,6 +806,9 @@ export default function UnitForm() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Unit Images Section */}
+          <UnitImagesSection unitId={unit.id} />
 
           <div className="space-y-4">
             {timelineEvents.length > 0 && (

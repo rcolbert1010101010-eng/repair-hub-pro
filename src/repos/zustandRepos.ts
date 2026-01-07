@@ -250,6 +250,26 @@ export const zustandRepos: Repos = {
       return useShopStore.getState().getUnitsByCustomer(customerId);
     },
   },
+  unitAttachments: {
+    list(unitId) {
+      return useShopStore.getState().listUnitAttachments(unitId);
+    },
+    add(unitId, file, options) {
+      return useShopStore.getState().addUnitAttachment(unitId, file, options);
+    },
+    remove(attachmentId) {
+      return useShopStore.getState().removeUnitAttachment(attachmentId);
+    },
+    update(attachmentId, patch) {
+      return useShopStore.getState().updateUnitAttachment(attachmentId, patch);
+    },
+    setPrimary(attachmentId) {
+      return useShopStore.getState().setUnitAttachmentPrimary(attachmentId);
+    },
+    reorder(unitId, orderedIds) {
+      return useShopStore.getState().reorderUnitAttachments(unitId, orderedIds);
+    },
+  },
   vendors: {
     get vendors() {
       return useShopStore.getState().vendors;
