@@ -72,7 +72,7 @@ export function DashboardKanban({ columns, loading, emptyState }: DashboardKanba
                       <button
                         key={item.id}
                         onClick={item.onClick}
-                        className="w-full rounded-lg border border-border/80 p-3 text-left transition hover:bg-muted"
+                        className="relative w-full overflow-hidden rounded-lg border border-border/80 p-3 text-left transition hover:bg-muted"
                       >
                         <div className="flex items-center justify-between gap-2">
                           <p className="font-medium text-sm">{item.title}</p>
