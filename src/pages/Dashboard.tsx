@@ -759,9 +759,14 @@ export default function Dashboard() {
                 <CardTitle className="text-base font-semibold">Work Order Pipeline</CardTitle>
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Open only</p>
               </div>
-              <Badge variant="outline" className="text-xs">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs"
+                onClick={() => navigate('/work-orders')}
+              >
                 Kanban view
-              </Badge>
+              </Button>
             </CardHeader>
             <CardContent>
               <DashboardKanban columns={pipelineColumns} loading={isHydrating} emptyState={pipelineEmptyState} />
