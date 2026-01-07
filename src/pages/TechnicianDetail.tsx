@@ -23,6 +23,7 @@ import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, X, Trash2, Edit, Plus } from 'lucide-react';
 import type { Technician, TechnicianCertification, TechnicianWorkSchedule } from '@/types';
+import { TechnicianPerformanceTab } from '@/components/technicians/TechnicianPerformanceTab';
 
 const SKILL_OPTIONS = [
   'Diagnostics',
@@ -272,6 +273,7 @@ export default function TechnicianDetail() {
           <TabsTrigger value="skills">Skills</TabsTrigger>
           <TabsTrigger value="certifications">Certifications</TabsTrigger>
           <TabsTrigger value="schedule">Schedule</TabsTrigger>
+          {!isNew && <TabsTrigger value="performance">Performance</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="profile" className="space-y-4 max-w-3xl">
@@ -502,6 +504,12 @@ export default function TechnicianDetail() {
             </div>
           </div>
         </TabsContent>
+
+        {!isNew && technician && (
+          <TabsContent value="performance">
+            <TechnicianPerformanceTab technician={technician} />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );
