@@ -250,7 +250,7 @@ export function PMSection({ unit }: PMSectionProps) {
     if (computed.status !== 'OVERDUE' && computed.status !== 'DUE_SOON') return;
 
     const dueKey = `${computed.schedule.interval_type}:${computed.nextDue ?? 'NONE'}`;
-    if (computed.status === 'NOT_CONFIGURED' || dueKey.endsWith(':NONE')) {
+    if (dueKey.endsWith(':NONE')) {
       return;
     }
 
@@ -261,8 +261,7 @@ export function PMSection({ unit }: PMSectionProps) {
 
     const wo = createWorkOrder(unit.customer_id, unit.id);
 
-    const dueText =
-      computed.status === 'NOT_CONFIGURED' ? 'No baseline set' : formatNextDue(computed);
+    const dueText = formatNextDue(computed);
 
     const notes = `PM: ${computed.schedule.name} — Status: ${computed.status} — Due: ${dueText}`;
 

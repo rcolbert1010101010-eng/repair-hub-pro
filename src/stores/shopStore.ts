@@ -29,6 +29,7 @@ import type {
   Return,
   ReturnLine,
   ReturnStatus,
+  ReturnLineCondition,
   WarrantyPolicy,
   WarrantyClaim,
   WarrantyClaimLine,
@@ -3052,7 +3053,7 @@ export const useShopStore = create<ShopState>()(
         set((state) => ({
           workOrderJobLines: state.workOrderJobLines.map((j) => (j.id === jobLineId ? updated : j)),
         }));
-        const eventType: WorkOrderActivityEventType =
+        const eventType: WorkOrderActivityEvent['type'] =
           patch.status && patch.status !== job.status ? 'JOB_STATUS_CHANGED' : 'JOB_UPDATED';
         logWorkOrderActivity({
           work_order_id: job.work_order_id,
@@ -3719,7 +3720,7 @@ export const useShopStore = create<ShopState>()(
           purchase_order_id: null,
           sales_order_id: null,
           work_order_id: null,
-          status: 'DRAFT',
+          status: 'DRAFT' as ReturnStatus,
           reason: 'Damaged packaging on arrival',
           rma_number: null,
           carrier: null,
@@ -3740,7 +3741,7 @@ export const useShopStore = create<ShopState>()(
           updated_at: now(),
           is_active: true,
         },
-      ],
+      ] as Return[],
       returnLines: [
         {
           id: 'return-line-1',
@@ -3749,13 +3750,13 @@ export const useShopStore = create<ShopState>()(
           purchase_order_line_id: null,
           quantity: 1,
           unit_cost: 45,
-          condition: 'DAMAGED',
+          condition: 'DAMAGED' as ReturnLineCondition,
           reason: 'Bent during transit',
           created_at: now(),
           updated_at: now(),
           is_active: true,
         },
-      ],
+      ] as ReturnLine[],
 
       // Warranty
       warrantyPolicies: [
@@ -3782,7 +3783,7 @@ export const useShopStore = create<ShopState>()(
           work_order_id: null,
           sales_order_id: null,
           purchase_order_id: null,
-          status: 'OPEN',
+          status: 'OPEN' as WarrantyClaimStatus,
           claim_number: 'CLM-001',
           rma_number: null,
           submitted_at: null,
@@ -3802,7 +3803,7 @@ export const useShopStore = create<ShopState>()(
           created_at: now(),
           updated_at: now(),
         },
-      ],
+      ] as WarrantyClaim[],
       warrantyClaimLines: [
         {
           id: 'claim-line-1',
@@ -4071,6 +4072,13 @@ export const useShopStore = create<ShopState>()(
           received_at: null,
           credited_at: null,
           credit_amount: null,
+          credit_memo_number: null,
+          credit_memo_amount: null,
+          credit_memo_date: null,
+          reimbursed_amount: null,
+          reimbursed_date: null,
+          reimbursement_reference: null,
+          approved_amount: null,
           notes: null,
           created_at: timestamp,
           updated_at: timestamp,
@@ -4194,6 +4202,12 @@ export const useShopStore = create<ShopState>()(
           paid_at: null,
           amount_requested: null,
           approved_amount: null,
+          credit_memo_number: null,
+          credit_memo_amount: null,
+          credit_memo_date: null,
+          reimbursed_amount: null,
+          reimbursed_date: null,
+          reimbursement_reference: null,
           reason: null,
           notes: null,
           is_active: true,

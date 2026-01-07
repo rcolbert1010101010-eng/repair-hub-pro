@@ -369,13 +369,15 @@ export default function Dashboard() {
           `Waiting Parts ${waitingPartsWorkOrders.length}`,
           `Waiting Approval ${waitingApprovalWorkOrders.length}`,
         ],
+        description: '',
         icon: AlertTriangle,
         tone: blockedCount > 0 ? 'warning' as const : 'default' as const,
         onClick: () => navigate('/work-orders?filter=blocked'),
       },
       {
         title: 'Today Revenue',
-        value: `$${dailyRevenue.toFixed(2)}`,
+        value: Math.round(dailyRevenue),
+        meta: [`$${dailyRevenue.toFixed(2)}`],
         description: 'Invoiced today',
         icon: DollarSign,
         tone: 'success' as const,
@@ -384,6 +386,7 @@ export default function Dashboard() {
       {
         title: 'Negative Inventory',
         value: negativeInventoryParts.length,
+        meta: [],
         description: 'Parts tracking below zero',
         icon: ClipboardList,
         tone: negativeInventoryParts.length > 0 ? 'warning' as const : 'default' as const,
@@ -394,7 +397,8 @@ export default function Dashboard() {
     if (showWarrantyCard) {
       cards.splice(3, 0, {
         title: 'Warranty Exposure',
-        value: warrantyExposure > 0 ? `$${warrantyExposure.toFixed(2)}` : '—',
+        value: warrantyExposure > 0 ? Math.round(warrantyExposure) : 0,
+        meta: [warrantyExposure > 0 ? `$${warrantyExposure.toFixed(2)}` : '—'],
         description: 'Includes warranty labor + parts',
         icon: Shield,
         tone: warrantyExposure > 0 ? 'warning' as const : 'default' as const,

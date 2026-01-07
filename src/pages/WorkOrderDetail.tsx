@@ -539,7 +539,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
     [currentOrder, getClaimsByWorkOrder]
   );
   const poLinesByPo = useMemo(() => {
-    return purchaseOrderLines.reduce<Record<string, typeof purchaseOrderLines>>((acc, line) => {
+    return purchaseOrderLines.reduce((acc: Record<string, typeof purchaseOrderLines>, line) => {
       acc[line.purchase_order_id] = acc[line.purchase_order_id] || [];
       acc[line.purchase_order_id].push(line);
       return acc;
@@ -1094,7 +1094,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
     if (!result.success) {
       toast({ title: 'Recalculate failed', description: result.error, variant: 'destructive' });
     } else {
-      setPlasmaWarnings(result.warnings?.map((w) => w.message) ?? []);
+      setPlasmaWarnings(result.warnings ?? []);
       toast({ title: 'Plasma pricing updated' });
     }
   };

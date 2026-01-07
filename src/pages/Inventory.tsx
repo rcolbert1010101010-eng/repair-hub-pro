@@ -122,19 +122,30 @@ export default function Inventory() {
         <div className="flex flex-col gap-1">
           <span className="font-mono font-semibold">{item.part_number}</span>
           <div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-            {item.__lastCountedAt && (
-              <span className="rounded-md bg-muted px-2 py-0.5">
-                Last count {new Date(item.__lastCountedAt).toLocaleDateString()}
-              </span>
-            )}
-            <span className="rounded-md bg-muted px-2 py-0.5">
-              30d Δ {item.__delta30d > 0 ? `+${item.__delta30d}` : item.__delta30d}
-            </span>
-            {item.__needsReorder && Number.isFinite(item.__suggested) && item.__suggested > 0 && (
-              <span className="rounded-md bg-muted px-2 py-0.5">
-                Suggested {item.__suggested}
-              </span>
-            )}
+            {(() => {
+              const ms = movementSummary[item.id];
+              const lastCountedAt = ms?.lastCountedAt;
+              const delta30d = ms?.delta30d ?? 0;
+              const needsReorder = item.min_qty != null && item.quantity_on_hand < item.min_qty;
+              const suggested = item.max_qty != null && item.max_qty > 0 ? Math.max(0, item.max_qty - item.quantity_on_hand) : 0;
+              return (
+                <>
+                  {lastCountedAt && (
+                    <span className="rounded-md bg-muted px-2 py-0.5">
+                      Last count {new Date(lastCountedAt).toLocaleDateString()}
+                    </span>
+                  )}
+                  <span className="rounded-md bg-muted px-2 py-0.5">
+                    30d Δ {delta30d > 0 ? `+${delta30d}` : delta30d}
+                  </span>
+                  {needsReorder && Number.isFinite(suggested) && suggested > 0 && (
+                    <span className="rounded-md bg-muted px-2 py-0.5">
+                      Suggested {suggested}
+                    </span>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       ),
@@ -843,16 +854,14 @@ export default function Inventory() {
         columns={columns}
         searchKeys={['part_number', 'description']}
         searchPlaceholder="Search parts..."
-        onRowClick={(part, event) => {
+        onRowClick={(part) => {
           if (cycleCountMode || bulkSelectMode) {
-            event?.stopPropagation();
-            event?.preventDefault();
             setSelectedIds((prev) => ({ ...prev, [part.id]: !prev[part.id] }));
             return;
           }
           navigate(`/inventory/${part.id}`);
         }}
-        rowClassName={cycleCountMode || bulkSelectMode ? 'cursor-default' : undefined}
+        
         emptyMessage="No parts found. Add your first part to get started."
       />
 
