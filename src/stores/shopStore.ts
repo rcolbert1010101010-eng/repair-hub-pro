@@ -54,8 +54,6 @@ import type {
   WorkOrderTimeEntry,
   WorkOrderJobPartsStatus,
   WorkOrderJobPartsReadiness,
-  WorkOrderJobPartsStatus,
-  WorkOrderJobPartsReadiness,
 } from '@/types';
 import { calculateFabJob, fabricationPricingDefaults, type FabricationPricingSettings } from '@/services/fabricationPricingService';
 import { calculatePlasmaJob, plasmaPricingDefaults, type PlasmaPricingSettings } from '@/services/plasmaPricingService';

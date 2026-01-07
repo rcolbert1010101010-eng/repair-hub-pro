@@ -115,7 +115,61 @@ const JOB_STATUS_OPTIONS: { value: WorkOrderJobStatus; label: string }[] = [
   { value: 'WARRANTY', label: 'Warranty' },
 ];
 
-type BlockerChip = { label: string; variant?: 'outline' | 'secondary' | 'destructive' };
+type BlockerChip = { label: string; variant: 'outline' | 'secondary' | 'destructive' };
+
+const PRINT_STYLES = `
+  @media print {
+    aside,
+    [data-sidebar],
+    .sidebar,
+    .layout-sidebar,
+    .vertical-nav {
+      display: none !important;
+    }
+    [role="tablist"],
+    button,
+    input,
+    select,
+    textarea,
+    .print\\:hidden,
+    .print-hidden {
+      display: none !important;
+    }
+    #wo-overview-print {
+      display: block !important;
+      width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    #wo-tech-print {
+      display: none !important;
+    }
+    body[data-print-mode="OVERVIEW"] * {
+      visibility: hidden !important;
+    }
+    body[data-print-mode="OVERVIEW"] #wo-overview-print,
+    body[data-print-mode="OVERVIEW"] #wo-overview-print * {
+      visibility: visible !important;
+    }
+    body[data-print-mode="OVERVIEW"] #wo-overview-print {
+      display: block !important;
+    }
+    body[data-print-mode="TECH"] * {
+      visibility: hidden !important;
+    }
+    body[data-print-mode="TECH"] #wo-tech-print,
+    body[data-print-mode="TECH"] #wo-tech-print * {
+      visibility: visible !important;
+    }
+    body[data-print-mode="TECH"] #wo-tech-print {
+      display: block !important;
+    }
+    @page {
+      size: auto;
+      margin: 0.5in;
+    }
+  }
+`;
 
 function computeEntryHours(entry: WorkOrderTimeEntry): number {
   const startMs = new Date(entry.started_at).getTime();
@@ -170,6 +224,7 @@ export default function WorkOrderDetail() {
     clockIn,
     clockOut,
     addCustomer,
+    addPart,
     addUnit,
     purchaseOrders,
     purchaseOrderLines,
@@ -220,6 +275,7 @@ export default function WorkOrderDetail() {
   const [quickAddCustomerOpen, setQuickAddCustomerOpen] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
   const [quickAddUnitOpen, setQuickAddUnitOpen] = useState(false);
+  const [newUnitName, setNewUnitName] = useState('');
 
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState('');
@@ -271,20 +327,25 @@ export default function WorkOrderDetail() {
       fabricationRepo.createForWorkOrder(currentOrder.id);
     }
   }, [currentOrder, fabricationRepo, plasmaRepo]);
-  const jobLines = currentOrder ? getWorkOrderJobLines(currentOrder.id) : [];
+  const jobLines: WorkOrderJobLine[] = currentOrder ? getWorkOrderJobLines(currentOrder.id) : [];
   const activityEvents = currentOrder ? getWorkOrderActivity(currentOrder.id) : [];
   const jobMap = useMemo(
-    () =>
-      jobLines.reduce<Record<string, WorkOrderJobLine>>((acc, job) => {
-        acc[job.id] = job;
-        return acc;
-      }, {}),
+    () => {
+      const map: Record<string, WorkOrderJobLine> = {};
+      jobLines.forEach((job) => {
+        map[job.id] = job;
+      });
+      return map;
+    },
     [jobLines]
   );
-  const jobReadinessById = jobLines.reduce<Record<string, WorkOrderJobPartsStatus>>((acc, job) => {
-    acc[job.id] = getJobPartReadiness(job.id);
-    return acc;
-  }, {});
+  const jobReadinessById = useMemo(() => {
+    const map: Record<string, WorkOrderJobPartsStatus> = {};
+    jobLines.forEach((job) => {
+      map[job.id] = getJobPartReadiness(job.id);
+    });
+    return map;
+  }, [jobLines, getJobPartReadiness]);
   const allPartLines = currentOrder ? getWorkOrderPartLines(currentOrder.id) : [];
   const laborLines = currentOrder ? getWorkOrderLaborLines(currentOrder.id) : [];
   const partLines = allPartLines.filter((l) => !l.is_core_refund_line);
@@ -584,7 +645,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
   if (!isNew && !currentOrder) {
     return (
       <div className="page-container">
-        <style>{printStyles}</style>
+        <style>{PRINT_STYLES}</style>
         <PageHeader title="Order Not Found" backTo="/work-orders" />
         <p className="text-muted-foreground">This work order does not exist.</p>
       </div>
@@ -674,6 +735,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
       bin_location: null,
       model: null,
       serial_number: null,
+      is_kit: false,
       barcode: null,
     });
 
@@ -809,6 +871,9 @@ const jobReadinessValues = Object.values(jobReadinessById);
       email: null,
       address: null,
       notes: null,
+      price_level: 'RETAIL',
+      is_tax_exempt: false,
+      tax_rate_override: null,
     });
     if (!result.success || !result.customer) {
       toast({ title: 'Unable to add customer', description: result.error, variant: 'destructive' });
@@ -1085,67 +1150,6 @@ const jobReadinessValues = Object.values(jobReadinessById);
   const [activeTab, setActiveTab] = useState<
     'overview' | 'jobs' | 'activity' | 'parts' | 'labor' | 'fabrication' | 'plasma' | 'time'
   >('overview');
-  const printStyles = `
-    @media print {
-      aside,
-      [data-sidebar],
-      .sidebar,
-      .layout-sidebar,
-      .vertical-nav {
-        display: none !important;
-      }
-      [role="tablist"],
-      button,
-      input,
-      select,
-      textarea,
-      .print\\:hidden,
-      .print-hidden {
-        display: none !important;
-      }
-      #wo-overview-print {
-        display: block !important;
-        width: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-      }
-      #wo-tech-print {
-        display: none !important;
-      }
-      body[data-print-mode="OVERVIEW"] * {
-        visibility: hidden !important;
-      }
-      body[data-print-mode="OVERVIEW"] #wo-overview-print,
-      body[data-print-mode="OVERVIEW"] #wo-overview-print * {
-        visibility: visible !important;
-      }
-      body[data-print-mode="OVERVIEW"] #wo-overview-print {
-        display: block !important;
-      }
-      body[data-print-mode="TECH"] * {
-        visibility: hidden !important;
-      }
-      body[data-print-mode="TECH"] #wo-tech-print,
-      body[data-print-mode="TECH"] #wo-tech-print * {
-        visibility: visible !important;
-      }
-      body[data-print-mode="TECH"] #wo-tech-print {
-        display: block !important;
-      }
-      body[data-print-mode="OVERVIEW"] #wo-overview-print,
-      body[data-print-mode="TECH"] #wo-tech-print {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-      }
-      body[data-print-mode="TECH"] input {
-        display: inline-block !important;
-      }
-    }
-  `;
   useEffect(() => {
     if (sheetPrintMode && sheetPrintMode !== 'NONE') {
       document.body.setAttribute('data-print-mode', sheetPrintMode);
@@ -1161,7 +1165,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
   if (isNew && !order) {
     return (
       <div className="page-container">
-        <style>{printStyles}</style>
+        <style>{PRINT_STYLES}</style>
         <PageHeader title="New Work Order" backTo="/work-orders" />
         <div className="form-section max-w-xl">
           <h2 className="text-lg font-semibold mb-4">Order Details</h2>
@@ -1251,7 +1255,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
   // Existing order view
   return (
     <div className="page-container">
-      <style>{printStyles}</style>
+      <style>{PRINT_STYLES}</style>
       <PageHeader
         title={currentOrder?.order_number || 'Work Order'}
         subtitle={
