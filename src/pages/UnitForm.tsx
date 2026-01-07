@@ -13,12 +13,6 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
   Table,
   TableBody,
   TableCell,
@@ -38,7 +32,7 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import type { LucideIcon } from 'lucide-react';
-import { Save, X, Trash2, Edit, Wrench, ShoppingCart, Clock3, Timer, MoreHorizontal } from 'lucide-react';
+import { Save, X, Trash2, Edit, Wrench, ShoppingCart, Clock3, Timer, CalendarPlus } from 'lucide-react';
 import { PMSection } from '@/components/pm/PMSection';
 import { useShopStore } from '@/stores/shopStore';
 
@@ -605,32 +599,14 @@ export default function UnitForm() {
               <Wrench className="w-4 h-4 mr-2" />
               Create Work Order
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="gap-2">
-                  <MoreHorizontal className="w-4 h-4" />
-                  More actions
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    handleCreateAndScheduleWorkOrder();
-                  }}
-                >
-                  Create & Schedule Work Order
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    handleCreateSalesOrder();
-                  }}
-                >
-                  Create Sales Order
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button variant="outline" onClick={handleCreateAndScheduleWorkOrder}>
+              <CalendarPlus className="w-4 h-4 mr-2" />
+              Create & Schedule Work Order
+            </Button>
+            <Button variant="outline" onClick={handleCreateSalesOrder}>
+              <ShoppingCart className="w-4 h-4 mr-2" />
+              Create Sales Order
+            </Button>
           </div>
 
           {hotWorkOrder && (
