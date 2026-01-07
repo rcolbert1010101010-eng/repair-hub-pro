@@ -45,7 +45,7 @@ const navItems: NavItem[] = [
   {
     type: 'group',
     key: 'serviceOrders',
-    label: 'Service Orders',
+    label: 'Service',
     icon: ClipboardList,
     children: [
       { type: 'link', path: '/work-orders', label: 'Work Orders', icon: Wrench },
