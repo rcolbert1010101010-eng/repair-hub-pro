@@ -29,12 +29,19 @@ export interface TrendDataPoint {
 
 export type TrendPeriod = 7 | 30 | 90;
 
+const DEFAULT_SCHEDULE: TechnicianWorkSchedule = {
+  days: { mon: true, tue: true, wed: true, thu: true, fri: true, sat: false, sun: false },
+  start_time: '07:00',
+  end_time: '15:30',
+};
+
 /**
  * Calculate the scheduled work hours for a technician based on their work schedule
  */
-function getScheduledHoursPerDay(schedule: TechnicianWorkSchedule): number {
-  const [startH, startM] = schedule.start_time.split(':').map(Number);
-  const [endH, endM] = schedule.end_time.split(':').map(Number);
+function getScheduledHoursPerDay(schedule?: TechnicianWorkSchedule): number {
+  const s = schedule || DEFAULT_SCHEDULE;
+  const [startH, startM] = s.start_time.split(':').map(Number);
+  const [endH, endM] = s.end_time.split(':').map(Number);
   const startMinutes = startH * 60 + startM;
   const endMinutes = endH * 60 + endM;
   return (endMinutes - startMinutes) / 60;
@@ -44,10 +51,11 @@ function getScheduledHoursPerDay(schedule: TechnicianWorkSchedule): number {
  * Count scheduled work days within a date range for a technician
  */
 function countScheduledDays(
-  schedule: TechnicianWorkSchedule,
+  schedule: TechnicianWorkSchedule | undefined,
   startDate: Date,
   endDate: Date
 ): number {
+  const s = schedule || DEFAULT_SCHEDULE;
   let count = 0;
   const dayMap: Record<number, keyof TechnicianWorkSchedule['days']> = {
     0: 'sun',
@@ -62,7 +70,7 @@ function countScheduledDays(
   const current = new Date(startDate);
   while (current <= endDate) {
     const dayKey = dayMap[current.getDay()];
-    if (schedule.days[dayKey]) {
+    if (s.days[dayKey]) {
       count++;
     }
     current.setDate(current.getDate() + 1);
