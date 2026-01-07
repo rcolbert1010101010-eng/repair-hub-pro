@@ -18,6 +18,7 @@ const apiBackedRepos: Repos = {
   customers: customersRepoApi,
   customerContacts: zustandRepos.customerContacts,
   units: unitsRepoApi,
+  unitAttachments: zustandRepos.unitAttachments,
   vendors: vendorsRepoApi,
   categories: categoriesRepoApi,
   parts: partsRepoApi,

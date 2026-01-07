@@ -3,6 +3,8 @@ import type {
   Customer,
   CustomerContact,
   Unit,
+  UnitAttachment,
+  UnitAttachmentTag,
   Vendor,
   PartCategory,
   Part,
@@ -83,6 +85,15 @@ export interface UnitsRepo {
   updateUnit: (id: string, unit: Partial<Unit>) => void;
   deactivateUnit: (id: string) => void;
   getUnitsByCustomer: (customerId: string) => Unit[];
+}
+
+export interface UnitAttachmentsRepo {
+  list: (unitId: string) => UnitAttachment[];
+  add: (unitId: string, file: File, options?: { tag?: UnitAttachmentTag; notes?: string | null }) => { success: boolean; attachment?: UnitAttachment; error?: string };
+  remove: (attachmentId: string) => void;
+  update: (attachmentId: string, patch: Partial<Pick<UnitAttachment, 'tag' | 'notes' | 'is_primary' | 'sort_order'>>) => void;
+  setPrimary: (attachmentId: string) => void;
+  reorder: (unitId: string, orderedIds: string[]) => void;
 }
 
 export interface VendorsRepo {
@@ -357,6 +368,7 @@ export interface Repos {
   customers: CustomersRepo;
   customerContacts: CustomerContactsRepo;
   units: UnitsRepo;
+  unitAttachments: UnitAttachmentsRepo;
   vendors: VendorsRepo;
   categories: CategoriesRepo;
   parts: PartsRepo;
