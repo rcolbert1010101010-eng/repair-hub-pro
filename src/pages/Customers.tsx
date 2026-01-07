@@ -81,6 +81,9 @@ export default function Customers() {
       email: formData.email.trim() || null,
       address: formData.address.trim() || null,
       notes: formData.notes.trim() || null,
+      price_level: 'RETAIL',
+      is_tax_exempt: false,
+      tax_rate_override: null,
     });
     if (!result.success) {
       toast({

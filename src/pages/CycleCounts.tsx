@@ -24,7 +24,7 @@ export default function CycleCounts() {
         const counted = l.counted_qty ?? l.expected_qty;
         return sum + (counted - l.expected_qty);
       }, 0);
-      const last = s.posted_at || s.updated_at || s.created_at;
+      const last = s.posted_at || s.created_at;
       stats[s.id] = { delta, last };
     });
     return stats;

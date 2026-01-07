@@ -1,3 +1,4 @@
+import type React from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -13,8 +14,6 @@ import { useToast } from '@/hooks/use-toast';
 import { useRepos } from '@/repos';
 import { useShopStore } from '@/stores/shopStore';
 import type { CycleCountLine } from '@/types';
-import type React from 'react';
-import type React from 'react';
 
 export default function CycleCountDetail() {
   const { id } = useParams<{ id: string }>();
