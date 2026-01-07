@@ -113,7 +113,7 @@ export default function PlasmaProjectDetail() {
     if (!result.success) {
       toast({ title: 'Recalculate failed', description: result.error, variant: 'destructive' });
     } else {
-      setWarnings(result.warnings?.map((w) => w.message) ?? []);
+      setWarnings(result.warnings ?? []);
       toast({ title: 'Pricing updated' });
     }
   };

@@ -13,12 +13,6 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
   Table,
   TableBody,
   TableCell,
@@ -38,8 +32,9 @@ import { StatusBadge } from '@/components/ui/status-badge';
 import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import type { LucideIcon } from 'lucide-react';
-import { Save, X, Trash2, Edit, Wrench, ShoppingCart, Clock3, Timer, MoreHorizontal } from 'lucide-react';
+import { Save, X, Trash2, Edit, Wrench, ShoppingCart, Clock3, Timer, CalendarPlus } from 'lucide-react';
 import { PMSection } from '@/components/pm/PMSection';
+import { UnitImagesSection } from '@/components/units/UnitImagesSection';
 import { useShopStore } from '@/stores/shopStore';
 
 export default function UnitForm() {
@@ -315,8 +310,8 @@ export default function UnitForm() {
   const hotWorkOrder = useMemo(() => {
     if (openRelatedWOs.length === 0) return null;
     return [...openRelatedWOs].sort((a, b) => {
-      const aPriority = typeof (a as { priority?: number }).priority === 'number' ? a.priority! : 0;
-      const bPriority = typeof (b as { priority?: number }).priority === 'number' ? b.priority! : 0;
+      const aPriority = typeof (a as { priority?: number }).priority === 'number' ? (a as any).priority : 0;
+      const bPriority = typeof (b as { priority?: number }).priority === 'number' ? (b as any).priority : 0;
       if (aPriority !== bPriority) return bPriority - aPriority;
       const aDate = new Date(a.updated_at || a.created_at || 0).getTime();
       const bDate = new Date(b.updated_at || b.created_at || 0).getTime();
@@ -485,12 +480,13 @@ export default function UnitForm() {
 
     // PM history if available
     pmHistoryForUnit.forEach((h) => {
-      const ts = h.completed_at || h.created_at;
+      const ts = (h as any).completed_at || (h as any).completed_date || h.created_at;
       if (!ts) return;
+      const scheduleName = (h as any).schedule_name;
       events.push({
         id: h.id,
         type: 'PM',
-        title: `PM Completed${h.schedule_name ? `: ${h.schedule_name}` : ''}`,
+        title: `PM Completed${scheduleName ? `: ${scheduleName}` : ''}`,
         subtitle: unit?.unit_name,
         timestamp: ts,
       });
@@ -604,32 +600,14 @@ export default function UnitForm() {
               <Wrench className="w-4 h-4 mr-2" />
               Create Work Order
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="gap-2">
-                  <MoreHorizontal className="w-4 h-4" />
-                  More actions
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    handleCreateAndScheduleWorkOrder();
-                  }}
-                >
-                  Create & Schedule Work Order
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    handleCreateSalesOrder();
-                  }}
-                >
-                  Create Sales Order
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button variant="outline" onClick={handleCreateAndScheduleWorkOrder}>
+              <CalendarPlus className="w-4 h-4 mr-2" />
+              Create & Schedule Work Order
+            </Button>
+            <Button variant="outline" onClick={handleCreateSalesOrder}>
+              <ShoppingCart className="w-4 h-4 mr-2" />
+              Create Sales Order
+            </Button>
           </div>
 
           {hotWorkOrder && (
@@ -828,6 +806,9 @@ export default function UnitForm() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Unit Images Section */}
+          <UnitImagesSection unitId={unit.id} />
 
           <div className="space-y-4">
             {timelineEvents.length > 0 && (

@@ -161,8 +161,8 @@ export default function Scheduling() {
   const [formError, setFormError] = useState<string | null>(null);
   const [ganttHover, setGanttHover] = useState<{ key: string; minutes: number } | null>(null);
 
-  const { hours: startHour, minutes: startMinute } = parseTimeString(settings?.shop_hours_start ?? DEFAULT_SHOP_START);
-  const { hours: endHour, minutes: endMinute } = parseTimeString(settings?.shop_hours_end ?? DEFAULT_SHOP_END);
+  const { hours: startHour, minutes: startMinute } = parseTimeString((settings as any)?.shop_hours_start ?? DEFAULT_SHOP_START);
+  const { hours: endHour, minutes: endMinute } = parseTimeString((settings as any)?.shop_hours_end ?? DEFAULT_SHOP_END);
   const dayStartTotalMinutes = startHour * 60 + startMinute;
   const dayEndTotalMinutes = endHour * 60 + endMinute;
   const dayMinutes = Math.max(60, dayEndTotalMinutes - dayStartTotalMinutes);
@@ -716,6 +716,7 @@ export default function Scheduling() {
       parts_ready: formState.partsReady,
       status: formState.status,
       notes: formState.notes.trim() ? formState.notes.trim() : null,
+      auto_scheduled: false,
     };
 
     // Warn (non-blocking) if overbooking

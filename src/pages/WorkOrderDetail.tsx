@@ -115,7 +115,61 @@ const JOB_STATUS_OPTIONS: { value: WorkOrderJobStatus; label: string }[] = [
   { value: 'WARRANTY', label: 'Warranty' },
 ];
 
-type BlockerChip = { label: string; variant?: 'outline' | 'secondary' | 'destructive' };
+type BlockerChip = { label: string; variant: 'outline' | 'secondary' | 'destructive' };
+
+const PRINT_STYLES = `
+  @media print {
+    aside,
+    [data-sidebar],
+    .sidebar,
+    .layout-sidebar,
+    .vertical-nav {
+      display: none !important;
+    }
+    [role="tablist"],
+    button,
+    input,
+    select,
+    textarea,
+    .print\\:hidden,
+    .print-hidden {
+      display: none !important;
+    }
+    #wo-overview-print {
+      display: block !important;
+      width: 100% !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    #wo-tech-print {
+      display: none !important;
+    }
+    body[data-print-mode="OVERVIEW"] * {
+      visibility: hidden !important;
+    }
+    body[data-print-mode="OVERVIEW"] #wo-overview-print,
+    body[data-print-mode="OVERVIEW"] #wo-overview-print * {
+      visibility: visible !important;
+    }
+    body[data-print-mode="OVERVIEW"] #wo-overview-print {
+      display: block !important;
+    }
+    body[data-print-mode="TECH"] * {
+      visibility: hidden !important;
+    }
+    body[data-print-mode="TECH"] #wo-tech-print,
+    body[data-print-mode="TECH"] #wo-tech-print * {
+      visibility: visible !important;
+    }
+    body[data-print-mode="TECH"] #wo-tech-print {
+      display: block !important;
+    }
+    @page {
+      size: auto;
+      margin: 0.5in;
+    }
+  }
+`;
 
 function computeEntryHours(entry: WorkOrderTimeEntry): number {
   const startMs = new Date(entry.started_at).getTime();
@@ -162,6 +216,7 @@ export default function WorkOrderDetail() {
     woCreateJobLine,
     woUpdateJobLine,
     woSetJobStatus,
+    woDeleteJobLine,
     woClockIn,
     woClockOut,
     woUpdateStatus,
@@ -170,6 +225,7 @@ export default function WorkOrderDetail() {
     clockIn,
     clockOut,
     addCustomer,
+    addPart,
     addUnit,
     purchaseOrders,
     purchaseOrderLines,
@@ -220,6 +276,7 @@ export default function WorkOrderDetail() {
   const [quickAddCustomerOpen, setQuickAddCustomerOpen] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
   const [quickAddUnitOpen, setQuickAddUnitOpen] = useState(false);
+  const [newUnitName, setNewUnitName] = useState('');
 
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState('');
@@ -240,6 +297,10 @@ export default function WorkOrderDetail() {
       }
     >
   >({});
+  const [jobEditingMode, setJobEditingMode] = useState<Record<string, boolean>>({});
+  const [jobSaving, setJobSaving] = useState<Record<string, boolean>>({});
+  const [deleteJobDialog, setDeleteJobDialog] = useState<{ open: boolean; jobId: string | null; jobTitle: string }>({ open: false, jobId: null, jobTitle: '' });
+  const [deleteJobConfirmText, setDeleteJobConfirmText] = useState('');
   const [newJobTitle, setNewJobTitle] = useState('');
   const [jobTechnicianSelection, setJobTechnicianSelection] = useState<Record<string, string>>({});
   const [fabWarnings, setFabWarnings] = useState<string[]>([]);
@@ -271,20 +332,25 @@ export default function WorkOrderDetail() {
       fabricationRepo.createForWorkOrder(currentOrder.id);
     }
   }, [currentOrder, fabricationRepo, plasmaRepo]);
-  const jobLines = currentOrder ? getWorkOrderJobLines(currentOrder.id) : [];
+  const jobLines: WorkOrderJobLine[] = currentOrder ? getWorkOrderJobLines(currentOrder.id) : [];
   const activityEvents = currentOrder ? getWorkOrderActivity(currentOrder.id) : [];
   const jobMap = useMemo(
-    () =>
-      jobLines.reduce<Record<string, WorkOrderJobLine>>((acc, job) => {
-        acc[job.id] = job;
-        return acc;
-      }, {}),
+    () => {
+      const map: Record<string, WorkOrderJobLine> = {};
+      jobLines.forEach((job) => {
+        map[job.id] = job;
+      });
+      return map;
+    },
     [jobLines]
   );
-  const jobReadinessById = jobLines.reduce<Record<string, WorkOrderJobPartsStatus>>((acc, job) => {
-    acc[job.id] = getJobPartReadiness(job.id);
-    return acc;
-  }, {});
+  const jobReadinessById = useMemo(() => {
+    const map: Record<string, WorkOrderJobPartsStatus> = {};
+    jobLines.forEach((job) => {
+      map[job.id] = getJobPartReadiness(job.id);
+    });
+    return map;
+  }, [jobLines, getJobPartReadiness]);
   const allPartLines = currentOrder ? getWorkOrderPartLines(currentOrder.id) : [];
   const laborLines = currentOrder ? getWorkOrderLaborLines(currentOrder.id) : [];
   const partLines = allPartLines.filter((l) => !l.is_core_refund_line);
@@ -405,6 +471,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
     const draft = jobDrafts[jobId];
     if (!draft) return;
     const job = jobLines.find((j) => j.id === jobId);
+    setJobSaving((prev) => ({ ...prev, [jobId]: true }));
     woUpdateJobLine(jobId, {
       title: draft.title.trim() || job?.title || 'Job',
       complaint: draft.complaint || null,
@@ -412,6 +479,60 @@ const jobReadinessValues = Object.values(jobReadinessById);
       correction: draft.correction || null,
       status: draft.status,
     });
+    // Switch to read-only mode after save
+    setJobEditingMode((prev) => ({ ...prev, [jobId]: false }));
+    setJobSaving((prev) => ({ ...prev, [jobId]: false }));
+    toast({ title: 'Job Saved', description: `${draft.title.trim() || job?.title || 'Job'} has been saved` });
+  };
+
+  const handleEditJob = (jobId: string) => {
+    const job = jobLines.find((j) => j.id === jobId);
+    if (!job) return;
+    // Initialize draft from current job state if not already in drafts
+    setJobDrafts((prev) => ({
+      ...prev,
+      [jobId]: prev[jobId] ?? {
+        title: job.title,
+        complaint: job.complaint ?? '',
+        cause: job.cause ?? '',
+        correction: job.correction ?? '',
+        status: job.status,
+      },
+    }));
+    setJobEditingMode((prev) => ({ ...prev, [jobId]: true }));
+  };
+
+  const handleCancelEditJob = (jobId: string) => {
+    const job = jobLines.find((j) => j.id === jobId);
+    if (!job) return;
+    // Reset draft to current job state
+    setJobDrafts((prev) => ({
+      ...prev,
+      [jobId]: {
+        title: job.title,
+        complaint: job.complaint ?? '',
+        cause: job.cause ?? '',
+        correction: job.correction ?? '',
+        status: job.status,
+      },
+    }));
+    setJobEditingMode((prev) => ({ ...prev, [jobId]: false }));
+  };
+
+  const handleDeleteJob = (jobId: string) => {
+    const result = woDeleteJobLine(jobId);
+    if (result.success) {
+      toast({ title: 'Job Deleted', description: 'The job has been removed' });
+      setDeleteJobDialog({ open: false, jobId: null, jobTitle: '' });
+      setDeleteJobConfirmText('');
+    } else {
+      toast({ title: 'Cannot Delete Job', description: result.error, variant: 'destructive' });
+    }
+  };
+
+  const openDeleteJobDialog = (job: WorkOrderJobLine) => {
+    setDeleteJobDialog({ open: true, jobId: job.id, jobTitle: job.title });
+    setDeleteJobConfirmText('');
   };
 
   const handleAddJob = () => {
@@ -428,11 +549,17 @@ const jobReadinessValues = Object.values(jobReadinessById);
         status: job.status,
       },
     }));
+    // New jobs start in editing mode
+    setJobEditingMode((prev) => ({ ...prev, [job.id]: true }));
     setActiveTab('jobs');
   };
   const handleJobClockIn = (jobId: string) => {
     if (!currentOrder) return;
-    const technicianId = jobTechnicianSelection[jobId] || activeTechnicians[0]?.id;
+    const technicianId = jobTechnicianSelection[jobId];
+    if (!technicianId) {
+      toast({ title: 'Error', description: 'Please select a technician first', variant: 'destructive' });
+      return;
+    }
     const technicianName = technicians.find((t) => t.id === technicianId)?.name ?? null;
     const result = woClockIn(currentOrder.id, jobId, technicianId, technicianName);
     if (result.success) {
@@ -478,7 +605,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
     [currentOrder, getClaimsByWorkOrder]
   );
   const poLinesByPo = useMemo(() => {
-    return purchaseOrderLines.reduce<Record<string, typeof purchaseOrderLines>>((acc, line) => {
+    return purchaseOrderLines.reduce((acc: Record<string, typeof purchaseOrderLines>, line) => {
       acc[line.purchase_order_id] = acc[line.purchase_order_id] || [];
       acc[line.purchase_order_id].push(line);
       return acc;
@@ -559,6 +686,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
     isInvoiced || (plasmaJob ? plasmaJob.status !== 'DRAFT' && plasmaJob.status !== 'QUOTED' : false);
   const plasmaAttachments = plasmaJob ? plasmaRepo.attachments.list(plasmaJob.id) : [];
   const [dxfAssistOpen, setDxfAssistOpen] = useState(false);
+  const [showPlasmaDetails, setShowPlasmaDetails] = useState(false);
 
   // Lines
   const otherChargeLines = chargeLines.filter(
@@ -584,7 +712,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
   if (!isNew && !currentOrder) {
     return (
       <div className="page-container">
-        <style>{printStyles}</style>
+        <style>{PRINT_STYLES}</style>
         <PageHeader title="Order Not Found" backTo="/work-orders" />
         <p className="text-muted-foreground">This work order does not exist.</p>
       </div>
@@ -674,6 +802,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
       bin_location: null,
       model: null,
       serial_number: null,
+      is_kit: false,
       barcode: null,
     });
 
@@ -809,6 +938,9 @@ const jobReadinessValues = Object.values(jobReadinessById);
       email: null,
       address: null,
       notes: null,
+      price_level: 'RETAIL',
+      is_tax_exempt: false,
+      tax_rate_override: null,
     });
     if (!result.success || !result.customer) {
       toast({ title: 'Unable to add customer', description: result.error, variant: 'destructive' });
@@ -1029,7 +1161,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
     if (!result.success) {
       toast({ title: 'Recalculate failed', description: result.error, variant: 'destructive' });
     } else {
-      setPlasmaWarnings(result.warnings?.map((w) => w.message) ?? []);
+      setPlasmaWarnings(result.warnings ?? []);
       toast({ title: 'Plasma pricing updated' });
     }
   };
@@ -1085,67 +1217,6 @@ const jobReadinessValues = Object.values(jobReadinessById);
   const [activeTab, setActiveTab] = useState<
     'overview' | 'jobs' | 'activity' | 'parts' | 'labor' | 'fabrication' | 'plasma' | 'time'
   >('overview');
-  const printStyles = `
-    @media print {
-      aside,
-      [data-sidebar],
-      .sidebar,
-      .layout-sidebar,
-      .vertical-nav {
-        display: none !important;
-      }
-      [role="tablist"],
-      button,
-      input,
-      select,
-      textarea,
-      .print\\:hidden,
-      .print-hidden {
-        display: none !important;
-      }
-      #wo-overview-print {
-        display: block !important;
-        width: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-      }
-      #wo-tech-print {
-        display: none !important;
-      }
-      body[data-print-mode="OVERVIEW"] * {
-        visibility: hidden !important;
-      }
-      body[data-print-mode="OVERVIEW"] #wo-overview-print,
-      body[data-print-mode="OVERVIEW"] #wo-overview-print * {
-        visibility: visible !important;
-      }
-      body[data-print-mode="OVERVIEW"] #wo-overview-print {
-        display: block !important;
-      }
-      body[data-print-mode="TECH"] * {
-        visibility: hidden !important;
-      }
-      body[data-print-mode="TECH"] #wo-tech-print,
-      body[data-print-mode="TECH"] #wo-tech-print * {
-        visibility: visible !important;
-      }
-      body[data-print-mode="TECH"] #wo-tech-print {
-        display: block !important;
-      }
-      body[data-print-mode="OVERVIEW"] #wo-overview-print,
-      body[data-print-mode="TECH"] #wo-tech-print {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100% !important;
-        margin: 0 !important;
-        padding: 0 !important;
-      }
-      body[data-print-mode="TECH"] input {
-        display: inline-block !important;
-      }
-    }
-  `;
   useEffect(() => {
     if (sheetPrintMode && sheetPrintMode !== 'NONE') {
       document.body.setAttribute('data-print-mode', sheetPrintMode);
@@ -1161,7 +1232,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
   if (isNew && !order) {
     return (
       <div className="page-container">
-        <style>{printStyles}</style>
+        <style>{PRINT_STYLES}</style>
         <PageHeader title="New Work Order" backTo="/work-orders" />
         <div className="form-section max-w-xl">
           <h2 className="text-lg font-semibold mb-4">Order Details</h2>
@@ -1251,7 +1322,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
   // Existing order view
   return (
     <div className="page-container">
-      <style>{printStyles}</style>
+      <style>{PRINT_STYLES}</style>
       <PageHeader
         title={currentOrder?.order_number || 'Work Order'}
         subtitle={
@@ -1817,6 +1888,8 @@ const jobReadinessValues = Object.values(jobReadinessById);
                   <div className="space-y-4">
                     {jobLines.map((job) => {
                       const draft = jobDrafts[job.id];
+                      const isEditing = jobEditingMode[job.id] ?? false;
+                      const isSaving = jobSaving[job.id] ?? false;
                       const jobSummary = jobProfitSummaries[job.id] ?? DEFAULT_JOB_PROFIT_SUMMARY;
                       const readiness =
                         jobReadinessById[job.id] ?? {
@@ -1841,59 +1914,129 @@ const jobReadinessValues = Object.values(jobReadinessById);
                       const estimatedHours = jobSummary.jobLaborLines.reduce((sum, line) => sum + line.hours, 0);
                       const partsQty = jobSummary.jobPartLines.reduce((sum, line) => sum + line.quantity, 0);
                       const activeTimer = activeJobTimers.find((entry) => entry.job_line_id === job.id);
-                      const selectedTechnicianId =
-                        jobTechnicianSelection[job.id] || activeTechnicians[0]?.id || '';
+                      // Tech dropdown: empty by default, only show selection if explicitly chosen
+                      const selectedTechnicianId = jobTechnicianSelection[job.id] || '';
+                      // Clock In gating: disabled if no tech selected
+                      const clockInDisabled = !selectedTechnicianId || activeTechnicians.length === 0;
+                      const clockInHelperText = !selectedTechnicianId 
+                        ? 'Select a technician to enable Clock In' 
+                        : null;
                       return (
                         <Card key={job.id} className="border">
                           <CardContent className="p-4 pt-4 space-y-3">
-                            <div className="flex flex-wrap gap-2">
-                              <Input
-                                value={draft?.title ?? job.title}
-                                onChange={(event) => handleJobDraftChange(job.id, 'title', event.target.value)}
-                                placeholder="Job title"
-                                className="flex-1 min-w-[180px] h-10"
-                              />
-                              <Select
-                                value={(draft?.status ?? job.status) as WorkOrderJobStatus}
-                                onValueChange={(value) =>
-                                  handleJobDraftChange(job.id, 'status', value as WorkOrderJobStatus)
-                                }
-                              >
-                                <SelectTrigger className="h-10 w-40">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {JOB_STATUS_OPTIONS.map((option) => (
-                                    <SelectItem key={option.value} value={option.value}>
-                                      {option.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <Button size="sm" onClick={() => handleSaveJob(job.id)}>
-                                Save
-                              </Button>
+                            <div className="flex flex-wrap gap-2 items-center">
+                              {isEditing ? (
+                                <>
+                                  <Input
+                                    value={draft?.title ?? job.title}
+                                    onChange={(event) => handleJobDraftChange(job.id, 'title', event.target.value)}
+                                    placeholder="Job title"
+                                    className="flex-1 min-w-[180px] h-10"
+                                  />
+                                  <Select
+                                    value={(draft?.status ?? job.status) as WorkOrderJobStatus}
+                                    onValueChange={(value) =>
+                                      handleJobDraftChange(job.id, 'status', value as WorkOrderJobStatus)
+                                    }
+                                  >
+                                    <SelectTrigger className="h-10 w-40">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {JOB_STATUS_OPTIONS.map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                          {option.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <Button size="sm" onClick={() => handleSaveJob(job.id)} disabled={isSaving}>
+                                    <Save className="w-4 h-4 mr-1" />
+                                    Save
+                                  </Button>
+                                  <Button size="sm" variant="ghost" onClick={() => handleCancelEditJob(job.id)}>
+                                    <X className="w-4 h-4" />
+                                  </Button>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="flex-1 min-w-[180px]">
+                                    <span className="font-medium">{job.title}</span>
+                                    <Badge variant="outline" className="ml-2 text-[10px]">
+                                      {JOB_STATUS_OPTIONS.find((o) => o.value === job.status)?.label || job.status}
+                                    </Badge>
+                                  </div>
+                                  {!isInvoiced && (
+                                    <>
+                                      <Button size="sm" variant="outline" onClick={() => handleEditJob(job.id)}>
+                                        <Edit className="w-4 h-4 mr-1" />
+                                        Edit
+                                      </Button>
+                                      <Button 
+                                        size="sm" 
+                                        variant="ghost" 
+                                        className="text-destructive hover:text-destructive"
+                                        onClick={() => openDeleteJobDialog(job)}
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    </>
+                                  )}
+                                </>
+                              )}
                             </div>
-                            <div className="grid gap-2 md:grid-cols-3">
-                              <Textarea
-                                value={draft?.complaint ?? job.complaint ?? ''}
-                                onChange={(event) => handleJobDraftChange(job.id, 'complaint', event.target.value)}
-                                placeholder="Complaint"
-                                className="h-24"
-                              />
-                              <Textarea
-                                value={draft?.cause ?? job.cause ?? ''}
-                                onChange={(event) => handleJobDraftChange(job.id, 'cause', event.target.value)}
-                                placeholder="Cause"
-                                className="h-24"
-                              />
-                              <Textarea
-                                value={draft?.correction ?? job.correction ?? ''}
-                                onChange={(event) => handleJobDraftChange(job.id, 'correction', event.target.value)}
-                                placeholder="Correction"
-                                className="h-24"
-                              />
-                            </div>
+                            {isEditing && (
+                              <div className="grid gap-2 md:grid-cols-3">
+                                <Textarea
+                                  value={draft?.complaint ?? job.complaint ?? ''}
+                                  onChange={(event) => handleJobDraftChange(job.id, 'complaint', event.target.value)}
+                                  placeholder="Complaint"
+                                  className="h-24"
+                                />
+                                <Textarea
+                                  value={draft?.cause ?? job.cause ?? ''}
+                                  onChange={(event) => handleJobDraftChange(job.id, 'cause', event.target.value)}
+                                  placeholder="Cause"
+                                  className="h-24"
+                                />
+                                <Textarea
+                                  value={draft?.correction ?? job.correction ?? ''}
+                                  onChange={(event) => handleJobDraftChange(job.id, 'correction', event.target.value)}
+                                  placeholder="Correction"
+                                  className="h-24"
+                                />
+                              </div>
+                            )}
+                            {!isEditing && (
+                              <div className="border rounded-md p-3 bg-muted/30 space-y-2">
+                                <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2 text-sm">
+                                  <div>
+                                    <span className="text-muted-foreground">Job Name:</span>{' '}
+                                    <span className="font-medium">{job.title}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Status:</span>{' '}
+                                    <span className="font-medium">
+                                      {JOB_STATUS_OPTIONS.find((o) => o.value === job.status)?.label || job.status}
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="grid gap-2 md:grid-cols-3 text-sm">
+                                  <div>
+                                    <span className="text-muted-foreground">Complaint:</span>{' '}
+                                    <span>{job.complaint || '—'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Cause:</span>{' '}
+                                    <span>{job.cause || '—'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Correction:</span>{' '}
+                                    <span>{job.correction || '—'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                             <div className="flex flex-wrap items-center gap-3">
                               {activeTechnicians.length > 0 ? (
                                 <Select
@@ -1903,7 +2046,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                                   }
                                 >
                                   <SelectTrigger className="h-9 min-w-[170px]">
-                                    <SelectValue placeholder="Select Technician" />
+                                    <SelectValue placeholder="Select tech…" />
                                   </SelectTrigger>
                                   <SelectContent>
                                     {activeTechnicians.map((tech) => (
@@ -1918,16 +2061,23 @@ const jobReadinessValues = Object.values(jobReadinessById);
                               )}
                               {activeTimer ? (
                                 <Button size="sm" variant="destructive" onClick={() => handleJobClockOut(activeTimer.id)}>
+                                  <Square className="w-3 h-3 mr-1" />
                                   Clock Out
                                 </Button>
                               ) : (
-                                <Button
-                                  size="sm"
-                                  onClick={() => handleJobClockIn(job.id)}
-                                  disabled={activeTechnicians.length > 0 && !selectedTechnicianId}
-                                >
-                                  Clock In
-                                </Button>
+                                <div className="flex flex-col gap-1">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleJobClockIn(job.id)}
+                                    disabled={clockInDisabled}
+                                  >
+                                    <Clock className="w-3 h-3 mr-1" />
+                                    Clock In
+                                  </Button>
+                                  {clockInHelperText && (
+                                    <span className="text-[10px] text-muted-foreground">{clockInHelperText}</span>
+                                  )}
+                                </div>
                               )}
                               <span className="text-[11px] text-muted-foreground">
                                 Actual: {jobSummary.jobActualHours.toFixed(2)}h
@@ -2653,15 +2803,57 @@ const jobReadinessValues = Object.values(jobReadinessById);
             </TabsContent>
 
             <TabsContent value="plasma">
+              {/* Summary Header */}
+              <div className="mb-4 p-3 bg-muted/40 border rounded-lg">
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Status:</span>{' '}
+                    <Badge variant={plasmaChargeLine ? 'default' : plasmaLocked ? 'secondary' : 'outline'}>
+                      {plasmaChargeLine ? 'Posted' : plasmaLocked ? 'Locked' : plasmaJob?.status ?? 'DRAFT'}
+                    </Badge>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Lines:</span>{' '}
+                    <span className="font-medium">{plasmaLines.length}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Cut Length:</span>{' '}
+                    <span className="font-medium">
+                      {plasmaLines.reduce((s, l) => s + (l.cut_length ?? 0) * (l.qty ?? 0), 0).toFixed(2)} in
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Pieces:</span>{' '}
+                    <span className="font-medium">{plasmaLines.reduce((s, l) => s + (l.qty ?? 0), 0)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Total:</span>{' '}
+                    <span className="font-semibold">${plasmaTotal.toFixed(2)}</span>
+                  </div>
+                  {plasmaChargeLine && (
+                    <div className="text-xs text-muted-foreground">
+                      Posted on {plasmaJob?.posted_at ? new Date(plasmaJob.posted_at).toLocaleDateString() : '-'}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Workflow Hint */}
+              <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
+                <span className={plasmaLines.length === 0 ? 'font-semibold text-foreground' : ''}>1. Add lines</span>
+                <span>→</span>
+                <span className={plasmaLines.length > 0 && !plasmaJob?.dxf_estimated_total_cut_length ? 'font-semibold text-foreground' : ''}>
+                  2. Upload DXF (optional)
+                </span>
+                <span>→</span>
+                <span className={plasmaLines.length > 0 && !plasmaChargeLine ? 'font-semibold text-foreground' : ''}>3. Review</span>
+                <span>→</span>
+                <span className={plasmaChargeLine ? 'font-semibold text-foreground' : ''}>4. Post</span>
+              </div>
+
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <h3 className="font-medium">Plasma</h3>
-                  {plasmaChargeLine && (
-                    <Badge variant="secondary">
-                      Posted to WO {plasmaChargeLine.work_order_id}{' '}
-                      {plasmaJob?.posted_at ? `on ${new Date(plasmaJob.posted_at).toLocaleString()}` : ''}
-                    </Badge>
-                  )}
                   {plasmaLocked && (
                     <Badge variant="outline" title="Editing disabled for posted or invoiced orders">
                       Locked
@@ -2669,14 +2861,28 @@ const jobReadinessValues = Object.values(jobReadinessById);
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={handleRecalculatePlasmaJob} disabled={!plasmaJob || plasmaLocked}>
-                    <RotateCcw className="w-4 h-4 mr-2" />
-                    Recalculate
-                  </Button>
-                  <Button size="sm" onClick={handlePostPlasmaJob} disabled={!plasmaJob || plasmaLines.length === 0 || plasmaLocked}>
-                    <FileCheck className="w-4 h-4 mr-2" />
-                    Post to Work Order
-                  </Button>
+                  <div className="flex flex-col items-end">
+                    <Button variant="outline" size="sm" onClick={handleRecalculatePlasmaJob} disabled={!plasmaJob || plasmaLocked}>
+                      <RotateCcw className="w-4 h-4 mr-2" />
+                      Recalculate
+                    </Button>
+                    {(!plasmaJob || plasmaLocked) && (
+                      <span className="text-xs text-muted-foreground mt-0.5">
+                        {plasmaLocked ? 'Locked' : 'No plasma job'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <Button size="sm" onClick={handlePostPlasmaJob} disabled={!plasmaJob || plasmaLines.length === 0 || plasmaLocked}>
+                      <FileCheck className="w-4 h-4 mr-2" />
+                      Post to Work Order
+                    </Button>
+                    {(!plasmaJob || plasmaLines.length === 0 || plasmaLocked) && (
+                      <span className="text-xs text-muted-foreground mt-0.5">
+                        {plasmaLocked ? 'Locked' : plasmaLines.length === 0 ? 'Add lines first' : 'No plasma job'}
+                      </span>
+                    )}
+                  </div>
                   {plasmaJob && (
                     <Button size="sm" variant="outline" onClick={() => navigate(`/plasma/${plasmaJob.id}/print`)}>
                       Print Cut Sheet
@@ -2716,11 +2922,6 @@ const jobReadinessValues = Object.values(jobReadinessById);
                   )}
                 </div>
               </div>
-              {plasmaLocked && (
-                <div className="mb-3 text-sm text-muted-foreground">
-                  Plasma lines are locked because the job is posted or the work order is invoiced.
-                </div>
-              )}
               {plasmaWarnings.length > 0 && (
                 <div className="mb-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
                   {plasmaWarnings.map((w) => (
@@ -2728,7 +2929,24 @@ const jobReadinessValues = Object.values(jobReadinessById);
                   ))}
                 </div>
               )}
-              {plasmaJob && (
+
+              {/* DXF Assist Callout - highlighted when no cut length exists */}
+              {plasmaJob && plasmaLines.length > 0 && plasmaLines.every((l) => !l.cut_length) && !dxfAssistOpen && (
+                <div className="mb-4 p-3 bg-primary/10 border border-primary/30 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium text-primary">No cut lengths entered</h4>
+                      <p className="text-sm text-muted-foreground">
+                        Use DXF Assist to estimate cut lengths, pierces, and machine time from your drawing.
+                      </p>
+                    </div>
+                    <Button variant="default" size="sm" onClick={() => setDxfAssistOpen(true)}>
+                      Open DXF Assist
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {plasmaJob && (dxfAssistOpen || plasmaLines.some((l) => l.cut_length)) && (
                 <div className="mb-4 border rounded-lg p-3">
                   <div className="flex items-center justify-between">
                     <div>
@@ -2794,6 +3012,19 @@ const jobReadinessValues = Object.values(jobReadinessById);
                   )}
                 </div>
               )}
+
+              {/* Table Column Toggle */}
+              <div className="flex items-center justify-end mb-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowPlasmaDetails((v) => !v)}
+                  className="text-xs"
+                >
+                  {showPlasmaDetails ? 'Hide details' : 'Show details'}
+                </Button>
+              </div>
+
               <div className="table-container">
                 <Table>
                   <TableHeader>
@@ -2803,10 +3034,14 @@ const jobReadinessValues = Object.values(jobReadinessById);
                       <TableHead className="text-right">Qty</TableHead>
                       <TableHead className="text-right">Cut Length</TableHead>
                       <TableHead className="text-right">Pierces</TableHead>
-                      <TableHead className="text-right">Setup (min)</TableHead>
-                      <TableHead className="text-right">Machine (min)</TableHead>
-                      <TableHead className="text-right">Derived?</TableHead>
-                      <TableHead className="text-right">Unit Sell</TableHead>
+                      {showPlasmaDetails && (
+                        <>
+                          <TableHead className="text-right">Setup (min)</TableHead>
+                          <TableHead className="text-right">Machine (min)</TableHead>
+                          <TableHead className="text-right">Derived?</TableHead>
+                          <TableHead className="text-right">Unit Sell</TableHead>
+                        </>
+                      )}
                       <TableHead className="text-right">Total</TableHead>
                       {!isInvoiced && <TableHead className="w-10"></TableHead>}
                     </TableRow>
@@ -2814,8 +3049,17 @@ const jobReadinessValues = Object.values(jobReadinessById);
                   <TableBody>
                     {!plasmaJob || plasmaLines.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={isInvoiced ? 9 : 10} className="text-center text-muted-foreground py-8">
-                          No plasma lines yet
+                        <TableCell
+                          colSpan={showPlasmaDetails ? (isInvoiced ? 10 : 11) : (isInvoiced ? 6 : 7)}
+                          className="text-center py-8"
+                        >
+                          <div className="text-muted-foreground mb-3">No plasma lines yet</div>
+                          {!plasmaLocked && (
+                            <Button variant="default" size="sm" onClick={handleAddPlasmaLine}>
+                              <Plus className="w-4 h-4 mr-2" />
+                              Add First Line
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -2870,48 +3114,52 @@ const jobReadinessValues = Object.values(jobReadinessById);
                               className="text-right"
                             />
                           </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.1"
-                              value={line.setup_minutes ?? ''}
-                              disabled={plasmaLocked}
-                              onChange={(e) => handlePlasmaNumberChange(line.id, 'setup_minutes', e.target.value)}
-                              className="text-right"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.1"
-                              value={line.machine_minutes ?? ''}
-                              disabled={plasmaLocked}
-                              onChange={(e) => handlePlasmaNumberChange(line.id, 'machine_minutes', e.target.value)}
-                              className="text-right"
-                            />
-                          </TableCell>
-                          <TableCell className="text-right text-xs text-muted-foreground">
-                            {line.override_machine_minutes ? (
-                              <Badge variant="outline">Override</Badge>
-                            ) : line.derived_machine_minutes != null ? (
-                              <Badge variant="secondary">Derived</Badge>
-                            ) : (
-                              '-'
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={line.sell_price_each ?? 0}
-                              disabled={isInvoiced}
-                              onChange={(e) => handlePlasmaSellPriceChange(line.id, e.target.value)}
-                              className="text-right"
-                            />
-                          </TableCell>
+                          {showPlasmaDetails && (
+                            <>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.1"
+                                  value={line.setup_minutes ?? ''}
+                                  disabled={plasmaLocked}
+                                  onChange={(e) => handlePlasmaNumberChange(line.id, 'setup_minutes', e.target.value)}
+                                  className="text-right"
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.1"
+                                  value={line.machine_minutes ?? ''}
+                                  disabled={plasmaLocked}
+                                  onChange={(e) => handlePlasmaNumberChange(line.id, 'machine_minutes', e.target.value)}
+                                  className="text-right"
+                                />
+                              </TableCell>
+                              <TableCell className="text-right text-xs text-muted-foreground">
+                                {line.override_machine_minutes ? (
+                                  <Badge variant="outline">Override</Badge>
+                                ) : line.derived_machine_minutes != null ? (
+                                  <Badge variant="secondary">Derived</Badge>
+                                ) : (
+                                  '-'
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={line.sell_price_each ?? 0}
+                                  disabled={isInvoiced}
+                                  onChange={(e) => handlePlasmaSellPriceChange(line.id, e.target.value)}
+                                  className="text-right"
+                                />
+                              </TableCell>
+                            </>
+                          )}
                           <TableCell className="text-right font-medium">${(line.sell_price_total ?? 0).toFixed(2)}</TableCell>
                           {!plasmaLocked && (
                             <TableCell>
@@ -2938,7 +3186,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                 </Table>
               </div>
               <div className="mt-3 flex items-center justify-between">
-                {!plasmaLocked && (
+                {!plasmaLocked && plasmaLines.length > 0 && (
                   <Button variant="outline" size="sm" onClick={handleAddPlasmaLine}>
                     <Plus className="w-4 h-4 mr-2" />
                     Add Line
@@ -3508,6 +3756,44 @@ const jobReadinessValues = Object.values(jobReadinessById);
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmMarkCoreReturned}>Mark Returned</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Job Confirmation Dialog */}
+      <AlertDialog open={deleteJobDialog.open} onOpenChange={(open) => {
+        if (!open) {
+          setDeleteJobDialog({ open: false, jobId: null, jobTitle: '' });
+          setDeleteJobConfirmText('');
+        }
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Job: {deleteJobDialog.jobTitle}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove this job from the work order. This action cannot be undone.
+              <br /><br />
+              <strong>Note:</strong> Jobs with time entries, parts, or labor lines cannot be deleted. Remove those items first.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-2">
+            <Label className="text-sm text-muted-foreground">Type DELETE to confirm:</Label>
+            <Input 
+              value={deleteJobConfirmText} 
+              onChange={(e) => setDeleteJobConfirmText(e.target.value)}
+              placeholder="DELETE"
+              className="mt-1"
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => deleteJobDialog.jobId && handleDeleteJob(deleteJobDialog.jobId)}
+              disabled={deleteJobConfirmText !== 'DELETE'}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete Job
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

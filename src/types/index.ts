@@ -69,6 +69,24 @@ export interface Unit {
   customer?: Customer;
 }
 
+// Unit Attachment (images)
+export type UnitAttachmentTag = 'BEFORE' | 'AFTER' | 'GENERAL';
+
+export interface UnitAttachment {
+  id: string;
+  unit_id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  local_url: string | null;
+  tag: UnitAttachmentTag;
+  notes: string | null;
+  is_primary: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // Vendor
 export interface Vendor {
   id: string;
@@ -156,6 +174,7 @@ export interface CycleCountSession {
   created_by: string;
   posted_at: string | null;
   posted_by: string | null;
+  updated_at?: string | null;
 }
 
 export interface CycleCountLine {

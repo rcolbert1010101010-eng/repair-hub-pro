@@ -81,7 +81,7 @@ export default function ReceivingReceiptDetail() {
             </thead>
             <tbody>
               {rows.map(({ line, part }) => (
-                <tr key={`${line.part_id}-${line.qty}`} className="border-t border-border/60">
+                <tr key={`${line.part_id}-${line.quantity}`} className="border-t border-border/60">
                   <td className="py-2 font-mono">{part?.part_number || line.part_id}</td>
                   <td className="py-2">{part?.description || '—'}</td>
                   <td className="py-2 text-right">{line.quantity}</td>

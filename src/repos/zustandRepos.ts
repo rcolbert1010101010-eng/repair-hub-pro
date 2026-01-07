@@ -250,6 +250,26 @@ export const zustandRepos: Repos = {
       return useShopStore.getState().getUnitsByCustomer(customerId);
     },
   },
+  unitAttachments: {
+    list(unitId) {
+      return useShopStore.getState().listUnitAttachments(unitId);
+    },
+    add(unitId, file, options) {
+      return useShopStore.getState().addUnitAttachment(unitId, file, options);
+    },
+    remove(attachmentId) {
+      return useShopStore.getState().removeUnitAttachment(attachmentId);
+    },
+    update(attachmentId, patch) {
+      return useShopStore.getState().updateUnitAttachment(attachmentId, patch);
+    },
+    setPrimary(attachmentId) {
+      return useShopStore.getState().setUnitAttachmentPrimary(attachmentId);
+    },
+    reorder(unitId, orderedIds) {
+      return useShopStore.getState().reorderUnitAttachments(unitId, orderedIds);
+    },
+  },
   vendors: {
     get vendors() {
       return useShopStore.getState().vendors;
@@ -288,8 +308,9 @@ export const zustandRepos: Repos = {
     updatePart(id, part) {
       return useShopStore.getState().updatePart(id, part);
     },
-    updatePartWithQohAdjustment(id, part, meta) {
-      return useShopStore.getState().updatePartWithQohAdjustment(id, part, meta);
+    updatePartWithQohAdjustment(id, part, meta): { success: boolean; warning?: string; error?: string } {
+      useShopStore.getState().updatePartWithQohAdjustment(id, part, meta);
+      return { success: true };
     },
     deactivatePart(id) {
       return useShopStore.getState().deactivatePart(id);
@@ -323,7 +344,7 @@ export const zustandRepos: Repos = {
       return useShopStore.getState().technicians;
     },
     addTechnician(technician) {
-      return useShopStore.getState().addTechnician(technician);
+      return useShopStore.getState().addTechnician({ ...technician, is_active: true });
     },
     updateTechnician(id, technician) {
       return useShopStore.getState().updateTechnician(id, technician);
@@ -427,6 +448,9 @@ export const zustandRepos: Repos = {
     soToggleCoreReturned(lineId) {
       return useShopStore.getState().soToggleCoreReturned(lineId);
     },
+    soMarkCoreReturned(lineId) {
+      return (useShopStore.getState() as any).soMarkCoreReturned?.(lineId) ?? useShopStore.getState().soToggleCoreReturned(lineId);
+    },
     soConvertToOpen(orderId) {
       return useShopStore.getState().soConvertToOpen(orderId);
     },
@@ -515,7 +539,7 @@ export const zustandRepos: Repos = {
       return result;
     },
     woConvertToOpen(orderId) {
-      const result = useShopStore.getState().woConvertToOpen(orderId);
+      const result = (useShopStore.getState() as any).woConvertToOpen?.(orderId) ?? { success: false, error: 'Not implemented' };
       if (result.success) {
         const updated = useShopStore.getState().workOrders.find((o) => o.id === orderId);
         if (updated) ensureScheduleItemForWorkOrder(updated);

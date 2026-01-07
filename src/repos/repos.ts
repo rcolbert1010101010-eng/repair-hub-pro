@@ -3,6 +3,8 @@ import type {
   Customer,
   CustomerContact,
   Unit,
+  UnitAttachment,
+  UnitAttachmentTag,
   Vendor,
   PartCategory,
   Part,
@@ -12,6 +14,7 @@ import type {
   TimeEntry,
   SalesOrder,
   SalesOrderLine,
+  SalesOrderStatus,
   WorkOrder,
   WorkOrderPartLine,
   WorkOrderLaborLine,
@@ -84,6 +87,15 @@ export interface UnitsRepo {
   getUnitsByCustomer: (customerId: string) => Unit[];
 }
 
+export interface UnitAttachmentsRepo {
+  list: (unitId: string) => UnitAttachment[];
+  add: (unitId: string, file: File, options?: { tag?: UnitAttachmentTag; notes?: string | null }) => { success: boolean; attachment?: UnitAttachment; error?: string };
+  remove: (attachmentId: string) => void;
+  update: (attachmentId: string, patch: Partial<Pick<UnitAttachment, 'tag' | 'notes' | 'is_primary' | 'sort_order'>>) => void;
+  setPrimary: (attachmentId: string) => void;
+  reorder: (unitId: string, orderedIds: string[]) => void;
+}
+
 export interface VendorsRepo {
   vendors: Vendor[];
   addVendor: (vendor: Omit<Vendor, 'id' | 'is_active' | 'created_at' | 'updated_at'>) => Vendor;
@@ -133,7 +145,7 @@ export interface VendorCostHistoryRepo {
 
 export interface TechniciansRepo {
   technicians: Technician[];
-  addTechnician: (technician: Omit<Technician, 'id' | 'is_active' | 'created_at' | 'updated_at'>) => Technician;
+  addTechnician: (technician: Omit<Technician, 'id' | 'created_at' | 'updated_at'> & Partial<Pick<Technician, 'is_active' | 'employment_type' | 'skill_tags' | 'work_schedule' | 'certifications'>>) => Technician;
   updateTechnician: (id: string, technician: Partial<Technician>) => void;
   deactivateTechnician: (id: string) => void;
 }
@@ -157,6 +169,7 @@ export interface SalesOrdersRepo {
   soRemovePartLine: (lineId: string) => { success: boolean; error?: string };
   soToggleWarranty: (lineId: string) => { success: boolean; error?: string };
   soToggleCoreReturned: (lineId: string) => { success: boolean; error?: string };
+  soMarkCoreReturned: (lineId: string) => { success: boolean; error?: string };
   soConvertToOpen: (orderId: string) => { success: boolean; error?: string };
   soInvoice: (orderId: string) => { success: boolean; error?: string };
   soSetStatus: (orderId: string, status: SalesOrderStatus) => { success: boolean; error?: string };
@@ -225,7 +238,6 @@ export interface PlasmaRepo {
   plasmaAttachments: PlasmaJobAttachment[];
   plasmaTemplates: PlasmaTemplate[];
   plasmaTemplateLines: PlasmaTemplateLine[];
-  remnants: Remnant[];
   createForWorkOrder: (workOrderId: string) => PlasmaJob;
   getByWorkOrder: (workOrderId: string) => { job: PlasmaJob; lines: PlasmaJobLine[] } | null;
   createStandalone: (payload?: { sales_order_id?: string | null }) => PlasmaJob;
@@ -356,6 +368,7 @@ export interface Repos {
   customers: CustomersRepo;
   customerContacts: CustomerContactsRepo;
   units: UnitsRepo;
+  unitAttachments: UnitAttachmentsRepo;
   vendors: VendorsRepo;
   categories: CategoriesRepo;
   parts: PartsRepo;
