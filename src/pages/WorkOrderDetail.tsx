@@ -686,6 +686,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
     isInvoiced || (plasmaJob ? plasmaJob.status !== 'DRAFT' && plasmaJob.status !== 'QUOTED' : false);
   const plasmaAttachments = plasmaJob ? plasmaRepo.attachments.list(plasmaJob.id) : [];
   const [dxfAssistOpen, setDxfAssistOpen] = useState(false);
+  const [showPlasmaDetails, setShowPlasmaDetails] = useState(false);
 
   // Lines
   const otherChargeLines = chargeLines.filter(
@@ -2802,15 +2803,57 @@ const jobReadinessValues = Object.values(jobReadinessById);
             </TabsContent>
 
             <TabsContent value="plasma">
+              {/* Summary Header */}
+              <div className="mb-4 p-3 bg-muted/40 border rounded-lg">
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Status:</span>{' '}
+                    <Badge variant={plasmaChargeLine ? 'default' : plasmaLocked ? 'secondary' : 'outline'}>
+                      {plasmaChargeLine ? 'Posted' : plasmaLocked ? 'Locked' : plasmaJob?.status ?? 'DRAFT'}
+                    </Badge>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Lines:</span>{' '}
+                    <span className="font-medium">{plasmaLines.length}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Cut Length:</span>{' '}
+                    <span className="font-medium">
+                      {plasmaLines.reduce((s, l) => s + (l.cut_length ?? 0) * (l.qty ?? 0), 0).toFixed(2)} in
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Pieces:</span>{' '}
+                    <span className="font-medium">{plasmaLines.reduce((s, l) => s + (l.qty ?? 0), 0)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Total:</span>{' '}
+                    <span className="font-semibold">${plasmaTotal.toFixed(2)}</span>
+                  </div>
+                  {plasmaChargeLine && (
+                    <div className="text-xs text-muted-foreground">
+                      Posted on {plasmaJob?.posted_at ? new Date(plasmaJob.posted_at).toLocaleDateString() : '-'}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Workflow Hint */}
+              <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
+                <span className={plasmaLines.length === 0 ? 'font-semibold text-foreground' : ''}>1. Add lines</span>
+                <span>→</span>
+                <span className={plasmaLines.length > 0 && !plasmaJob?.dxf_estimated_total_cut_length ? 'font-semibold text-foreground' : ''}>
+                  2. Upload DXF (optional)
+                </span>
+                <span>→</span>
+                <span className={plasmaLines.length > 0 && !plasmaChargeLine ? 'font-semibold text-foreground' : ''}>3. Review</span>
+                <span>→</span>
+                <span className={plasmaChargeLine ? 'font-semibold text-foreground' : ''}>4. Post</span>
+              </div>
+
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <h3 className="font-medium">Plasma</h3>
-                  {plasmaChargeLine && (
-                    <Badge variant="secondary">
-                      Posted to WO {plasmaChargeLine.work_order_id}{' '}
-                      {plasmaJob?.posted_at ? `on ${new Date(plasmaJob.posted_at).toLocaleString()}` : ''}
-                    </Badge>
-                  )}
                   {plasmaLocked && (
                     <Badge variant="outline" title="Editing disabled for posted or invoiced orders">
                       Locked
@@ -2818,14 +2861,28 @@ const jobReadinessValues = Object.values(jobReadinessById);
                   )}
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={handleRecalculatePlasmaJob} disabled={!plasmaJob || plasmaLocked}>
-                    <RotateCcw className="w-4 h-4 mr-2" />
-                    Recalculate
-                  </Button>
-                  <Button size="sm" onClick={handlePostPlasmaJob} disabled={!plasmaJob || plasmaLines.length === 0 || plasmaLocked}>
-                    <FileCheck className="w-4 h-4 mr-2" />
-                    Post to Work Order
-                  </Button>
+                  <div className="flex flex-col items-end">
+                    <Button variant="outline" size="sm" onClick={handleRecalculatePlasmaJob} disabled={!plasmaJob || plasmaLocked}>
+                      <RotateCcw className="w-4 h-4 mr-2" />
+                      Recalculate
+                    </Button>
+                    {(!plasmaJob || plasmaLocked) && (
+                      <span className="text-xs text-muted-foreground mt-0.5">
+                        {plasmaLocked ? 'Locked' : 'No plasma job'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <Button size="sm" onClick={handlePostPlasmaJob} disabled={!plasmaJob || plasmaLines.length === 0 || plasmaLocked}>
+                      <FileCheck className="w-4 h-4 mr-2" />
+                      Post to Work Order
+                    </Button>
+                    {(!plasmaJob || plasmaLines.length === 0 || plasmaLocked) && (
+                      <span className="text-xs text-muted-foreground mt-0.5">
+                        {plasmaLocked ? 'Locked' : plasmaLines.length === 0 ? 'Add lines first' : 'No plasma job'}
+                      </span>
+                    )}
+                  </div>
                   {plasmaJob && (
                     <Button size="sm" variant="outline" onClick={() => navigate(`/plasma/${plasmaJob.id}/print`)}>
                       Print Cut Sheet
@@ -2865,11 +2922,6 @@ const jobReadinessValues = Object.values(jobReadinessById);
                   )}
                 </div>
               </div>
-              {plasmaLocked && (
-                <div className="mb-3 text-sm text-muted-foreground">
-                  Plasma lines are locked because the job is posted or the work order is invoiced.
-                </div>
-              )}
               {plasmaWarnings.length > 0 && (
                 <div className="mb-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
                   {plasmaWarnings.map((w) => (
@@ -2877,7 +2929,24 @@ const jobReadinessValues = Object.values(jobReadinessById);
                   ))}
                 </div>
               )}
-              {plasmaJob && (
+
+              {/* DXF Assist Callout - highlighted when no cut length exists */}
+              {plasmaJob && plasmaLines.length > 0 && plasmaLines.every((l) => !l.cut_length) && !dxfAssistOpen && (
+                <div className="mb-4 p-3 bg-primary/10 border border-primary/30 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium text-primary">No cut lengths entered</h4>
+                      <p className="text-sm text-muted-foreground">
+                        Use DXF Assist to estimate cut lengths, pierces, and machine time from your drawing.
+                      </p>
+                    </div>
+                    <Button variant="default" size="sm" onClick={() => setDxfAssistOpen(true)}>
+                      Open DXF Assist
+                    </Button>
+                  </div>
+                </div>
+              )}
+              {plasmaJob && (dxfAssistOpen || plasmaLines.some((l) => l.cut_length)) && (
                 <div className="mb-4 border rounded-lg p-3">
                   <div className="flex items-center justify-between">
                     <div>
@@ -2943,6 +3012,19 @@ const jobReadinessValues = Object.values(jobReadinessById);
                   )}
                 </div>
               )}
+
+              {/* Table Column Toggle */}
+              <div className="flex items-center justify-end mb-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowPlasmaDetails((v) => !v)}
+                  className="text-xs"
+                >
+                  {showPlasmaDetails ? 'Hide details' : 'Show details'}
+                </Button>
+              </div>
+
               <div className="table-container">
                 <Table>
                   <TableHeader>
@@ -2952,10 +3034,14 @@ const jobReadinessValues = Object.values(jobReadinessById);
                       <TableHead className="text-right">Qty</TableHead>
                       <TableHead className="text-right">Cut Length</TableHead>
                       <TableHead className="text-right">Pierces</TableHead>
-                      <TableHead className="text-right">Setup (min)</TableHead>
-                      <TableHead className="text-right">Machine (min)</TableHead>
-                      <TableHead className="text-right">Derived?</TableHead>
-                      <TableHead className="text-right">Unit Sell</TableHead>
+                      {showPlasmaDetails && (
+                        <>
+                          <TableHead className="text-right">Setup (min)</TableHead>
+                          <TableHead className="text-right">Machine (min)</TableHead>
+                          <TableHead className="text-right">Derived?</TableHead>
+                          <TableHead className="text-right">Unit Sell</TableHead>
+                        </>
+                      )}
                       <TableHead className="text-right">Total</TableHead>
                       {!isInvoiced && <TableHead className="w-10"></TableHead>}
                     </TableRow>
@@ -2963,8 +3049,17 @@ const jobReadinessValues = Object.values(jobReadinessById);
                   <TableBody>
                     {!plasmaJob || plasmaLines.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={isInvoiced ? 9 : 10} className="text-center text-muted-foreground py-8">
-                          No plasma lines yet
+                        <TableCell
+                          colSpan={showPlasmaDetails ? (isInvoiced ? 10 : 11) : (isInvoiced ? 6 : 7)}
+                          className="text-center py-8"
+                        >
+                          <div className="text-muted-foreground mb-3">No plasma lines yet</div>
+                          {!plasmaLocked && (
+                            <Button variant="default" size="sm" onClick={handleAddPlasmaLine}>
+                              <Plus className="w-4 h-4 mr-2" />
+                              Add First Line
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -3019,48 +3114,52 @@ const jobReadinessValues = Object.values(jobReadinessById);
                               className="text-right"
                             />
                           </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.1"
-                              value={line.setup_minutes ?? ''}
-                              disabled={plasmaLocked}
-                              onChange={(e) => handlePlasmaNumberChange(line.id, 'setup_minutes', e.target.value)}
-                              className="text-right"
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.1"
-                              value={line.machine_minutes ?? ''}
-                              disabled={plasmaLocked}
-                              onChange={(e) => handlePlasmaNumberChange(line.id, 'machine_minutes', e.target.value)}
-                              className="text-right"
-                            />
-                          </TableCell>
-                          <TableCell className="text-right text-xs text-muted-foreground">
-                            {line.override_machine_minutes ? (
-                              <Badge variant="outline">Override</Badge>
-                            ) : line.derived_machine_minutes != null ? (
-                              <Badge variant="secondary">Derived</Badge>
-                            ) : (
-                              '-'
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={line.sell_price_each ?? 0}
-                              disabled={isInvoiced}
-                              onChange={(e) => handlePlasmaSellPriceChange(line.id, e.target.value)}
-                              className="text-right"
-                            />
-                          </TableCell>
+                          {showPlasmaDetails && (
+                            <>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.1"
+                                  value={line.setup_minutes ?? ''}
+                                  disabled={plasmaLocked}
+                                  onChange={(e) => handlePlasmaNumberChange(line.id, 'setup_minutes', e.target.value)}
+                                  className="text-right"
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.1"
+                                  value={line.machine_minutes ?? ''}
+                                  disabled={plasmaLocked}
+                                  onChange={(e) => handlePlasmaNumberChange(line.id, 'machine_minutes', e.target.value)}
+                                  className="text-right"
+                                />
+                              </TableCell>
+                              <TableCell className="text-right text-xs text-muted-foreground">
+                                {line.override_machine_minutes ? (
+                                  <Badge variant="outline">Override</Badge>
+                                ) : line.derived_machine_minutes != null ? (
+                                  <Badge variant="secondary">Derived</Badge>
+                                ) : (
+                                  '-'
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={line.sell_price_each ?? 0}
+                                  disabled={isInvoiced}
+                                  onChange={(e) => handlePlasmaSellPriceChange(line.id, e.target.value)}
+                                  className="text-right"
+                                />
+                              </TableCell>
+                            </>
+                          )}
                           <TableCell className="text-right font-medium">${(line.sell_price_total ?? 0).toFixed(2)}</TableCell>
                           {!plasmaLocked && (
                             <TableCell>
@@ -3087,7 +3186,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                 </Table>
               </div>
               <div className="mt-3 flex items-center justify-between">
-                {!plasmaLocked && (
+                {!plasmaLocked && plasmaLines.length > 0 && (
                   <Button variant="outline" size="sm" onClick={handleAddPlasmaLine}>
                     <Plus className="w-4 h-4 mr-2" />
                     Add Line
