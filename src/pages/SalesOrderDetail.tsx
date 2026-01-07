@@ -496,7 +496,7 @@ export default function SalesOrderDetail() {
 
   const confirmMarkCoreReturned = () => {
     if (!coreReturnLineId) return;
-    const result = soMarkCoreReturned(coreReturnLineId);
+    const result = repos.salesOrders.soMarkCoreReturned(coreReturnLineId);
     if (result.success) {
       toast({ title: 'Core Returned', description: 'Refund line has been created' });
       setIsDirty(true);

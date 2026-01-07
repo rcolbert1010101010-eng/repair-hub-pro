@@ -280,7 +280,7 @@ export default function ReceiveInventory() {
                             }
                             if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'enter') {
                               e.preventDefault();
-                              if (hasValidLines && !posting) handlePost();
+                              if (hasValidLines) handlePost();
                               return;
                             }
                             if (e.key === 'Escape') {

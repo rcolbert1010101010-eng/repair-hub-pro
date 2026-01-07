@@ -220,7 +220,7 @@ export default function PurchaseOrderDetail() {
         ? new Set(['OPEN', 'IN_PROGRESS'])
         : new Set([woStatusFilter.toUpperCase()]);
     return workOrders
-      .filter((wo) => allowedStatuses.has(wo.status) && wo.is_active !== false)
+      .filter((wo) => allowedStatuses.has(wo.status) && (wo as any).is_active !== false)
       .filter((wo) => statusFilterSet.has(wo.status))
       .map((wo) => {
         const number = wo.order_number || wo.id;
@@ -241,7 +241,7 @@ export default function PurchaseOrderDetail() {
         ? new Set(['OPEN', 'ESTIMATE'])
         : new Set([soStatusFilter.toUpperCase()]);
     return salesOrders
-      .filter((so) => allowedStatuses.has(so.status) && so.is_active !== false)
+      .filter((so) => allowedStatuses.has(so.status) && (so as any).is_active !== false)
       .filter((so) => statusFilterSet.has(so.status))
       .map((so) => {
         const number = so.order_number || so.id;
