@@ -30,14 +30,17 @@ interface DashboardKanbanProps {
   columns: DashboardKanbanColumn[];
   loading?: boolean;
   emptyState?: ReactNode;
+  layout?: 'grid' | 'kanban';
 }
 
-export function DashboardKanban({ columns, loading, emptyState }: DashboardKanbanProps) {
+export function DashboardKanban({ columns, loading, emptyState, layout = 'grid' }: DashboardKanbanProps) {
+  const isKanban = layout === 'kanban';
+
   if (loading) {
     return (
-      <div className="grid w-full grid-cols-1 gap-4 lg:grid-cols-3 xl:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, idx) => (
-          <Card key={idx}>
+      <div className={isKanban ? "flex gap-4 overflow-x-auto pb-2" : "grid w-full grid-cols-1 gap-4 lg:grid-cols-3 xl:grid-cols-4"}>
+        {Array.from({ length: isKanban ? 7 : 4 }).map((_, idx) => (
+          <Card key={idx} className={isKanban ? "min-w-[260px] flex-shrink-0" : ""}>
             <CardContent className="space-y-3">
               <Skeleton className="h-4 w-24" />
               <Skeleton className="h-32" />
@@ -53,9 +56,9 @@ export function DashboardKanban({ columns, loading, emptyState }: DashboardKanba
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+    <div className={isKanban ? "flex gap-4 overflow-x-auto pb-2" : "grid gap-4 lg:grid-cols-2 xl:grid-cols-3"}>
       {columns.map((column) => (
-        <Card key={column.id} className="h-full border border-muted/40">
+        <Card key={column.id} className={isKanban ? "min-w-[260px] max-w-[300px] flex-shrink-0 h-full border border-muted/40" : "h-full border border-muted/40"}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
               {column.label}
