@@ -291,7 +291,7 @@ export default function SalesOrderDetail() {
     }
   };
 
-  const handleInvoice = () => {
+  const handleInvoice = async () => {
     if (!currentOrder) return;
     if (isCustomerOnHold) {
       toast({
@@ -301,13 +301,23 @@ export default function SalesOrderDetail() {
       });
       return;
     }
-    const result = soInvoice(currentOrder.id);
-    if (result.success) {
-      toast({ title: 'Order Invoiced' });
-      setShowInvoiceDialog(false);
-      setIsDirty(false);
-    } else {
-      toast({ title: 'Error', description: result.error, variant: 'destructive' });
+    try {
+      const { invoiceId } = await repos.invoices.createFromSalesOrder({ salesOrderId: currentOrder.id });
+      const result = soInvoice(currentOrder.id);
+      if (result.success) {
+        toast({ title: 'Order Invoiced' });
+        setShowInvoiceDialog(false);
+        setIsDirty(false);
+        navigate(`/invoices/${invoiceId}`);
+      } else {
+        toast({ title: 'Error', description: result.error, variant: 'destructive' });
+      }
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to create invoice',
+        variant: 'destructive',
+      });
     }
   };
 
