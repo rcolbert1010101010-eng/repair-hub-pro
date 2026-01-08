@@ -367,6 +367,7 @@ export interface SchedulingRepo {
 
 export interface InvoicesRepo {
   createFromSalesOrder(input: { salesOrderId: string }): Promise<{ invoiceId: string }>;
+  createFromWorkOrder(input: { workOrderId: string }): Promise<{ invoiceId: string }>;
   getById(input: { invoiceId: string }): Promise<import('@/types').Invoice>;
   listLines(input: { invoiceId: string }): Promise<import('@/types').InvoiceLine[]>;
 }
