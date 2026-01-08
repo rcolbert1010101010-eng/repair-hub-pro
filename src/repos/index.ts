@@ -82,7 +82,6 @@ const apiBackedRepos: Repos = {
       invoicesStore.set(invoiceId, invoice);
       invoiceLinesStore.set(invoiceId, invoiceLines);
 
-      zustandRepos.salesOrders.soInvoice(input.salesOrderId);
 
       return { invoiceId };
     },
