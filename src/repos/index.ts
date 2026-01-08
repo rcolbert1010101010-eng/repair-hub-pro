@@ -85,6 +85,112 @@ const apiBackedRepos: Repos = {
 
       return { invoiceId };
     },
+    createFromWorkOrder: async (input: { workOrderId: string }) => {
+      const workOrder = zustandRepos.workOrders.workOrders.find((wo) => wo.id === input.workOrderId);
+      if (!workOrder) {
+        throw new Error(`Work order not found: ${input.workOrderId}`);
+      }
+
+      const partLines = zustandRepos.workOrders.getWorkOrderPartLines(input.workOrderId);
+      const laborLines = zustandRepos.workOrders.getWorkOrderLaborLines(input.workOrderId);
+      const chargeLines = zustandRepos.workOrders.getWorkOrderChargeLines(input.workOrderId);
+
+      const validPartLines = partLines.filter((line) => !line.is_core_refund_line);
+      const validLaborLines = laborLines;
+      const validChargeLines = chargeLines;
+
+      const subtotal_parts = validPartLines.reduce((sum, line) => sum + line.line_total, 0);
+      const subtotal_labor = validLaborLines.reduce((sum, line) => sum + line.line_total, 0);
+      const subtotal_fees = validChargeLines.reduce((sum, line) => sum + line.total_price, 0);
+
+      const tax_base = subtotal_parts + subtotal_labor + subtotal_fees;
+      const tax_amount = workOrder.tax_rate
+        ? Math.round(tax_base * workOrder.tax_rate * 100) / 100
+        : 0;
+      const total = subtotal_parts + subtotal_labor + subtotal_fees + tax_amount;
+
+      invoiceCounter += 1;
+      const invoice_number = `INV-${String(invoiceCounter).padStart(6, '0')}`;
+      const invoiceId = `inv_${Date.now()}_${invoiceCounter}`;
+
+      const invoice: import('@/types').Invoice = {
+        id: invoiceId,
+        invoice_number,
+        source_type: 'WORK_ORDER',
+        source_id: input.workOrderId,
+        customer_id: workOrder.customer_id,
+        unit_id: workOrder.unit_id ?? null,
+        status: 'DRAFT',
+        issued_at: null,
+        due_at: null,
+        subtotal_parts,
+        subtotal_labor,
+        subtotal_fees,
+        tax_amount,
+        total,
+        balance_due: total,
+        snapshot_json: undefined,
+      };
+
+      const invoiceLines: import('@/types').InvoiceLine[] = [];
+
+      let lineIdx = 0;
+      for (const line of validPartLines) {
+        invoiceLines.push({
+          id: `inv_line_${Date.now()}_${invoiceCounter}_${lineIdx}`,
+          invoice_id: invoiceId,
+          line_type: 'PART',
+          ref_type: 'work_order_line',
+          ref_id: line.id,
+          description: line.description ?? (line.part as { part_number?: string } | undefined)?.part_number ?? 'Part',
+          qty: line.quantity,
+          unit_price: line.unit_price,
+          amount: line.line_total,
+          taxable: true,
+          tax_rate: workOrder.tax_rate,
+        });
+        lineIdx += 1;
+      }
+
+      for (const line of validLaborLines) {
+        invoiceLines.push({
+          id: `inv_line_${Date.now()}_${invoiceCounter}_${lineIdx}`,
+          invoice_id: invoiceId,
+          line_type: 'LABOR',
+          ref_type: 'work_order_line',
+          ref_id: line.id,
+          description: line.description,
+          qty: line.hours,
+          unit_price: line.rate,
+          amount: line.line_total,
+          taxable: true,
+          tax_rate: workOrder.tax_rate,
+        });
+        lineIdx += 1;
+      }
+
+      for (const line of validChargeLines) {
+        invoiceLines.push({
+          id: `inv_line_${Date.now()}_${invoiceCounter}_${lineIdx}`,
+          invoice_id: invoiceId,
+          line_type: 'FEE',
+          ref_type: 'work_order_line',
+          ref_id: line.id,
+          description: line.description,
+          qty: line.qty,
+          unit_price: line.unit_price,
+          amount: line.total_price,
+          taxable: true,
+          tax_rate: workOrder.tax_rate,
+        });
+        lineIdx += 1;
+      }
+
+      invoicesStore.set(invoiceId, invoice);
+      invoiceLinesStore.set(invoiceId, invoiceLines);
+
+      return { invoiceId };
+    },
     getById: async (input: { invoiceId: string }) => {
       const invoice = invoicesStore.get(input.invoiceId);
       if (!invoice) {
