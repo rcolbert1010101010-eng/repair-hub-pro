@@ -909,8 +909,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
   };
-
-  const handleInvoice = () => {
+  const handleInvoice = async () => {
     if (!currentOrder) return;
     if (isCustomerOnHold) {
       toast({
@@ -920,15 +919,23 @@ const jobReadinessValues = Object.values(jobReadinessById);
       });
       return;
     }
-    const result = woInvoice(currentOrder.id);
-    if (result.success) {
-      toast({ title: 'Order Invoiced', description: 'Work order has been invoiced and locked' });
-      setShowInvoiceDialog(false);
-    } else {
-      toast({ title: 'Error', description: result.error, variant: 'destructive' });
+
+    try {
+      const { invoiceId } = await repos.invoices.createFromWorkOrder({ workOrderId: currentOrder.id });
+
+      const result = woInvoice(currentOrder.id);
+      if (result.success) {
+        toast({ title: 'Order Invoiced', description: 'Work order has been invoiced and locked' });
+        setShowInvoiceDialog(false);
+        navigate(`/invoices/${invoiceId}`);
+      } else {
+        toast({ title: 'Error', description: result.error, variant: 'destructive' });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast({ title: 'Error', description: message, variant: 'destructive' });
     }
   };
-
   const handleQuickAddCustomer = () => {
     if (!newCustomerName.trim()) return;
     const result = addCustomer({

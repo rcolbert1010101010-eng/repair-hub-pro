@@ -874,3 +874,40 @@ export interface UnitPMHistory {
   is_active: boolean;
   created_at: string;
 }
+
+export type InvoiceSourceType = 'SALES_ORDER' | 'WORK_ORDER';
+export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'VOID' | 'PAID' | 'PARTIAL';
+export type InvoiceLineType = 'PART' | 'LABOR' | 'FEE' | 'DISCOUNT' | 'TAX' | 'NOTE';
+
+export interface Invoice {
+  id: string;
+  invoice_number: string;
+  source_type: InvoiceSourceType;
+  source_id: string;
+  customer_id: string;
+  unit_id?: string | null;
+  status: InvoiceStatus;
+  issued_at?: string | null;
+  due_at?: string | null;
+  subtotal_parts: number;
+  subtotal_labor: number;
+  subtotal_fees: number;
+  tax_amount: number;
+  total: number;
+  balance_due: number;
+  snapshot_json?: unknown;
+}
+
+export interface InvoiceLine {
+  id: string;
+  invoice_id: string;
+  line_type: InvoiceLineType;
+  ref_type?: string | null;
+  ref_id?: string | null;
+  description: string;
+  qty: number;
+  unit_price: number;
+  amount: number;
+  taxable?: boolean | null;
+  tax_rate?: number | null;
+}
