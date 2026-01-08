@@ -206,8 +206,9 @@ export default function SalesOrderDetail() {
         console.error('Failed to load parts', e);
         setPartsError(e?.message ?? 'Failed to load parts');
       } finally {
-        if (!isMounted) return;
-        setLoadingParts(false);
+        if (isMounted) {
+          setLoadingParts(false);
+        }
       }
     })();
 
@@ -243,8 +244,9 @@ export default function SalesOrderDetail() {
         console.error('Failed to load customers', e);
         setCustomersError(e?.message ?? 'Failed to load customers');
       } finally {
-        if (!isMounted) return;
-        setLoadingCustomers(false);
+        if (isMounted) {
+          setLoadingCustomers(false);
+        }
       }
     })();
 
@@ -253,7 +255,6 @@ export default function SalesOrderDetail() {
     };
   }, []);
 
-  const handleInvoice = async () => {
   const handleInvoice = async () => {
     if (!currentOrder) return;
     if (isCustomerOnHold) {
@@ -284,7 +285,7 @@ export default function SalesOrderDetail() {
     }
   };
 
-  const handleQuickInvoiceAndPrint = () => {
+  const handleQuickInvoiceAndPrint = async () => {
     if (quickInvoiceIssues.length > 0 || !currentOrder) return;
     if (currentOrder.status === 'ESTIMATE') {
       const convert = soConvertToOpen(currentOrder.id);

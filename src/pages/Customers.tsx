@@ -42,8 +42,9 @@ export default function Customers() {
         if (!isMounted) return;
         setLoadError(e?.message ?? 'Failed to load customers');
       } finally {
-        if (!isMounted) return;
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     })();
 

@@ -19,6 +19,8 @@ import {
   BarChart2,
   Flame,
   Calendar,
+  Factory,
+  Layers,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -67,6 +69,16 @@ const navItems: NavItem[] = [
       { type: 'link', path: '/vendors', label: 'Vendors', icon: Building2 },
       { type: 'link', path: '/categories', label: 'Categories', icon: Tags },
       { type: 'link', path: '/cycle-counts', label: 'Cycle Counts', icon: ListChecks },
+    ],
+  },
+  {
+    type: 'group',
+    key: 'manufacturing',
+    label: 'Manufacturing',
+    icon: Factory,
+    children: [
+      { type: 'link', path: '/manufacturing/products', label: 'Products', icon: Package },
+      { type: 'link', path: '/manufacturing/builds', label: 'Builds', icon: Layers },
     ],
   },
   { type: 'link', path: '/purchase-orders', label: 'Purchase Orders', icon: ClipboardList },
