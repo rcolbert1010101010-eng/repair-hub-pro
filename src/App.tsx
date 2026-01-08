@@ -79,6 +79,7 @@ const App = () => (
               <Route path="/plasma/templates/:id" element={<PlasmaTemplateDetail />} />
               <Route path="/work-orders" element={<WorkOrders />} />
               <Route path="/work-orders/:id" element={<WorkOrderDetail />} />
+              <Route path="/invoices" element={<div className="p-6">Invoices (coming soon)</div>} />
               <Route path="/invoices/:id" element={<InvoiceDetail />} />
               <Route path="/scheduling" element={<Scheduling />} />
               <Route path="/purchase-orders" element={<PurchaseOrders />} />
