@@ -42,6 +42,8 @@ import type {
   SalesOrderChargeLine,
   ScheduleItem,
   InventoryMovement,
+  Invoice,
+  InvoiceLine,
 } from '@/types';
 import type { FabricationPricingSettings } from '@/services/fabricationPricingService';
 import type { PlasmaPricingSettings } from '@/services/plasmaPricingService';
@@ -363,6 +365,12 @@ export interface SchedulingRepo {
   ) => { item: ScheduleItem | null; reason?: string };
 }
 
+export interface InvoicesRepo {
+  createFromSalesOrder(input: { salesOrderId: string }): Promise<{ invoiceId: string }>;
+  getById(input: { invoiceId: string }): Promise<import('@/types').Invoice>;
+  listLines(input: { invoiceId: string }): Promise<import('@/types').InvoiceLine[]>;
+}
+
 export interface Repos {
   settings: SettingsRepo;
   customers: CustomersRepo;
@@ -378,6 +386,7 @@ export interface Repos {
   timeEntries: TimeEntriesRepo;
   salesOrders: SalesOrdersRepo;
   workOrders: WorkOrdersRepo;
+  invoices: InvoicesRepo;
   purchaseOrders: PurchaseOrdersRepo;
   cycleCounts: CycleCountsRepo;
   returns: ReturnsRepo;
