@@ -24,6 +24,14 @@ export default function InvoiceDetail() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
+  const backTo = invoice
+    ? invoice.source_type === 'SALES_ORDER'
+      ? `/sales-orders/${invoice.source_id}`
+      : invoice.source_type === 'WORK_ORDER'
+        ? `/work-orders/${invoice.source_id}`
+        : '/invoices'
+    : '/invoices';
+
   useEffect(() => {
     if (!invoiceId) return;
 
@@ -50,7 +58,7 @@ export default function InvoiceDetail() {
   if (loading) {
     return (
       <div className="page-container">
-        <PageHeader title="Invoice" backTo="/invoices" />
+        <PageHeader title="Invoice" backTo={backTo} />
         <p>Loading...</p>
       </div>
     );
@@ -59,7 +67,7 @@ export default function InvoiceDetail() {
   if (notFound || !invoice) {
     return (
       <div className="page-container">
-        <PageHeader title="Invoice" backTo="/invoices" />
+        <PageHeader title="Invoice" backTo={backTo} />
         <p>Invoice not found</p>
       </div>
     );
@@ -67,7 +75,7 @@ export default function InvoiceDetail() {
 
   return (
     <div className="page-container">
-      <PageHeader title={`Invoice ${invoice.invoice_number}`} backTo="/invoices" />
+      <PageHeader title={`Invoice ${invoice.invoice_number}`} backTo={backTo} />
 
       <div className="space-y-4">
         <Card>
