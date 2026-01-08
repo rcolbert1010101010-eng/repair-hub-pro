@@ -23,6 +23,17 @@ const apiBackedRepos: Repos = {
   categories: categoriesRepoApi,
   parts: partsRepoApi,
   technicians: techniciansRepoApi,
+  invoices: {
+    createFromSalesOrder: () => {
+      throw new Error('Not implemented');
+    },
+    getById: () => {
+      throw new Error('Not implemented');
+    },
+    listLines: () => {
+      throw new Error('Not implemented');
+    },
+  },
 };
 
 const repos: Repos = apiBackedRepos;
