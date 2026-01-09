@@ -45,7 +45,7 @@ export default function ManufacturingBuildsPage() {
   const [statusFilter, setStatusFilter] = useState<ManufacturingBuildStatus | 'all'>('all');
   const buildsQuery = useManufacturingBuilds();
 
-  const builds = buildsQuery.data ?? [];
+  const builds = useMemo(() => buildsQuery.data ?? [], [buildsQuery.data]);
 
   const filteredBuilds = useMemo(
     () => (statusFilter === 'all' ? builds : builds.filter((build) => build.status === statusFilter)),

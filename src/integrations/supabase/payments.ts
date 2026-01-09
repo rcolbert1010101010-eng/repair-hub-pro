@@ -105,17 +105,21 @@ export async function voidPayment(id: string, reason?: string | null): Promise<P
   return mapPayment(data);
 }
 
+export const PAYMENT_EPSILON = 0.01;
+
 export function computePaymentSummary(payments: Payment[] | undefined, orderTotal: number): PaymentSummary {
   const validPayments = (payments ?? []).filter((p) => !p.voided_at);
   const totalPaid = validPayments.reduce((sum, payment) => sum + toNumber(payment.amount), 0);
-  const balanceDue = toNumber(orderTotal) - totalPaid;
+  const rawBalance = toNumber(orderTotal) - totalPaid;
+  const balanceDue = rawBalance > 0 ? rawBalance : 0;
+  const isZeroish = Math.abs(rawBalance) <= PAYMENT_EPSILON;
 
   let status: PaymentStatus = 'UNPAID';
-  if (totalPaid === 0) {
+  if (totalPaid <= PAYMENT_EPSILON) {
     status = 'UNPAID';
-  } else if (balanceDue > 0) {
+  } else if (rawBalance > PAYMENT_EPSILON) {
     status = 'PARTIAL';
-  } else if (balanceDue === 0) {
+  } else if (isZeroish) {
     status = 'PAID';
   } else {
     status = 'OVERPAID';

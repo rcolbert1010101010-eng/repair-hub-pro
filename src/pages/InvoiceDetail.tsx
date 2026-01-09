@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -12,13 +15,22 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useRepos } from '@/repos';
-import type { Invoice, InvoiceLine } from '@/types';
+import { usePayments } from '@/hooks/usePayments';
+import { useToast } from '@/hooks/use-toast';
+import type { Invoice, InvoiceLine, PaymentOrderType } from '@/types';
 
 const toNumber = (value: number | string | null | undefined) => {
   const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
   return Number.isFinite(numeric) ? numeric : 0;
 };
 const formatCurrency = (value: number | string | null | undefined) => `$${toNumber(value).toFixed(2)}`;
+const PAYMENT_METHOD_OPTIONS = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'check', label: 'Check' },
+  { value: 'card', label: 'Credit Card' },
+  { value: 'ach', label: 'ACH' },
+  { value: 'other', label: 'Other' },
+];
 
 export default function InvoiceDetail() {
   const { id: invoiceId } = useParams<{ id: string }>();
@@ -27,6 +39,11 @@ export default function InvoiceDetail() {
   const [lines, setLines] = useState<InvoiceLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'check' | 'card' | 'ach' | 'other'>('cash');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
+  const { toast } = useToast();
 
   const backTo = invoice
     ? invoice.source_type === 'SALES_ORDER'
@@ -58,6 +75,72 @@ export default function InvoiceDetail() {
 
     loadInvoice();
   }, [invoiceId, repos.invoices]);
+
+  const paymentOrderType: PaymentOrderType | undefined =
+    invoice?.source_type === 'WORK_ORDER' ? 'WORK_ORDER' : invoice?.source_type === 'SALES_ORDER' ? 'SALES_ORDER' : undefined;
+  const orderTotal = toNumber(invoice?.total);
+  const payments = usePayments(paymentOrderType, invoice?.source_id, orderTotal);
+  const paymentStatusClass = useMemo(() => {
+    switch (payments.summary.status) {
+      case 'PAID':
+        return 'bg-green-100 text-green-700';
+      case 'OVERPAID':
+        return 'bg-amber-100 text-amber-800';
+      case 'PARTIAL':
+        return 'bg-orange-100 text-orange-700';
+      default:
+        return 'bg-slate-100 text-slate-700';
+    }
+  }, [payments.summary.status]);
+
+  useEffect(() => {
+    if (!invoice) return;
+    if (paymentAmount !== '') return;
+    if (payments.summary.balanceDue > 0) {
+      setPaymentAmount(payments.summary.balanceDue.toFixed(2));
+    }
+  }, [invoice, paymentAmount, payments.summary.balanceDue]);
+
+  const handleAddPayment = async () => {
+    if (!invoice) return;
+    const amountValue = toNumber(paymentAmount);
+    if (amountValue <= 0) {
+      toast({ title: 'Enter amount', description: 'Payment amount must be greater than 0', variant: 'destructive' });
+      return;
+    }
+    try {
+      await payments.addPayment.mutateAsync({
+        amount: amountValue,
+        method: paymentMethod,
+        reference: paymentReference || null,
+        notes: paymentNotes || null,
+      });
+      toast({ title: 'Payment recorded' });
+      setPaymentAmount('');
+      setPaymentReference('');
+      setPaymentNotes('');
+    } catch (error: any) {
+      toast({
+        title: 'Unable to record payment',
+        description: error?.message ?? 'Please try again',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleVoidPayment = async (paymentId: string) => {
+    const reason = window.prompt('Enter void reason (optional)') ?? '';
+    try {
+      await payments.voidPayment.mutateAsync({ paymentId, reason });
+      toast({ title: 'Payment voided' });
+    } catch (error: any) {
+      toast({
+        title: 'Unable to void payment',
+        description: error?.message ?? 'Please try again',
+        variant: 'destructive',
+      });
+    }
+  };
 
   if (loading) {
     return (
@@ -98,6 +181,120 @@ export default function InvoiceDetail() {
             <div className="flex items-center gap-2">
               <span className="font-medium">Balance Due:</span>
               <span>{formatCurrency(invoice.balance_due)}</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Payments</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="border rounded-lg p-4 bg-muted/40 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Payment Status</p>
+                    <p className="font-semibold">
+                      {formatCurrency(payments.summary.totalPaid)} paid of {formatCurrency(orderTotal)}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className={paymentStatusClass}>
+                    {payments.summary.status}
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Total Paid</span>
+                    <span className="font-medium">{formatCurrency(payments.summary.totalPaid)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Balance Due</span>
+                    <span className="font-medium">{formatCurrency(payments.summary.balanceDue)}</span>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">Record Payment</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Amount"
+                      value={paymentAmount}
+                      onChange={(e) => setPaymentAmount(e.target.value)}
+                    />
+                    <Select value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as typeof paymentMethod)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Method" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PAYMENT_METHOD_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Input
+                    placeholder="Reference (optional)"
+                    value={paymentReference}
+                    onChange={(e) => setPaymentReference(e.target.value)}
+                  />
+                  <Input
+                    placeholder="Notes (optional)"
+                    value={paymentNotes}
+                    onChange={(e) => setPaymentNotes(e.target.value)}
+                  />
+                  <Button onClick={handleAddPayment} disabled={!invoice || payments.addPayment.isLoading}>
+                    {payments.addPayment.isLoading ? 'Saving...' : 'Add Payment'}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="border rounded-lg p-4 bg-muted/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-lg">Payment History</h3>
+                  {payments.isLoading && <span className="text-xs text-muted-foreground">Loading...</span>}
+                </div>
+                <div className="space-y-2 text-sm">
+                  {payments.payments.length === 0 && (
+                    <p className="text-muted-foreground">No payments recorded yet.</p>
+                  )}
+                  {payments.payments.map((payment) => (
+                    <div key={payment.id} className="border rounded-md p-3 bg-background space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">
+                          {formatCurrency(payment.amount)} - {payment.method}
+                        </span>
+                        {payment.voided_at ? (
+                          <Badge variant="outline" className="bg-destructive/10 text-destructive">
+                            Voided
+                          </Badge>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleVoidPayment(payment.id)}
+                            disabled={payments.voidPayment.isLoading}
+                          >
+                            Void
+                          </Button>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{new Date(payment.created_at).toLocaleString()}</span>
+                        {payment.reference && <span>Ref: {payment.reference}</span>}
+                      </div>
+                      {payment.notes && <div className="text-xs text-muted-foreground">Notes: {payment.notes}</div>}
+                      {payment.void_reason && (
+                        <div className="text-xs text-muted-foreground">Void reason: {payment.void_reason}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>

@@ -1,7 +1,12 @@
 import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Payment, PaymentMethod, PaymentOrderType } from '@/types';
-import { computePaymentSummary, fetchPayments, recordPayment, voidPayment } from '@/integrations/supabase/payments';
+import { computePaymentSummary, fetchPayments, PAYMENT_EPSILON, recordPayment, voidPayment } from '@/integrations/supabase/payments';
+
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
 
 const usePaymentsInternal = (
   orderType?: PaymentOrderType,
@@ -22,6 +27,14 @@ const usePaymentsInternal = (
     mutationFn: (input: { amount: number; method: PaymentMethod; reference?: string | null; notes?: string | null }) => {
       if (!hasOrder) {
         return Promise.reject(new Error('Order required to record payment'));
+      }
+      const currentSummary = computePaymentSummary(paymentsQuery.data, orderTotal);
+      const projectedPaid = currentSummary.totalPaid + toNumber(input.amount);
+      const allowedTotal = toNumber(orderTotal);
+      if (projectedPaid - allowedTotal > PAYMENT_EPSILON) {
+        return Promise.reject(
+          new Error('Payment too large: Amount exceeds the remaining balance. Adjust the amount or use a credit workflow.')
+        );
       }
       return recordPayment({
         order_type: orderType as PaymentOrderType,
@@ -102,9 +115,9 @@ export const useOrderPayments = (
       reference?: string | null;
       notes?: string | null;
     },
-    options?: { onSuccess?: () => void }
+    options?: { onSuccess?: () => void; onError?: (error: unknown) => void }
   ) => {
-    return addPaymentMutation.mutate(
+    return addPaymentMutation.mutateAsync(
       {
         amount: args.amount,
         method: args.method as PaymentMethod,
@@ -114,6 +127,9 @@ export const useOrderPayments = (
       {
         onSuccess: () => {
           options?.onSuccess?.();
+        },
+        onError: (error) => {
+          options?.onError?.(error);
         },
       }
     );

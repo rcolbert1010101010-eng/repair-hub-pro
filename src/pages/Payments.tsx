@@ -1,14 +1,19 @@
-import { useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { fetchAllPayments, type PaymentsFilter } from '@/integrations/supabase/payments';
-import type { Payment, PaymentMethod, PaymentOrderType } from '@/types';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { fetchAllPayments, type PaymentsFilter, computePaymentSummary } from '@/integrations/supabase/payments';
+import type { Payment, PaymentMethod, PaymentOrderType, PaymentStatus } from '@/types';
+import { useRepos } from '@/repos';
+import { usePayments } from '@/hooks/usePayments';
+import { useToast } from '@/hooks/use-toast';
 
 const ORDER_TYPE_OPTIONS: Array<{ value: PaymentOrderType | 'ALL'; label: string }> = [
   { value: 'ALL', label: 'All Orders' },
@@ -32,13 +37,65 @@ const toNumber = (value: number | string | null | undefined) => {
   return Number.isFinite(numeric) ? numeric : 0;
 };
 const formatMoney = (value: number | string | null | undefined) => toNumber(value).toFixed(2);
+type PaymentRow = Payment & {
+  orderLabel: string;
+  customerName: string;
+  orderNumber: string;
+  orderTotal: number;
+  totalPaid: number;
+  balanceDue: number;
+  paymentStatus: PaymentStatus;
+};
 
 export default function PaymentsPage() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const repos = useRepos();
+  const { salesOrders } = repos.salesOrders;
+  const { workOrders } = repos.workOrders;
+  const { customers } = repos.customers;
   const [orderTypeFilter, setOrderTypeFilter] = useState<PaymentOrderType | 'ALL'>('ALL');
   const [methodFilter, setMethodFilter] = useState<PaymentMethod | 'ALL'>('ALL');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active');
+  const [datePreset, setDatePreset] = useState<'all' | 'today' | 'last7' | 'last30' | 'custom'>('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [receivePaymentOpen, setReceivePaymentOpen] = useState(false);
+  const [receiveOrderType, setReceiveOrderType] = useState<PaymentOrderType>('WORK_ORDER');
+  const [receiveOrderId, setReceiveOrderId] = useState('');
+  const [receiveAmount, setReceiveAmount] = useState('');
+  const [receiveMethod, setReceiveMethod] = useState<PaymentMethod>('cash');
+  const [receiveReference, setReceiveReference] = useState('');
+  const [receiveNotes, setReceiveNotes] = useState('');
+
+  useEffect(() => {
+    const formatInputDate = (date: Date) => date.toISOString().slice(0, 10);
+    const today = new Date();
+    if (datePreset === 'all') {
+      setStartDate('');
+      setEndDate('');
+      return;
+    }
+    if (datePreset === 'today') {
+      const dateString = formatInputDate(today);
+      setStartDate(dateString);
+      setEndDate(dateString);
+      return;
+    }
+    if (datePreset === 'last7') {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 7);
+      setStartDate(formatInputDate(from));
+      setEndDate(formatInputDate(today));
+      return;
+    }
+    if (datePreset === 'last30') {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 30);
+      setStartDate(formatInputDate(from));
+      setEndDate(formatInputDate(today));
+    }
+  }, [datePreset]);
 
   const queryFilter: PaymentsFilter = useMemo(
     () => ({
@@ -55,25 +112,124 @@ export default function PaymentsPage() {
     queryKey: ['payments-ledger', queryFilter],
     queryFn: () => fetchAllPayments(queryFilter),
   });
+  const allPaymentsQuery = useQuery({
+    queryKey: ['payments-ledger-all'],
+    queryFn: () => fetchAllPayments({ includeVoided: true }),
+  });
 
+  const rawPayments = useMemo(() => paymentsQuery.data ?? [], [paymentsQuery.data]);
+  const paymentsByOrder = useMemo(() => {
+    const map = new Map<string, Payment[]>();
+    (allPaymentsQuery.data ?? []).forEach((payment) => {
+      const key = `${payment.order_type}:${payment.order_id}`;
+      map.set(key, [...(map.get(key) ?? []), payment]);
+    });
+    return map;
+  }, [allPaymentsQuery.data]);
   const payments = useMemo(() => {
-    const data = paymentsQuery.data ?? [];
-    if (statusFilter === 'voided') return data.filter((p) => p.voided_at);
-    if (statusFilter === 'active') return data.filter((p) => !p.voided_at);
-    return data;
-  }, [paymentsQuery.data, statusFilter]);
+    if (statusFilter === 'voided') return rawPayments.filter((p) => p.voided_at);
+    if (statusFilter === 'active') return rawPayments.filter((p) => !p.voided_at);
+    return rawPayments;
+  }, [rawPayments, statusFilter]);
+
+  const salesOrderMap = useMemo(() => new Map(salesOrders.map((order) => [order.id, order])), [salesOrders]);
+  const workOrderMap = useMemo(() => new Map(workOrders.map((order) => [order.id, order])), [workOrders]);
+  const customerMap = useMemo(() => new Map(customers.map((customer) => [customer.id, customer])), [customers]);
+  const summaryByOrder = useMemo(() => {
+    const map = new Map<string, { totalPaid: number; balanceDue: number; status: PaymentStatus; orderTotal: number }>();
+    paymentsByOrder.forEach((list, key) => {
+      const [orderType, orderId] = key.split(':') as [PaymentOrderType, string];
+      const orderTotal =
+        orderType === 'WORK_ORDER'
+          ? toNumber(workOrderMap.get(orderId)?.total)
+          : toNumber(salesOrderMap.get(orderId)?.total);
+      const summary = computePaymentSummary(list, orderTotal);
+      map.set(key, { ...summary, orderTotal });
+    });
+    return map;
+  }, [paymentsByOrder, salesOrderMap, workOrderMap]);
+
+  const enrichedPayments: PaymentRow[] = useMemo(() => {
+    return payments.map((payment) => {
+      const order =
+        payment.order_type === 'WORK_ORDER'
+          ? workOrderMap.get(payment.order_id)
+          : salesOrderMap.get(payment.order_id);
+      const orderNumber = order?.order_number ?? payment.order_id;
+      const customerName =
+        (order ? customerMap.get(order.customer_id)?.company_name : undefined) ??
+        (order as { customer?: { company_name?: string } } | undefined)?.customer?.company_name ??
+        'Customer';
+      const prefix = payment.order_type === 'WORK_ORDER' ? 'WO' : 'SO';
+      const orderLabel = `${prefix} ${orderNumber}`;
+      const summaryKey = `${payment.order_type}:${payment.order_id}`;
+      const summary = summaryByOrder.get(summaryKey);
+
+      return {
+        ...payment,
+        orderLabel,
+        customerName,
+        orderNumber,
+        orderTotal: summary?.orderTotal ?? toNumber(order?.total),
+        totalPaid: summary?.totalPaid ?? 0,
+        balanceDue: summary?.balanceDue ?? 0,
+        paymentStatus: summary?.status ?? 'UNPAID',
+      };
+    });
+  }, [customerMap, payments, salesOrderMap, summaryByOrder, workOrderMap]);
+
+  const receiveOrderOptions = useMemo(() => {
+    const options =
+      receiveOrderType === 'WORK_ORDER'
+        ? workOrders
+        : salesOrders;
+    return options.map((order) => {
+      const customerName =
+        customerMap.get(order.customer_id)?.company_name ??
+        (order as { customer?: { company_name?: string } } | undefined)?.customer?.company_name ??
+        'Customer';
+      return {
+        id: order.id,
+        label: `${order.order_number} — ${customerName}`,
+      };
+    });
+  }, [customerMap, receiveOrderType, salesOrders, workOrders]);
+
+  const selectedOrder =
+    receiveOrderType === 'WORK_ORDER'
+      ? workOrderMap.get(receiveOrderId)
+      : salesOrderMap.get(receiveOrderId);
+  const selectedOrderTotal = toNumber(selectedOrder?.total);
+  const selectedCustomerName =
+    (selectedOrder ? customerMap.get((selectedOrder as { customer_id: string }).customer_id)?.company_name : undefined) ??
+    (selectedOrder as { customer?: { company_name?: string } } | undefined)?.customer?.company_name ??
+    '';
+  const receivePayments = usePayments(
+    receiveOrderId ? receiveOrderType : undefined,
+    receiveOrderId || undefined,
+    selectedOrderTotal
+  );
+
+  useEffect(() => {
+    if (!receivePaymentOpen) return;
+    if (!receiveOrderId) return;
+    if (receiveAmount !== '') return;
+    if (receivePayments.summary.balanceDue > 0) {
+      setReceiveAmount(receivePayments.summary.balanceDue.toFixed(2));
+    }
+  }, [receiveAmount, receiveOrderId, receivePaymentOpen, receivePayments.summary.balanceDue]);
 
   const summary = useMemo(() => {
-    const active = payments.filter((p) => !p.voided_at);
-    const voided = payments.filter((p) => p.voided_at);
+    const active = enrichedPayments.filter((p) => !p.voided_at);
+    const voided = enrichedPayments.filter((p) => p.voided_at);
     const totalAmount = active.reduce((sum, p) => sum + toNumber(p.amount), 0);
     return {
-      count: payments.length,
+      count: enrichedPayments.length,
       activeCount: active.length,
       voidedCount: voided.length,
       totalAmount,
     };
-  }, [payments]);
+  }, [enrichedPayments]);
 
   const getOrderLink = (payment: Payment) =>
     payment.order_type === 'WORK_ORDER' ? `/work-orders/${payment.order_id}` : `/sales-orders/${payment.order_id}`;
@@ -85,9 +241,66 @@ export default function PaymentsPage() {
     return <Badge variant="outline" className="bg-green-100 text-green-700">Active</Badge>;
   };
 
+  const handleOpenReceivePayment = () => {
+    setReceivePaymentOpen(true);
+    setReceiveOrderId('');
+    setReceiveOrderType('WORK_ORDER');
+    setReceiveAmount('');
+    setReceiveMethod('cash');
+    setReceiveReference('');
+    setReceiveNotes('');
+  };
+
+  const handleOpenReceivePaymentForRow = (row: PaymentRow) => {
+    setReceiveOrderType(row.order_type);
+    setReceiveOrderId(row.order_id);
+    setReceiveAmount('');
+    setReceiveMethod('cash');
+    setReceiveReference('');
+    setReceiveNotes('');
+    setReceivePaymentOpen(true);
+  };
+
+  const handleSubmitReceivePayment = async () => {
+    if (!receiveOrderId) {
+      toast({ title: 'Select an order', description: 'Choose a work or sales order to apply this payment.', variant: 'destructive' });
+      return;
+    }
+    const amountValue = toNumber(receiveAmount);
+    if (amountValue <= 0) {
+      toast({ title: 'Enter amount', description: 'Payment amount must be greater than 0', variant: 'destructive' });
+      return;
+    }
+    try {
+      await receivePayments.addPayment.mutateAsync({
+        amount: amountValue,
+        method: receiveMethod,
+        reference: receiveReference || null,
+        notes: receiveNotes || null,
+      });
+      toast({ title: 'Payment recorded' });
+      setReceivePaymentOpen(false);
+      setReceiveAmount('');
+      setReceiveReference('');
+      setReceiveNotes('');
+      setReceiveOrderId('');
+      queryClient.invalidateQueries({ queryKey: ['payments-ledger'] });
+      queryClient.invalidateQueries({ queryKey: ['payments-ledger-all'] });
+    } catch (error: any) {
+      toast({
+        title: 'Unable to record payment',
+        description: error?.message ?? 'Please try again',
+        variant: 'destructive',
+      });
+    }
+  };
+
   return (
     <div className="page-container space-y-6">
-      <PageHeader title="Payments" subtitle="Track payments across work and sales orders" />
+      <div className="flex items-center justify-between gap-3">
+        <PageHeader title="Payments" subtitle="Track payments across work and sales orders" />
+        <Button onClick={handleOpenReceivePayment}>Receive Payment</Button>
+      </div>
 
       <div className="grid gap-3 md:grid-cols-4">
         <Card>
@@ -124,7 +337,20 @@ export default function PaymentsPage() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+        <Select value={datePreset} onValueChange={(value) => setDatePreset(value as typeof datePreset)}>
+          <SelectTrigger>
+            <SelectValue placeholder="Date Range" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Dates</SelectItem>
+            <SelectItem value="today">Today</SelectItem>
+            <SelectItem value="last7">Last 7 Days</SelectItem>
+            <SelectItem value="last30">Last 30 Days</SelectItem>
+            <SelectItem value="custom">Custom Range</SelectItem>
+          </SelectContent>
+        </Select>
+
         <Select value={orderTypeFilter} onValueChange={(value) => setOrderTypeFilter(value as typeof orderTypeFilter)}>
           <SelectTrigger>
             <SelectValue placeholder="Order Type" />
@@ -162,60 +388,189 @@ export default function PaymentsPage() {
           </SelectContent>
         </Select>
 
-        <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-        <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+        <Input
+          type="date"
+          value={startDate}
+          onChange={(e) => {
+            setDatePreset('custom');
+            setStartDate(e.target.value);
+          }}
+        />
+        <Input
+          type="date"
+          value={endDate}
+          onChange={(e) => {
+            setDatePreset('custom');
+            setEndDate(e.target.value);
+          }}
+        />
       </div>
 
       <div className="border rounded-lg overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Order</TableHead>
-              <TableHead>Type</TableHead>
+              <TableHead>Date / Time</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead>Order / Invoice</TableHead>
               <TableHead>Method</TableHead>
+              <TableHead className="text-right">Amount</TableHead>
+              <TableHead className="text-right">Balance Due</TableHead>
+              <TableHead className="text-right">Status</TableHead>
               <TableHead>Reference</TableHead>
               <TableHead>Notes</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
-              <TableHead className="text-right">Status</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {paymentsQuery.isLoading && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-4">
+                <TableCell colSpan={10} className="text-center text-muted-foreground py-4">
                   Loading payments...
                 </TableCell>
               </TableRow>
             )}
-            {!paymentsQuery.isLoading && payments.length === 0 && (
+            {!paymentsQuery.isLoading && enrichedPayments.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-muted-foreground py-4">
+                <TableCell colSpan={10} className="text-center text-muted-foreground py-4">
                   No payments found.
                 </TableCell>
               </TableRow>
             )}
-            {payments.map((payment) => (
+            {enrichedPayments.map((payment) => (
               <TableRow key={payment.id}>
                 <TableCell>{new Date(payment.created_at).toLocaleString()}</TableCell>
+                <TableCell>{payment.customerName}</TableCell>
                 <TableCell>
                   <Link to={getOrderLink(payment)} className="text-primary hover:underline">
-                    {payment.order_type === 'WORK_ORDER' ? 'Work Order' : 'Sales Order'} {payment.order_id}
+                    {payment.orderLabel}
                   </Link>
                 </TableCell>
-                <TableCell>{payment.order_type === 'WORK_ORDER' ? 'Work Order' : 'Sales Order'}</TableCell>
                 <TableCell className="capitalize">{payment.method}</TableCell>
-                <TableCell>{payment.reference || '—'}</TableCell>
-                <TableCell className="max-w-xs truncate">{payment.notes || '—'}</TableCell>
                 <TableCell className="text-right font-semibold">
                   ${formatMoney(payment.amount)}
                 </TableCell>
+                <TableCell className="text-right">${formatMoney(payment.balanceDue)}</TableCell>
                 <TableCell className="text-right">{statusBadge(payment)}</TableCell>
+                <TableCell>{payment.reference || '-'}</TableCell>
+                <TableCell className="max-w-xs truncate">{payment.notes || '-'}</TableCell>
+                <TableCell className="text-right">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleOpenReceivePaymentForRow(payment)}
+                    disabled={payment.balanceDue <= 0 || !payment.order_id}
+                  >
+                    Receive Payment
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
+
+      <Dialog open={receivePaymentOpen} onOpenChange={(open) => setReceivePaymentOpen(open)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Receive Payment</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <Select
+                value={receiveOrderType}
+                onValueChange={(value) => {
+                  setReceiveOrderType(value as PaymentOrderType);
+                  setReceiveOrderId('');
+                  setReceiveAmount('');
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Order type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="WORK_ORDER">Work Order</SelectItem>
+                  <SelectItem value="SALES_ORDER">Sales Order</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={receiveOrderId} onValueChange={(value) => setReceiveOrderId(value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder={`Select ${receiveOrderType === 'WORK_ORDER' ? 'Work Order' : 'Sales Order'}`} />
+                </SelectTrigger>
+                <SelectContent>
+                  {receiveOrderOptions.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {receiveOrderId && (
+              <div className="grid grid-cols-3 gap-3 bg-muted/40 rounded-md p-3 text-sm">
+                <div>
+                  <div className="text-muted-foreground">Customer</div>
+                  <div className="font-medium">{selectedCustomerName || 'Customer'}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Total</div>
+                  <div className="font-medium">${formatMoney(selectedOrderTotal)}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Paid / Balance</div>
+                  <div className="font-medium">
+                    ${formatMoney(receivePayments.summary.totalPaid)} / ${formatMoney(receivePayments.summary.balanceDue)}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Amount"
+                value={receiveAmount}
+                onChange={(e) => setReceiveAmount(e.target.value)}
+              />
+              <Select value={receiveMethod} onValueChange={(value) => setReceiveMethod(value as PaymentMethod)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Method" />
+                </SelectTrigger>
+                <SelectContent>
+                  {METHOD_OPTIONS.filter((opt) => opt.value !== 'ALL').map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Input
+              placeholder="Reference (optional)"
+              value={receiveReference}
+              onChange={(e) => setReceiveReference(e.target.value)}
+            />
+            <Input
+              placeholder="Notes (optional)"
+              value={receiveNotes}
+              onChange={(e) => setReceiveNotes(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReceivePaymentOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmitReceivePayment} disabled={receivePayments.addPayment.isLoading}>
+              {receivePayments.addPayment.isLoading ? 'Saving...' : 'Save Payment'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
+

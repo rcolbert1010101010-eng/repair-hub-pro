@@ -1837,7 +1837,7 @@ export const useShopStore = create<ShopState>()(
         const customer = state.customers.find((c) => c.id === order.customer_id);
         const level = customer?.price_level ?? 'RETAIL';
         const suggested = calcPartPriceForLevel(part, state.settings, level);
-        const unitPrice = suggested ?? part.selling_price;
+        const unitPrice = suggested ?? part.selling_price ?? 0;
 
         const existingLine = state.salesOrderLines.find(
           (l) => l.sales_order_id === orderId && l.part_id === partId

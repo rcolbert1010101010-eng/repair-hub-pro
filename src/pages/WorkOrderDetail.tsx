@@ -50,7 +50,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Clock, Square, Shield, RotateCcw, Check, Pencil, X as XIcon, Info, ClipboardList } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { PrintWorkOrder, PrintWorkOrderPickList } from '@/components/print/PrintInvoice';
-import { calcPartPriceForLevel } from '@/domain/pricing/partPricing';
+import { calcPartPriceForLevel, getPartCostBasis } from '@/domain/pricing/partPricing';
 import { getPurchaseOrderDerivedStatus } from '@/services/purchaseOrderStatus';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { PurchaseOrderPreviewDialog } from '@/components/purchase-orders/PurchaseOrderPreviewDialog';
@@ -330,6 +330,9 @@ export default function WorkOrderDetail() {
   const [plasmaWarnings, setPlasmaWarnings] = useState<string[]>([]);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const currentOrder = workOrders.find((o) => o.id === id) || order;
+  const currentOrderId = currentOrder?.id ?? null;
+  const currentOrderUpdatedAt =
+    (currentOrder as any)?.updated_at ?? (currentOrder as any)?.updatedAt ?? null;
   const scheduleItems = schedulingRepo.list();
   const isScheduled =
     !!currentOrder &&
@@ -355,7 +358,10 @@ export default function WorkOrderDetail() {
       fabricationRepo.createForWorkOrder(currentOrder.id);
     }
   }, [currentOrder, fabricationRepo, plasmaRepo]);
-  const jobLines: WorkOrderJobLine[] = currentOrder ? getWorkOrderJobLines(currentOrder.id) : [];
+  const jobLines: WorkOrderJobLine[] = useMemo(
+    () => (currentOrder ? getWorkOrderJobLines(currentOrder.id) : []),
+    [currentOrder, currentOrderId, currentOrderUpdatedAt, getWorkOrderJobLines]
+  );
   const activityEvents = currentOrder ? getWorkOrderActivity(currentOrder.id) : [];
   const jobMap = useMemo(
     () => {
@@ -375,7 +381,10 @@ export default function WorkOrderDetail() {
     return map;
   }, [jobLines, getJobPartReadiness]);
   const allPartLines = currentOrder ? getWorkOrderPartLines(currentOrder.id) : [];
-  const laborLines = currentOrder ? getWorkOrderLaborLines(currentOrder.id) : [];
+  const laborLines = useMemo(
+    () => (currentOrder ? getWorkOrderLaborLines(currentOrder.id) : []),
+    [currentOrder, currentOrderId, currentOrderUpdatedAt, getWorkOrderLaborLines]
+  );
   const partLines = allPartLines.filter((l) => !l.is_core_refund_line);
   const activeJobTimers = currentOrder ? getActiveJobTimers(currentOrder.id) : [];
   const orderTotal = toNumeric(currentOrder?.total);
@@ -392,6 +401,13 @@ export default function WorkOrderDetail() {
         return 'bg-slate-100 text-slate-700';
     }
   }, [payments.summary.status]);
+  useEffect(() => {
+    if (!currentOrder) return;
+    if (paymentAmount !== '') return;
+    if (payments.summary.balanceDue > 0) {
+      setPaymentAmount(payments.summary.balanceDue.toFixed(2));
+    }
+  }, [currentOrder, paymentAmount, payments.summary.balanceDue]);
   const workOrderActualHours = currentOrder ? getWorkOrderActualHours(currentOrder.id) : 0;
   const jobProfitSummaries = useMemo(() => {
     const summary: Record<string, JobProfitSummary> = {};
@@ -493,6 +509,44 @@ const jobReadinessValues = Object.values(jobReadinessById);
       return updated ? next : prev;
     });
   }, [jobLines]);
+
+  useEffect(() => {
+    if (jobLines.length === 0) return;
+
+    // Find the default "General" job for this work order
+    const generalJob = jobLines.find((job) => job.title === 'General');
+    if (!generalJob) return;
+
+    // If it's already in editing mode, do nothing
+    if (jobEditingMode[generalJob.id]) return;
+
+    const draft = jobDrafts[generalJob.id];
+    if (!draft) return;
+
+    // Only auto-edit if the draft still matches the pristine job state
+    const isPristine =
+      draft.title === generalJob.title &&
+      draft.complaint === (generalJob.complaint ?? '') &&
+      draft.cause === (generalJob.cause ?? '') &&
+      draft.correction === (generalJob.correction ?? '');
+
+    if (!isPristine) return;
+
+    // Clear title so the input shows the "Job Title" placeholder
+    setJobDrafts((prev) => ({
+      ...prev,
+      [generalJob.id]: {
+        ...prev[generalJob.id],
+        title: '',
+      },
+    }));
+
+    // Start the default job in editing mode
+    setJobEditingMode((prev) => ({
+      ...prev,
+      [generalJob.id]: true,
+    }));
+  }, [jobLines, jobDrafts, jobEditingMode]);
 
   const handleJobDraftChange = <K extends keyof JobDraft>(jobId: string, field: K, value: JobDraft[K]) => {
     setJobDrafts((prev) => ({
@@ -1788,12 +1842,22 @@ const jobReadinessValues = Object.values(jobReadinessById);
                         ) : (
                           partLines.map((line) => {
                             const part = parts.find((p) => p.id === line.part_id);
+                            const { basis } = part ? getPartCostBasis(part) : { basis: null };
                             return (
                               <TableRow key={line.id}>
                                 <TableCell className="font-mono">{part?.part_number || '-'}</TableCell>
                                 <TableCell>{part?.description || line.description || '-'}</TableCell>
                                 <TableCell className="text-right">{line.quantity}</TableCell>
-                                <TableCell className="text-right">${formatNumber(line.unit_price)}</TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex flex-col items-end gap-1">
+                                    <span>${formatNumber(line.unit_price)}</span>
+                                    {basis !== null && line.unit_price < basis && (
+                                      <span className="text-xs text-destructive">
+                                        Warning: below cost (basis ${formatNumber(basis)})
+                                      </span>
+                                    )}
+                                  </div>
+                                </TableCell>
                                 <TableCell className="text-right font-medium">${formatNumber(line.line_total)}</TableCell>
                               </TableRow>
                             );
@@ -2015,7 +2079,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                                   <Input
                                     value={draft?.title ?? job.title}
                                     onChange={(event) => handleJobDraftChange(job.id, 'title', event.target.value)}
-                                    placeholder="Job title"
+                                    placeholder="Job Title"
                                     className="flex-1 min-w-[180px] h-10"
                                   />
                                   <Select

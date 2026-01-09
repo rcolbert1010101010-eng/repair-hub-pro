@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+﻿import { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -10,9 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { fetchAllPayments, computePaymentSummary } from '@/integrations/supabase/payments';
-import type { InvoiceRow, PaymentMethod, PaymentStatus } from '@/types';
+import type { InvoiceRow, Payment, PaymentMethod, PaymentStatus } from '@/types';
 import { useRepos } from '@/repos';
 import { useOrderPayments } from '@/hooks/usePayments';
+import { useToast } from '@/hooks/use-toast';
 
 const PAYMENT_METHOD_OPTIONS: Array<{ value: PaymentMethod; label: string }> = [
   { value: 'cash', label: 'Cash' },
@@ -20,6 +21,15 @@ const PAYMENT_METHOD_OPTIONS: Array<{ value: PaymentMethod; label: string }> = [
   { value: 'card', label: 'Credit Card' },
   { value: 'ach', label: 'ACH' },
   { value: 'other', label: 'Other' },
+];
+
+const PAYMENT_STATUS_FILTERS: Array<{ value: PaymentStatus | 'ALL' | 'OVERDUE'; label: string }> = [
+  { value: 'ALL', label: 'All statuses' },
+  { value: 'UNPAID', label: 'Unpaid' },
+  { value: 'PARTIAL', label: 'Partial' },
+  { value: 'PAID', label: 'Paid' },
+  { value: 'OVERPAID', label: 'Overpaid' },
+  { value: 'OVERDUE', label: 'Overdue' },
 ];
 
 const toNumber = (value: number | string | null | undefined) => {
@@ -35,6 +45,7 @@ export default function InvoiceRegistry() {
   const { salesOrders } = repos.salesOrders;
   const { workOrders } = repos.workOrders;
   const { customers } = repos.customers;
+  const { toast } = useToast();
 
   const invoicedSalesOrders = useMemo(
     () => salesOrders.filter((so) => so.status === 'INVOICED'),
@@ -51,33 +62,26 @@ export default function InvoiceRegistry() {
   });
 
   const paymentsByOrder = useMemo(() => {
-    const map = new Map<string, { totalPaid: number; paymentStatus: PaymentStatus; balanceDue: number }>();
-    const payments = paymentsQuery.data ?? [];
-    const grouped = payments.reduce<Record<string, typeof payments>>((acc, payment) => {
+    const grouped = new Map<string, Payment[]>();
+    (paymentsQuery.data ?? []).forEach((payment) => {
       const key = `${payment.order_type}:${payment.order_id}`;
-      acc[key] = acc[key] || [];
-      acc[key].push(payment);
-      return acc;
-    }, {});
-    Object.entries(grouped).forEach(([key, list]) => {
-      const orderTotal = 0; // will be recalculated per row when needed
-      const summary = computePaymentSummary(list, orderTotal);
-      map.set(key, summary);
+      grouped.set(key, [...(grouped.get(key) ?? []), payment]);
     });
-    return map;
+    return grouped;
   }, [paymentsQuery.data]);
 
-  const invoiceRows: InvoiceRow[] = useMemo(() => {
-    const salesRows: InvoiceRow[] = invoicedSalesOrders.map((order) => {
+  type InvoiceRowWithMeta = InvoiceRow & { dueAt?: string | null; sourceLabel: string };
+
+  const invoiceRows: InvoiceRowWithMeta[] = useMemo(() => {
+    const salesRows: InvoiceRowWithMeta[] = invoicedSalesOrders.map((order) => {
       const customerName =
         customers.find((c) => c.id === order.customer_id)?.company_name ??
         order.customer?.company_name ??
         'Customer';
       const key = `SALES_ORDER:${order.id}`;
-      const paymentSummary = computePaymentSummary(
-        (paymentsQuery.data ?? []).filter((p) => p.order_type === 'SALES_ORDER' && p.order_id === order.id),
-        toNumber(order.total)
-      );
+      const paymentsForOrder = paymentsByOrder.get(key);
+      const paymentSummary = computePaymentSummary(paymentsForOrder, toNumber(order.total));
+      const dueAt = (order as { due_at?: string | null })?.due_at ?? null;
       return {
         orderType: 'SALES_ORDER',
         orderId: order.id,
@@ -88,18 +92,20 @@ export default function InvoiceRegistry() {
         totalPaid: paymentSummary.totalPaid,
         balanceDue: paymentSummary.balanceDue,
         paymentStatus: paymentSummary.status,
+        dueAt,
+        sourceLabel: `SO ${order.order_number}`,
       };
     });
 
-    const workRows: InvoiceRow[] = invoicedWorkOrders.map((order) => {
+    const workRows: InvoiceRowWithMeta[] = invoicedWorkOrders.map((order) => {
       const customerName =
         customers.find((c) => c.id === order.customer_id)?.company_name ??
         order.customer?.company_name ??
         'Customer';
-      const paymentSummary = computePaymentSummary(
-        (paymentsQuery.data ?? []).filter((p) => p.order_type === 'WORK_ORDER' && p.order_id === order.id),
-        toNumber(order.total)
-      );
+      const key = `WORK_ORDER:${order.id}`;
+      const paymentsForOrder = paymentsByOrder.get(key);
+      const paymentSummary = computePaymentSummary(paymentsForOrder, toNumber(order.total));
+      const dueAt = (order as { due_at?: string | null })?.due_at ?? null;
       return {
         orderType: 'WORK_ORDER',
         orderId: order.id,
@@ -110,19 +116,32 @@ export default function InvoiceRegistry() {
         totalPaid: paymentSummary.totalPaid,
         balanceDue: paymentSummary.balanceDue,
         paymentStatus: paymentSummary.status,
+        dueAt,
+        sourceLabel: `WO ${order.order_number}`,
       };
     });
 
     return [...salesRows, ...workRows].sort(
       (a, b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime()
     );
-  }, [customers, invoicedSalesOrders, invoicedWorkOrders, paymentsQuery.data]);
+  }, [customers, invoicedSalesOrders, invoicedWorkOrders, paymentsByOrder]);
 
-  const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRow | null>(null);
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<PaymentStatus | 'ALL' | 'OVERDUE'>('ALL');
+  const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRowWithMeta | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
+
+  const filteredInvoiceRows = useMemo(() => {
+    const now = Date.now();
+    return invoiceRows.filter((row) => {
+      const isOverdue = row.dueAt ? row.balanceDue > 0 && new Date(row.dueAt).getTime() < now : false;
+      if (paymentStatusFilter === 'ALL') return true;
+      if (paymentStatusFilter === 'OVERDUE') return isOverdue;
+      return row.paymentStatus === paymentStatusFilter;
+    });
+  }, [invoiceRows, paymentStatusFilter]);
 
   const {
     addPayment,
@@ -133,37 +152,49 @@ export default function InvoiceRegistry() {
     selectedInvoice?.orderTotal ?? 0
   );
 
-  const handleOpenPayment = (row: InvoiceRow) => {
+  const handleOpenPayment = (row: InvoiceRowWithMeta) => {
     setSelectedInvoice(row);
-    setPaymentAmount(row.balanceDue > 0 ? row.balanceDue.toString() : '');
+    setPaymentAmount(row.balanceDue > 0 ? row.balanceDue.toFixed(2) : '');
     setPaymentMethod('cash');
     setPaymentReference('');
     setPaymentNotes('');
   };
 
-  const handleSavePayment = () => {
+  const handleSavePayment = async () => {
     if (!selectedInvoice) return;
     const amount = toNumber(paymentAmount);
-    if (amount <= 0) return;
-    addPayment(
-      {
-        orderType: selectedInvoice.orderType,
-        orderId: selectedInvoice.orderId,
-        amount,
-        method: paymentMethod,
-        reference: paymentReference || null,
-        notes: paymentNotes || null,
-      },
-      {
-        onSuccess: () => {
-          queryClient.invalidateQueries({ queryKey: ['payments-ledger-all'] });
-          setSelectedInvoice(null);
-          setPaymentAmount('');
-          setPaymentReference('');
-          setPaymentNotes('');
+    if (amount <= 0) {
+      toast({ title: 'Enter amount', description: 'Payment amount must be greater than 0', variant: 'destructive' });
+      return;
+    }
+    try {
+      await addPayment(
+        {
+          orderType: selectedInvoice.orderType,
+          orderId: selectedInvoice.orderId,
+          amount,
+          method: paymentMethod,
+          reference: paymentReference || null,
+          notes: paymentNotes || null,
         },
-      }
-    );
+        {
+          onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['payments-ledger-all'] });
+            setSelectedInvoice(null);
+            setPaymentAmount('');
+            setPaymentReference('');
+            setPaymentNotes('');
+          },
+        }
+      );
+      toast({ title: 'Payment recorded' });
+    } catch (error: any) {
+      toast({
+        title: 'Unable to record payment',
+        description: error?.message ?? 'Please try again',
+        variant: 'destructive',
+      });
+    }
   };
 
   const paymentStatusBadge = (status: PaymentStatus) => {
@@ -189,7 +220,7 @@ export default function InvoiceRegistry() {
             <CardTitle className="text-sm text-muted-foreground">Invoices</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold">{invoiceRows.length}</div>
+            <div className="text-2xl font-semibold">{filteredInvoiceRows.length}</div>
           </CardContent>
         </Card>
         <Card>
@@ -198,7 +229,7 @@ export default function InvoiceRegistry() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">
-              ${formatMoney(invoiceRows.reduce((sum, row) => sum + row.orderTotal, 0))}
+              ${formatMoney(filteredInvoiceRows.reduce((sum, row) => sum + row.orderTotal, 0))}
             </div>
           </CardContent>
         </Card>
@@ -208,7 +239,7 @@ export default function InvoiceRegistry() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">
-              ${formatMoney(invoiceRows.reduce((sum, row) => sum + row.totalPaid, 0))}
+              ${formatMoney(filteredInvoiceRows.reduce((sum, row) => sum + row.totalPaid, 0))}
             </div>
           </CardContent>
         </Card>
@@ -218,10 +249,30 @@ export default function InvoiceRegistry() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">
-              ${formatMoney(invoiceRows.reduce((sum, row) => sum + row.balanceDue, 0))}
+              ${formatMoney(filteredInvoiceRows.reduce((sum, row) => sum + row.balanceDue, 0))}
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Select
+            value={paymentStatusFilter}
+            onValueChange={(value) => setPaymentStatusFilter(value as typeof paymentStatusFilter)}
+          >
+            <SelectTrigger className="w-[200px]">
+              <SelectValue placeholder="Payment Status" />
+            </SelectTrigger>
+            <SelectContent>
+              {PAYMENT_STATUS_FILTERS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       <div className="border rounded-lg overflow-hidden">
@@ -229,59 +280,77 @@ export default function InvoiceRegistry() {
           <TableHeader>
             <TableRow>
               <TableHead>Invoice #</TableHead>
+              <TableHead>Source</TableHead>
               <TableHead>Customer</TableHead>
-              <TableHead>Type</TableHead>
               <TableHead>Date</TableHead>
               <TableHead className="text-right">Total</TableHead>
               <TableHead className="text-right">Paid</TableHead>
               <TableHead className="text-right">Balance</TableHead>
-              <TableHead className="text-right">Status</TableHead>
+              <TableHead className="text-right">Payment Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {invoiceRows.length === 0 && (
+            {filteredInvoiceRows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={9} className="text-center text-muted-foreground py-4">
                   No invoices yet.
                 </TableCell>
               </TableRow>
             )}
-            {invoiceRows.map((row) => (
-              <TableRow key={`${row.orderType}-${row.orderId}`}>
-                <TableCell>
-                  <Link
-                    to={
-                      row.orderType === 'WORK_ORDER'
-                        ? `/work-orders/${row.orderId}`
-                        : `/sales-orders/${row.orderId}`
-                    }
-                    className="text-primary hover:underline"
-                  >
-                    {row.invoiceNumber}
-                  </Link>
-                </TableCell>
-                <TableCell>{row.customerName}</TableCell>
-                <TableCell>{row.orderType === 'WORK_ORDER' ? 'Work Order' : 'Sales Order'}</TableCell>
-                <TableCell>{new Date(row.invoiceDate).toLocaleDateString()}</TableCell>
-                <TableCell className="text-right">${formatMoney(row.orderTotal)}</TableCell>
-                <TableCell className="text-right">${formatMoney(row.totalPaid)}</TableCell>
-                <TableCell className="text-right">${formatMoney(row.balanceDue)}</TableCell>
-                <TableCell className="text-right">{paymentStatusBadge(row.paymentStatus)}</TableCell>
-                <TableCell className="text-right space-x-2">
-                  <Button size="sm" variant="outline" onClick={() => navigate(
-                    row.orderType === 'WORK_ORDER'
-                      ? `/work-orders/${row.orderId}`
-                      : `/sales-orders/${row.orderId}`
-                  )}>
-                    View
-                  </Button>
-                  <Button size="sm" onClick={() => handleOpenPayment(row)}>
-                    Receive Payment
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
+            {filteredInvoiceRows.map((row) => {
+              const isOverdue = row.dueAt ? row.balanceDue > 0 && new Date(row.dueAt).getTime() < Date.now() : false;
+              return (
+                <TableRow key={`${row.orderType}-${row.orderId}`} className={isOverdue ? 'bg-amber-50/70' : undefined}>
+                  <TableCell>
+                    <Link
+                      to={
+                        row.orderType === 'WORK_ORDER'
+                          ? `/work-orders/${row.orderId}`
+                          : `/sales-orders/${row.orderId}`
+                      }
+                      className="text-primary hover:underline"
+                    >
+                      {row.invoiceNumber}
+                    </Link>
+                  </TableCell>
+                  <TableCell>{row.sourceLabel}</TableCell>
+                  <TableCell>{row.customerName}</TableCell>
+                  <TableCell>{new Date(row.invoiceDate).toLocaleDateString()}</TableCell>
+                  <TableCell className="text-right">${formatMoney(row.orderTotal)}</TableCell>
+                  <TableCell className="text-right">${formatMoney(row.totalPaid)}</TableCell>
+                  <TableCell className="text-right">${formatMoney(row.balanceDue)}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      {paymentStatusBadge(row.paymentStatus)}
+                      {isOverdue && (
+                        <Badge variant="outline" className="bg-amber-100 text-amber-800">
+                          Overdue
+                        </Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right space-x-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        navigate(
+                          row.orderType === 'WORK_ORDER'
+                            ? `/work-orders/${row.orderId}`
+                            : `/sales-orders/${row.orderId}`
+                        )
+                      }
+                    >
+                      View
+                    </Button>
+                    <Button size="sm" onClick={() => handleOpenPayment(row)}>
+                      Receive Payment
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>
@@ -290,7 +359,7 @@ export default function InvoiceRegistry() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Receive Payment — {selectedInvoice?.invoiceNumber}
+              Receive Payment – {selectedInvoice?.invoiceNumber}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
@@ -340,3 +409,7 @@ export default function InvoiceRegistry() {
     </div>
   );
 }
+
+
+
+
