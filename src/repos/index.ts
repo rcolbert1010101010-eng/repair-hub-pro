@@ -5,7 +5,6 @@ import { useShopStore } from '@/stores/shopStore';
 import type { Repos } from './repos';
 import { zustandRepos } from './zustandRepos';
 import { settingsRepoApi } from './api/settingsRepoApi';
-import { customersRepoApi } from './api/customersRepoApi';
 import { unitsRepoApi } from './api/unitsRepoApi';
 import { vendorsRepoApi } from './api/vendorsRepoApi';
 import { categoriesRepoApi } from './api/categoriesRepoApi';
@@ -20,7 +19,7 @@ let invoiceCounter = 0;
 const apiBackedRepos: Repos = {
   ...zustandRepos,
   settings: settingsRepoApi,
-  customers: customersRepoApi,
+  customers: zustandRepos.customers,
   customerContacts: zustandRepos.customerContacts,
   units: unitsRepoApi,
   unitAttachments: zustandRepos.unitAttachments,

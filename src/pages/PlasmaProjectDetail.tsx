@@ -15,6 +15,12 @@ import type { PlasmaJobLine } from '@/types';
 const UNLINKED_VALUE = '__UNLINKED__';
 const CREATE_SO_VALUE = '__CREATE_SO__';
 
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+const formatNumber = (value: number | string | null | undefined, digits = 2) => toNumber(value).toFixed(digits);
+
 export default function PlasmaProjectDetail() {
   const { id } = useParams<{ id: string }>();
   const repos = useRepos();
@@ -419,7 +425,7 @@ export default function PlasmaProjectDetail() {
                       className="text-right"
                     />
                   </TableCell>
-                  <TableCell className="text-right font-medium">${(line.sell_price_total ?? 0).toFixed(2)}</TableCell>
+                  <TableCell className="text-right font-medium">${formatNumber(line.sell_price_total)}</TableCell>
                   {!plasmaLocked && (
                     <TableCell>
                       <div className="flex gap-2">
@@ -447,10 +453,10 @@ export default function PlasmaProjectDetail() {
           </Button>
         )}
         <div className="text-right text-sm space-y-1">
-          <div className="font-medium">Plasma Total: ${plasmaTotal.toFixed(2)}</div>
+          <div className="font-medium">Plasma Total: ${formatNumber(plasmaTotal)}</div>
           {plasmaChargeLine && (
             <div className="text-muted-foreground">
-              Posted as "{plasmaChargeLine.description}" (${plasmaChargeLine.total_price.toFixed(2)})
+              Posted as "{plasmaChargeLine.description}" (${formatNumber(plasmaChargeLine.total_price)})
             </div>
           )}
         </div>
@@ -505,7 +511,7 @@ export default function PlasmaProjectDetail() {
                       <Badge variant="secondary">{att.kind}</Badge>
                     </TableCell>
                     <TableCell className="text-right text-sm text-muted-foreground">
-                      {(att.size_bytes / 1024 / 1024).toFixed(2)} MB
+                      {formatNumber(att.size_bytes / 1024 / 1024)} MB
                     </TableCell>
                     <TableCell>
                       <Input

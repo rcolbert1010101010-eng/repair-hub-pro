@@ -10,6 +10,11 @@ import { StatusBadge } from '@/components/ui/status-badge';
 
 type SalesOrderRow = SalesOrder & { customer_name: string; is_active?: boolean };
 
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
 export default function SalesOrders() {
   const navigate = useNavigate();
   const repos = useRepos();
@@ -45,7 +50,7 @@ export default function SalesOrders() {
       key: 'total',
       header: 'Total',
       sortable: true,
-      render: (item) => `$${item.total.toFixed(2)}`,
+      render: (item) => `$${toNumber(item.total).toFixed(2)}`,
       className: 'text-right',
     },
     {

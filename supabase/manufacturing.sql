@@ -14,6 +14,13 @@ create table if not exists manufactured_products (
 
 create index if not exists idx_manufactured_products_product_type on manufactured_products(product_type);
 
+-- Add costing fields to manufactured_products
+alter table if exists manufactured_products
+  add column if not exists estimated_labor_hours numeric not null default 0;
+
+alter table if exists manufactured_products
+  add column if not exists estimated_overhead numeric not null default 0;
+
 create table if not exists manufactured_product_options (
   id uuid primary key default gen_random_uuid(),
   product_id uuid not null references manufactured_products(id) on delete cascade,
@@ -45,6 +52,19 @@ create table if not exists manufacturing_builds (
 create index if not exists idx_manufacturing_builds_product_id on manufacturing_builds(product_id);
 create index if not exists idx_manufacturing_builds_customer_id on manufacturing_builds(customer_id);
 
+-- Build metadata extensions
+alter table if exists manufacturing_builds
+  add column if not exists priority text not null default 'normal';
+
+alter table if exists manufacturing_builds
+  add column if not exists promised_date date null;
+
+alter table if exists manufacturing_builds
+  add column if not exists assigned_technician_id uuid null references technicians(id);
+
+alter table if exists manufacturing_builds
+  add column if not exists internal_job_number text null;
+
 create table if not exists manufacturing_build_selected_options (
   id uuid primary key default gen_random_uuid(),
   build_id uuid not null references manufacturing_builds(id) on delete cascade,
@@ -57,6 +77,20 @@ create table if not exists manufacturing_build_selected_options (
 );
 
 create index if not exists idx_selected_options_build_id on manufacturing_build_selected_options(build_id);
+
+-- Bill of Materials
+create table if not exists manufacturing_product_boms (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references manufactured_products(id) on delete cascade,
+  part_id uuid not null references parts(id) on delete restrict,
+  quantity numeric not null check (quantity > 0),
+  scrap_factor numeric not null default 0 check (scrap_factor >= 0),
+  notes text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_mfg_product_boms_product_id on manufacturing_product_boms(product_id);
+create index if not exists idx_mfg_product_boms_part_id on manufacturing_product_boms(part_id);
 
 -- Seed sample data
 insert into manufactured_products (name, sku, product_type, description, base_price)

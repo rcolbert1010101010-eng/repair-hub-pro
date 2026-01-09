@@ -8,6 +8,7 @@ import type {
   ManufacturingBuildSelectedOption,
   ManufacturedProductType,
   ManufacturingBuildStatus,
+  ManufacturingProductBomItem,
 } from '@/types';
 
 const toNumber = (value: unknown, fallback = 0) => {
@@ -26,6 +27,8 @@ const mapProduct = (row: any): ManufacturedProduct => ({
   product_type: row.product_type,
   description: row.description ?? null,
   base_price: toNumber(row.base_price),
+  estimatedLaborHours: toNumber(row.estimated_labor_hours),
+  estimatedOverhead: toNumber(row.estimated_overhead),
   is_active: row.is_active ?? true,
   created_at: row.created_at,
   updated_at: row.updated_at,
@@ -57,6 +60,10 @@ const mapBuild = (
   status: row.status,
   serial_number: row.serial_number ?? null,
   notes: row.notes ?? null,
+  priority: (row.priority as ManufacturingBuild['priority']) ?? 'normal',
+  promisedDate: row.promised_date ?? null,
+  assignedTechnicianId: row.assigned_technician_id ?? null,
+  internalJobNumber: row.internal_job_number ?? null,
   is_active: row.is_active ?? true,
   created_at: row.created_at,
   updated_at: row.updated_at,
@@ -75,6 +82,18 @@ const mapSelectedOption = (row: any): ManufacturingBuildSelectedOption => ({
   is_active: row.is_active ?? true,
   created_at: row.created_at,
   updated_at: row.updated_at,
+});
+
+const mapBomItem = (row: any): ManufacturingProductBomItem => ({
+  id: row.id,
+  productId: row.product_id,
+  partId: row.part_id,
+  quantity: toNumber(row.quantity),
+  scrapFactor: toNumber(row.scrap_factor),
+  notes: row.notes ?? null,
+  partNumber: row.parts?.part_number,
+  description: row.parts?.description,
+  cost: typeof row.parts?.cost === 'number' ? row.parts.cost : toNumber(row.parts?.cost),
 });
 
 export type ManufacturingBuildFilters = {
@@ -129,9 +148,15 @@ export async function createManufacturedProduct(input: {
   sku: string;
   product_type: ManufacturedProductType;
   base_price: number;
+  estimated_labor_hours?: number;
+  estimatedLaborHours?: number;
+  estimated_overhead?: number;
+  estimatedOverhead?: number;
   description?: string | null;
   is_active?: boolean;
 }) {
+  const estimatedLabor = input.estimated_labor_hours ?? input.estimatedLaborHours ?? 0;
+  const estimatedOverhead = input.estimated_overhead ?? input.estimatedOverhead ?? 0;
   const { data, error } = await supabase
     .from('manufactured_products')
     .insert({
@@ -139,6 +164,8 @@ export async function createManufacturedProduct(input: {
       sku: input.sku,
       product_type: input.product_type,
       base_price: input.base_price,
+      estimated_labor_hours: estimatedLabor,
+      estimated_overhead: estimatedOverhead,
       description: input.description ?? null,
       is_active: input.is_active ?? true,
     })
@@ -156,16 +183,32 @@ export async function updateManufacturedProduct(
     sku: string;
     product_type: ManufacturedProductType;
     base_price: number;
+    estimated_labor_hours: number;
+    estimatedLaborHours: number;
+    estimated_overhead: number;
+    estimatedOverhead: number;
     description: string | null;
     is_active: boolean;
   }>
 ) {
+  const {
+    estimated_labor_hours,
+    estimated_overhead,
+    estimatedLaborHours,
+    estimatedOverhead,
+    ...rest
+  } = patch as any;
+  const estimatedLabor = estimated_labor_hours ?? estimatedLaborHours;
+  const estimatedOverheadValue = estimated_overhead ?? estimatedOverhead;
+  const payload: Record<string, any> = {
+    ...rest,
+    updated_at: new Date().toISOString(),
+  };
+  if (estimatedLabor !== undefined) payload.estimated_labor_hours = estimatedLabor;
+  if (estimatedOverheadValue !== undefined) payload.estimated_overhead = estimatedOverheadValue;
   const { data, error } = await supabase
     .from('manufactured_products')
-    .update({
-      ...patch,
-      updated_at: new Date().toISOString(),
-    })
+    .update(payload)
     .eq('id', id)
     .select('*')
     .single();
@@ -324,7 +367,19 @@ export async function createManufacturingBuild(input: {
   unit_id?: string | null;
   status?: ManufacturingBuildStatus;
   notes?: string | null;
+  priority?: ManufacturingBuild['priority'];
+  promised_date?: string | null;
+  promisedDate?: string | null;
+  assigned_technician_id?: string | null;
+  assignedTechnicianId?: string | null;
+  internal_job_number?: string | null;
+  internalJobNumber?: string | null;
 }) {
+  const priority = (input.priority as ManufacturingBuild['priority']) ?? 'normal';
+  const promisedDate = input.promised_date ?? input.promisedDate ?? null;
+  const assignedTechnicianId = input.assigned_technician_id ?? input.assignedTechnicianId ?? null;
+  const internalJobNumber = input.internal_job_number ?? input.internalJobNumber ?? null;
+
   const { data, error } = await supabase
     .from('manufacturing_builds')
     .insert({
@@ -334,6 +389,10 @@ export async function createManufacturingBuild(input: {
       unit_id: input.unit_id ?? null,
       status: input.status ?? 'ENGINEERING',
       notes: input.notes ?? null,
+      priority,
+      promised_date: promisedDate,
+      assigned_technician_id: assignedTechnicianId,
+      internal_job_number: internalJobNumber,
       is_active: true,
     })
     .select('*')
@@ -351,15 +410,41 @@ export async function updateManufacturingBuild(
     status: ManufacturingBuildStatus;
     notes: string | null;
     serial_number: string | null;
+    priority: ManufacturingBuild['priority'];
+    promised_date: string | null;
+    promisedDate: string | null;
+    assigned_technician_id: string | null;
+    assignedTechnicianId: string | null;
+    internal_job_number: string | null;
+    internalJobNumber: string | null;
     is_active: boolean;
   }>
 ) {
+  const {
+    promised_date,
+    promisedDate,
+    assigned_technician_id,
+    assignedTechnicianId,
+    internal_job_number,
+    internalJobNumber,
+    ...rest
+  } = patch as any;
+  const payload: Record<string, any> = {
+    ...rest,
+    updated_at: new Date().toISOString(),
+  };
+  if (promised_date !== undefined || promisedDate !== undefined) {
+    payload.promised_date = promised_date ?? promisedDate ?? null;
+  }
+  if (assigned_technician_id !== undefined || assignedTechnicianId !== undefined) {
+    payload.assigned_technician_id = assigned_technician_id ?? assignedTechnicianId ?? null;
+  }
+  if (internal_job_number !== undefined || internalJobNumber !== undefined) {
+    payload.internal_job_number = internal_job_number ?? internalJobNumber ?? null;
+  }
   const { data, error } = await supabase
     .from('manufacturing_builds')
-    .update({
-      ...patch,
-      updated_at: new Date().toISOString(),
-    })
+    .update(payload)
     .eq('id', id)
     .select('*')
     .maybeSingle();
@@ -426,4 +511,101 @@ export async function deactivateManufacturingBuildSelectedOption(id: string) {
 
   if (error) throw error;
   return mapSelectedOption(data);
+}
+
+export async function fetchProductBom(productId: string): Promise<ManufacturingProductBomItem[]> {
+  const { data, error } = await supabase
+    .from('manufacturing_product_boms')
+    .select(
+      `
+      id,
+      product_id,
+      part_id,
+      quantity,
+      scrap_factor,
+      notes,
+      created_at,
+      parts:part_id (
+        part_number,
+        description,
+        cost
+      )
+    `
+    )
+    .eq('product_id', productId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    // If the table hasn't been created yet, Supabase can return 404; treat as empty BOM.
+    if ((error as any)?.code === 'PGRST116' || error.message?.includes('not exist')) {
+      console.warn('manufacturing_product_boms table missing; returning empty BOM');
+      return [];
+    }
+    console.error('Error fetching product BOM', error);
+    throw new Error(error.message ?? 'Failed to fetch product BOM');
+  }
+
+  return (data ?? []).map(mapBomItem);
+}
+
+export async function upsertProductBom(
+  productId: string,
+  items: ManufacturingProductBomItem[]
+): Promise<ManufacturingProductBomItem[]> {
+  const deleteResult = await supabase.from('manufacturing_product_boms').delete().eq('product_id', productId);
+  if (deleteResult.error) {
+    console.error('Error clearing existing BOM', deleteResult.error);
+    throw new Error(deleteResult.error.message ?? 'Failed to replace BOM');
+  }
+
+  if (items.length === 0) {
+    return [];
+  }
+
+  const payload = items.map((item) => ({
+    product_id: productId,
+    part_id: item.partId,
+    quantity: item.quantity,
+    scrap_factor: item.scrapFactor ?? 0,
+    notes: item.notes ?? null,
+  }));
+
+  const { data, error } = await supabase
+    .from('manufacturing_product_boms')
+    .insert(payload)
+    .select(
+      `
+      id,
+      product_id,
+      part_id,
+      quantity,
+      scrap_factor,
+      notes,
+      created_at,
+      parts:part_id (
+        part_number,
+        description,
+        cost
+      )
+    `
+    )
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error saving product BOM', error);
+    throw new Error(error.message ?? 'Failed to save BOM');
+  }
+
+  return (data ?? []).map(mapBomItem);
+}
+
+export async function computeProductMaterialCost(productId: string): Promise<number> {
+  const bom = await fetchProductBom(productId);
+  const total = bom.reduce((sum, item) => {
+    const partCost = typeof item.cost === 'number' ? item.cost : toNumber(item.cost);
+    const qty = toNumber(item.quantity);
+    const scrap = toNumber(item.scrapFactor);
+    return sum + partCost * qty * (1 + scrap);
+  }, 0);
+  return Number.isFinite(total) ? total : 0;
 }

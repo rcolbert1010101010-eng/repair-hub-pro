@@ -44,6 +44,12 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+const formatNumber = (value: number | string | null | undefined, digits = 2) => toNumber(value).toFixed(digits);
+
 export default function PartForm() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -930,11 +936,11 @@ export default function PartForm() {
               </div>
               <div>
                 <Label>Last Cost</Label>
-                <Input value={part?.last_cost != null ? part.last_cost.toFixed(2) : '—'} disabled placeholder="N/A" />
+                <Input value={part?.last_cost != null ? formatNumber(part.last_cost) : '—'} disabled placeholder="N/A" />
               </div>
               <div>
                 <Label>Avg Cost</Label>
-                <Input value={part?.avg_cost != null ? part.avg_cost.toFixed(2) : '—'} disabled placeholder="N/A" />
+                <Input value={part?.avg_cost != null ? formatNumber(part.avg_cost) : '—'} disabled placeholder="N/A" />
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -943,7 +949,7 @@ export default function PartForm() {
                 <Input
                   value={
                     costBasis.basis != null
-                      ? `$${costBasis.basis.toFixed(2)} (${costBasis.source.replace('_', ' ')})`
+                      ? `$${formatNumber(costBasis.basis)} (${costBasis.source.replace('_', ' ')})`
                       : '—'
                   }
                   disabled
@@ -956,7 +962,7 @@ export default function PartForm() {
                     variant="outline"
                     onClick={() => {
                       if (suggestedRetail != null) {
-                        setFormData({ ...formData, selling_price: suggestedRetail.toFixed(2) });
+                        setFormData({ ...formData, selling_price: formatNumber(suggestedRetail) });
                       }
                     }}
                   >
@@ -968,15 +974,15 @@ export default function PartForm() {
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label>Retail Suggested</Label>
-                <Input value={suggestedRetail != null ? suggestedRetail.toFixed(2) : '—'} disabled />
+                <Input value={suggestedRetail != null ? formatNumber(suggestedRetail) : '—'} disabled />
               </div>
               <div>
                 <Label>Fleet Suggested</Label>
-                <Input value={suggestedFleet != null ? suggestedFleet.toFixed(2) : '—'} disabled />
+                <Input value={suggestedFleet != null ? formatNumber(suggestedFleet) : '—'} disabled />
               </div>
               <div>
                 <Label>Wholesale Suggested</Label>
-                <Input value={suggestedWholesale != null ? suggestedWholesale.toFixed(2) : '—'} disabled />
+                <Input value={suggestedWholesale != null ? formatNumber(suggestedWholesale) : '—'} disabled />
               </div>
             </div>
           </div>
@@ -1105,13 +1111,13 @@ export default function PartForm() {
               <div>
                 <div className="text-xs">Last Cost</div>
                 <div className="font-medium text-foreground">
-                  {part?.last_cost != null ? `$${part.last_cost.toFixed(2)}` : '—'}
+                  {part?.last_cost != null ? `$${formatNumber(part.last_cost)}` : '—'}
                 </div>
               </div>
               <div>
                 <div className="text-xs">Avg Cost</div>
                 <div className="font-medium text-foreground">
-                  {part?.avg_cost != null ? `$${part.avg_cost.toFixed(2)}` : '—'}
+                  {part?.avg_cost != null ? `$${formatNumber(part.avg_cost)}` : '—'}
                 </div>
               </div>
               {!isNew && suggestedReorder != null && suggestedReorder > 0 && (
@@ -1251,7 +1257,7 @@ export default function PartForm() {
                       <tr key={entry.id} className="border-t border-border/60">
                         <td className="py-1">{new Date(entry.created_at).toLocaleDateString()}</td>
                         <td className="py-1">{vendor?.vendor_name || '—'}</td>
-                        <td className="py-1 text-right">${entry.unit_cost.toFixed(2)}</td>
+                        <td className="py-1 text-right">${formatNumber(entry.unit_cost)}</td>
                         <td className="py-1 text-right">{entry.quantity ?? '—'}</td>
                         <td className="py-1 uppercase text-xs text-muted-foreground">{entry.source}</td>
                       </tr>

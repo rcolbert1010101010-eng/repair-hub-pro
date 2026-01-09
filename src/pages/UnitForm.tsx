@@ -37,6 +37,11 @@ import { PMSection } from '@/components/pm/PMSection';
 import { UnitImagesSection } from '@/components/units/UnitImagesSection';
 import { useShopStore } from '@/stores/shopStore';
 
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
 export default function UnitForm() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
@@ -936,7 +941,7 @@ export default function UnitForm() {
                               : unknownValue}
                           </TableCell>
                           <TableCell className="text-right">
-                            {typeof wo.total === 'number' ? `$${wo.total.toFixed(2)}` : unknownValue}
+                            {typeof wo.total === 'number' ? `$${toNumber(wo.total).toFixed(2)}` : unknownValue}
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
@@ -1063,7 +1068,7 @@ export default function UnitForm() {
                               : unknownValue}
                           </TableCell>
                           <TableCell className="text-right">
-                            {typeof so.total === 'number' ? `$${so.total.toFixed(2)}` : unknownValue}
+                            {typeof so.total === 'number' ? `$${toNumber(so.total).toFixed(2)}` : unknownValue}
                           </TableCell>
                           <TableCell className="text-right">
                             <Button

@@ -38,6 +38,11 @@ const PIPELINE_VIEW_STORAGE_KEY = 'dashboard.pipelineView';
 
 type PipelineViewMode = 'pipeline' | 'kanban';
 
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
 type FocusKey = 'blocked' | 'waitingApproval' | 'waitingParts' | 'unassigned';
 
 type FocusActionEntry = {
@@ -394,7 +399,7 @@ export default function Dashboard() {
       {
         title: 'Today Revenue',
         value: Math.round(dailyRevenue),
-        meta: [`$${dailyRevenue.toFixed(2)}`],
+        meta: [`$${toNumber(dailyRevenue).toFixed(2)}`],
         description: 'Invoiced today',
         icon: DollarSign,
         tone: 'success' as const,
@@ -415,7 +420,7 @@ export default function Dashboard() {
       cards.splice(3, 0, {
         title: 'Warranty Exposure',
         value: warrantyExposure > 0 ? Math.round(warrantyExposure) : 0,
-        meta: [warrantyExposure > 0 ? `$${warrantyExposure.toFixed(2)}` : '—'],
+        meta: [warrantyExposure > 0 ? `$${toNumber(warrantyExposure).toFixed(2)}` : '—'],
         description: 'Includes warranty labor + parts',
         icon: Shield,
         tone: warrantyExposure > 0 ? 'warning' as const : 'default' as const,

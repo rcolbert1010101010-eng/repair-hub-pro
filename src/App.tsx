@@ -30,6 +30,7 @@ import Technicians from "@/pages/Technicians";
 import TechnicianDetail from "@/pages/TechnicianDetail";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/NotFound";
+import PaymentsPage from "@/pages/Payments";
 import CycleCounts from "@/pages/CycleCounts";
 import CycleCountDetail from "@/pages/CycleCountDetail";
 import Returns from "@/pages/Returns";
@@ -47,6 +48,7 @@ import ReceiveInventory from "@/pages/ReceiveInventory";
 import ReceivingHistory from "@/pages/ReceivingHistory";
 import ReceivingReceiptDetail from "@/pages/ReceivingReceiptDetail";
 import InvoiceDetail from "@/pages/InvoiceDetail";
+import InvoiceRegistry from "@/pages/InvoiceRegistry";
 
 const queryClient = new QueryClient();
 
@@ -89,7 +91,7 @@ const App = () => (
               <Route path="/plasma/templates/:id" element={<PlasmaTemplateDetail />} />
               <Route path="/work-orders" element={<WorkOrders />} />
               <Route path="/work-orders/:id" element={<WorkOrderDetail />} />
-              <Route path="/invoices" element={<div className="p-6">Invoices (coming soon)</div>} />
+              <Route path="/invoices" element={<InvoiceRegistry />} />
               <Route path="/invoices/:id" element={<InvoiceDetail />} />
               <Route path="/scheduling" element={<Scheduling />} />
               <Route path="/purchase-orders" element={<PurchaseOrders />} />
@@ -99,6 +101,7 @@ const App = () => (
               <Route path="/warranty" element={<WarrantyClaims />} />
               <Route path="/warranty/:id" element={<WarrantyClaimDetail />} />
               <Route path="/reports/returns-warranty" element={<ReturnsWarrantyReport />} />
+              <Route path="/payments" element={<PaymentsPage />} />
               <Route path="/cycle-counts" element={<CycleCounts />} />
               <Route path="/cycle-counts/:id" element={<CycleCountDetail />} />
               <Route path="/technicians" element={<Technicians />} />

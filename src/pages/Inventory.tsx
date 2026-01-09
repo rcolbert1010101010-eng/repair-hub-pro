@@ -69,6 +69,11 @@ export default function Inventory() {
   const countInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const [searchInput, setSearchInput] = useState(() => searchParams.get('search') || '');
   const [bulkSelectMode, setBulkSelectMode] = useState(false);
+  const toNumber = (value: number | string | null | undefined) => {
+    const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+    return Number.isFinite(numeric) ? numeric : 0;
+  };
+  const formatMoney = (value: number | string | null | undefined) => `$${toNumber(value).toFixed(2)}`;
   const movementSummary = useMemo(() => {
     const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
     const summary: Record<string, { lastCountedAt: string | null; delta30d: number }> = {};
@@ -180,14 +185,14 @@ export default function Inventory() {
       key: 'cost',
       header: 'Cost',
       sortable: true,
-      render: (item) => `$${item.cost.toFixed(2)}`,
+      render: (item) => formatMoney(item.cost),
       className: 'text-right',
     },
     {
       key: 'selling_price',
       header: 'Price',
       sortable: true,
-      render: (item) => `$${item.selling_price.toFixed(2)}`,
+      render: (item) => formatMoney(item.selling_price),
       className: 'text-right',
     },
     {

@@ -1,23 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { DataTable, Column } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
+import { useRepos } from '@/repos';
 import type { Customer } from '@/types';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
-import { fetchCustomers, createCustomer as createCustomerDb } from '@/integrations/supabase/customers';
 
 export default function Customers() {
   const navigate = useNavigate();
+  const repos = useRepos();
+  const { customers, addCustomer } = repos.customers;
+  const { customerContacts } = repos.customerContacts;
   const { toast } = useToast();
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     company_name: '',
@@ -28,31 +28,6 @@ export default function Customers() {
     notes: '',
   });
 
-  useEffect(() => {
-    let isMounted = true;
-
-    (async () => {
-      try {
-        setLoading(true);
-        setLoadError(null);
-        const fetched = await fetchCustomers();
-        if (!isMounted) return;
-        setCustomers(fetched.filter((c) => c.id !== 'walkin'));
-      } catch (e: any) {
-        if (!isMounted) return;
-        setLoadError(e?.message ?? 'Failed to load customers');
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
   const columns: Column<Customer>[] = [
     { key: 'company_name', header: 'Company Name', sortable: true },
     { key: 'contact_name', header: 'Contact', sortable: true },
@@ -60,7 +35,23 @@ export default function Customers() {
     { key: 'email', header: 'Email', sortable: true },
   ];
 
-  const handleSave = async () => {
+  const tableData = useMemo(() => {
+    return customers
+      .filter((c) => c.id !== 'walkin')
+      .map((c) => {
+        const primaryContact =
+          customerContacts.find((cc) => cc.customer_id === c.id && cc.is_primary) ||
+          customerContacts.find((cc) => cc.customer_id === c.id);
+        return {
+          ...c,
+          contact_name: primaryContact?.name || c.contact_name,
+          phone: primaryContact?.phone || c.phone,
+          email: primaryContact?.email || c.email,
+        };
+      });
+  }, [customers, customerContacts]);
+
+  const handleSave = () => {
     if (!formData.company_name.trim()) {
       toast({
         title: 'Validation Error',
@@ -83,53 +74,40 @@ export default function Customers() {
       return;
     }
 
-    // Check for duplicate phone
-    if (formData.phone) {
-      const phoneExists = customers.some((c) => c.phone === formData.phone);
-      if (phoneExists) {
-        toast({
-          title: 'Validation Error',
-          description: 'A customer with this phone number already exists',
-          variant: 'destructive',
-        });
-        return;
-      }
-    }
-
-    try {
-      await createCustomerDb({
-        company_name: formData.company_name.trim(),
-        contact_name: formData.contact_name.trim() || null,
-        phone: formData.phone.trim() || null,
-        email: formData.email.trim() || null,
-        address: formData.address.trim() || null,
-        notes: formData.notes.trim() || null,
-      });
-
-      const refreshed = await fetchCustomers();
-      setCustomers(refreshed.filter((c) => c.id !== 'walkin'));
-
+    const result = addCustomer({
+      company_name: formData.company_name.trim(),
+      contact_name: formData.contact_name.trim() || null,
+      phone: formData.phone.trim() || null,
+      email: formData.email.trim() || null,
+      address: formData.address.trim() || null,
+      notes: formData.notes.trim() || null,
+      price_level: 'RETAIL',
+      is_tax_exempt: false,
+      tax_rate_override: null,
+    });
+    if (!result.success) {
       toast({
-        title: 'Customer Created',
-        description: `${formData.company_name} has been added`,
-      });
-
-      setDialogOpen(false);
-      setFormData({
-        company_name: '',
-        contact_name: '',
-        phone: '',
-        email: '',
-        address: '',
-        notes: '',
-      });
-    } catch (e: any) {
-      toast({
-        title: 'Create failed',
-        description: e?.message ?? 'Unable to create customer',
+        title: 'Validation Error',
+        description: result.error || 'Unable to add customer',
         variant: 'destructive',
       });
+      return;
     }
+
+    toast({
+      title: 'Customer Created',
+      description: `${formData.company_name} has been added`,
+    });
+
+    setDialogOpen(false);
+    setFormData({
+      company_name: '',
+      contact_name: '',
+      phone: '',
+      email: '',
+      address: '',
+      notes: '',
+    });
   };
 
   return (
@@ -146,18 +124,12 @@ export default function Customers() {
       />
 
       <DataTable
-        data={customers}
+        data={tableData}
         columns={columns}
         searchKeys={['company_name', 'contact_name', 'phone', 'email']}
-        searchPlaceholder={loading ? 'Loading customers...' : 'Search customers...'}
+        searchPlaceholder="Search customers..."
         onRowClick={(customer) => navigate(`/customers/${customer.id}`)}
-        emptyMessage={
-          loadError
-            ? loadError
-            : loading
-            ? 'Loading customers...'
-            : 'No customers found. Add your first customer to get started.'
-        }
+        emptyMessage="No customers found. Add your first customer to get started."
       />
 
       <QuickAddDialog

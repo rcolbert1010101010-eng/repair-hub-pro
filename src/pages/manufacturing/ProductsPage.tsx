@@ -7,6 +7,11 @@ import { Plus } from 'lucide-react';
 import type { ManufacturedProduct } from '@/types';
 import { useManufacturedProducts } from '@/hooks/useManufacturing';
 
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
 export default function ManufacturingProductsPage() {
   const navigate = useNavigate();
   const { data: products, isLoading } = useManufacturedProducts();
@@ -25,7 +30,7 @@ export default function ManufacturingProductsPage() {
         key: 'base_price',
         header: 'Base Price',
         sortable: true,
-        render: (product) => `$${product.base_price.toFixed(2)}`,
+        render: (product) => `$${toNumber(product.base_price).toFixed(2)}`,
       },
       {
         key: 'is_active',

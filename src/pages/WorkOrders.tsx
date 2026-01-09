@@ -11,6 +11,11 @@ import { Badge } from '@/components/ui/badge';
 
 type WorkOrderRow = WorkOrder & { customer_name: string; unit_label: string; is_active?: boolean };
 
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
 export default function WorkOrders() {
   const navigate = useNavigate();
   const repos = useRepos();
@@ -131,7 +136,7 @@ export default function WorkOrders() {
       key: 'total',
       header: 'Total',
       sortable: true,
-      render: (item) => `$${item.total.toFixed(2)}`,
+      render: (item) => `$${toNumber(item.total).toFixed(2)}`,
       className: 'text-right',
     },
     {

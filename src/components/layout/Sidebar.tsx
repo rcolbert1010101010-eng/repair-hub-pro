@@ -21,6 +21,8 @@ import {
   Calendar,
   Factory,
   Layers,
+  CreditCard,
+  FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -44,6 +46,8 @@ const navItems: NavItem[] = [
   { type: 'link', path: '/customers', label: 'Customers', icon: Users },
   { type: 'link', path: '/scheduling', label: 'Scheduling', icon: Calendar },
   { type: 'link', path: '/sales-orders', label: 'Sales Orders', icon: ShoppingCart },
+  { type: 'link', path: '/invoices', label: 'Invoices', icon: FileText },
+  { type: 'link', path: '/payments', label: 'Payments', icon: CreditCard },
   {
     type: 'group',
     key: 'serviceOrders',

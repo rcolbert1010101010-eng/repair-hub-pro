@@ -14,7 +14,11 @@ import {
 import { useRepos } from '@/repos';
 import type { Invoice, InvoiceLine } from '@/types';
 
-const formatCurrency = (value: number) => `$${value.toFixed(2)}`;
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+const formatCurrency = (value: number | string | null | undefined) => `$${toNumber(value).toFixed(2)}`;
 
 export default function InvoiceDetail() {
   const { id: invoiceId } = useParams<{ id: string }>();

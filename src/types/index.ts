@@ -198,6 +198,8 @@ export interface ManufacturedProduct {
   product_type: ManufacturedProductType;
   description: string | null;
   base_price: number;
+  estimatedLaborHours: number;
+  estimatedOverhead: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -213,6 +215,28 @@ export interface ManufacturedProductOption {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface ManufacturingProductBomItem {
+  id: string;
+  productId: string;
+  partId: string;
+  quantity: number;
+  scrapFactor: number;
+  notes?: string | null;
+  partNumber?: string;
+  description?: string;
+  cost?: number;
+}
+
+export interface ManufacturingProductCostSummary {
+  productId: string;
+  materialCost: number;
+  laborHours: number;
+  laborRate: number;
+  laborCost: number;
+  overhead: number;
+  totalEstimatedCost: number;
 }
 
 export type ManufacturingBuildStatus =
@@ -234,6 +258,10 @@ export interface ManufacturingBuild {
   status: ManufacturingBuildStatus;
   serial_number: string | null;
   notes: string | null;
+  priority: 'low' | 'normal' | 'high' | 'rush';
+  promisedDate?: string | null;
+  assignedTechnicianId?: string | null;
+  internalJobNumber?: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -389,6 +417,44 @@ export interface SalesOrderChargeLine {
   created_at: string;
   updated_at: string;
 }
+
+// Payments
+export type PaymentOrderType = 'WORK_ORDER' | 'SALES_ORDER';
+export type PaymentMethod = 'cash' | 'check' | 'card' | 'ach' | 'other';
+export type PaymentStatus = 'UNPAID' | 'PARTIAL' | 'PAID' | 'OVERPAID';
+
+export interface Payment {
+  id: string;
+  created_at: string;
+  order_type: PaymentOrderType;
+  order_id: string;
+  amount: number;
+  method: PaymentMethod;
+  reference?: string | null;
+  notes?: string | null;
+  voided_at?: string | null;
+  void_reason?: string | null;
+}
+
+export interface PaymentSummary {
+  totalPaid: number;
+  balanceDue: number;
+  status: PaymentStatus;
+}
+
+export type InvoiceOrderType = 'WORK_ORDER' | 'SALES_ORDER';
+
+export type InvoiceRow = {
+  orderType: InvoiceOrderType;
+  orderId: string;
+  invoiceNumber: string;
+  customerName: string;
+  invoiceDate: string;
+  orderTotal: number;
+  totalPaid: number;
+  balanceDue: number;
+  paymentStatus: PaymentStatus;
+};
 
 // Fabrication Jobs
 export type FabJobSourceType = 'STANDALONE' | 'WORK_ORDER';

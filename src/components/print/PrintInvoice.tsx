@@ -9,6 +9,12 @@ interface PrintSalesOrderProps {
   shopName: string;
 }
 
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+const formatMoney = (value: number | string | null | undefined) => toNumber(value).toFixed(2);
+
 export function PrintSalesOrder({ order, lines, customer, unit, parts, shopName }: PrintSalesOrderProps) {
   const pickListItems = lines
     .map((line) => {
@@ -125,8 +131,8 @@ export function PrintSalesOrder({ order, lines, customer, unit, parts, shopName 
                 <td className="py-2 text-sm">{part?.description || '-'}</td>
                 <td className="py-2 text-sm">{part?.bin_location || '—'}</td>
                 <td className="py-2 text-right text-sm">{line.quantity}</td>
-                <td className="py-2 text-right text-sm">${line.unit_price.toFixed(2)}</td>
-                <td className="py-2 text-right text-sm font-medium">${line.line_total.toFixed(2)}</td>
+                <td className="py-2 text-right text-sm">${formatMoney(line.unit_price)}</td>
+                <td className="py-2 text-right text-sm font-medium">${formatMoney(line.line_total)}</td>
               </tr>
             );
           })}
@@ -138,15 +144,15 @@ export function PrintSalesOrder({ order, lines, customer, unit, parts, shopName 
         <div className="w-64">
           <div className="flex justify-between py-1">
             <span className="text-gray-600">Subtotal:</span>
-            <span>${order.subtotal.toFixed(2)}</span>
+            <span>${formatMoney(order.subtotal)}</span>
           </div>
           <div className="flex justify-between py-1">
             <span className="text-gray-600">Tax ({order.tax_rate}%):</span>
-            <span>${order.tax_amount.toFixed(2)}</span>
+            <span>${formatMoney(order.tax_amount)}</span>
           </div>
           <div className="flex justify-between py-2 border-t-2 border-gray-900 font-bold text-lg">
             <span>Total:</span>
-            <span>${order.total.toFixed(2)}</span>
+            <span>${formatMoney(order.total)}</span>
           </div>
         </div>
       </div>
@@ -253,14 +259,14 @@ export function PrintWorkOrder({ order, partLines, laborLines, customer, unit, p
               </tr>
             </thead>
             <tbody>
-              {laborLines.map((line) => (
-                <tr key={line.id} className="border-b border-gray-200">
-                  <td className="py-2 text-sm">{line.description}</td>
-                  <td className="py-2 text-right text-sm">{line.hours}</td>
-                  <td className="py-2 text-right text-sm">${line.rate.toFixed(2)}</td>
-                  <td className="py-2 text-right text-sm font-medium">${line.line_total.toFixed(2)}</td>
-                </tr>
-              ))}
+                  {laborLines.map((line) => (
+                    <tr key={line.id} className="border-b border-gray-200">
+                      <td className="py-2 text-sm">{line.description}</td>
+                      <td className="py-2 text-right text-sm">{line.hours}</td>
+                      <td className="py-2 text-right text-sm">${formatMoney(line.rate)}</td>
+                      <td className="py-2 text-right text-sm font-medium">${formatMoney(line.line_total)}</td>
+                    </tr>
+                  ))}
             </tbody>
           </table>
         </>
@@ -321,8 +327,8 @@ export function PrintWorkOrder({ order, partLines, laborLines, customer, unit, p
                     <td className="py-2 text-sm">{part?.description || '-'}</td>
                     <td className="py-2 text-sm">{part?.bin_location || '—'}</td>
                     <td className="py-2 text-right text-sm">{line.quantity}</td>
-                    <td className="py-2 text-right text-sm">${line.unit_price.toFixed(2)}</td>
-                    <td className="py-2 text-right text-sm font-medium">${line.line_total.toFixed(2)}</td>
+                    <td className="py-2 text-right text-sm">${formatMoney(line.unit_price)}</td>
+                    <td className="py-2 text-right text-sm font-medium">${formatMoney(line.line_total)}</td>
                   </tr>
                 );
               })}
@@ -336,23 +342,23 @@ export function PrintWorkOrder({ order, partLines, laborLines, customer, unit, p
         <div className="w-64">
           <div className="flex justify-between py-1">
             <span className="text-gray-600">Labor:</span>
-            <span>${order.labor_subtotal.toFixed(2)}</span>
+            <span>${formatMoney(order.labor_subtotal)}</span>
           </div>
           <div className="flex justify-between py-1">
             <span className="text-gray-600">Parts:</span>
-            <span>${order.parts_subtotal.toFixed(2)}</span>
+            <span>${formatMoney(order.parts_subtotal)}</span>
           </div>
           <div className="flex justify-between py-1 border-t border-gray-200">
             <span className="text-gray-600">Subtotal:</span>
-            <span>${order.subtotal.toFixed(2)}</span>
+            <span>${formatMoney(order.subtotal)}</span>
           </div>
           <div className="flex justify-between py-1">
             <span className="text-gray-600">Tax ({order.tax_rate}%):</span>
-            <span>${order.tax_amount.toFixed(2)}</span>
+            <span>${formatMoney(order.tax_amount)}</span>
           </div>
           <div className="flex justify-between py-2 border-t-2 border-gray-900 font-bold text-lg">
             <span>Total:</span>
-            <span>${order.total.toFixed(2)}</span>
+            <span>${formatMoney(order.total)}</span>
           </div>
         </div>
       </div>

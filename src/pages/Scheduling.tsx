@@ -28,6 +28,12 @@ const MAX_BARS_PER_CELL = 3;
 const UTIL_WARN = 70;
 const UTIL_ALERT = 90;
 
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+const formatNumber = (value: number | string | null | undefined, digits = 1) => toNumber(value).toFixed(digits);
+
 type FormState = {
   itemType: 'WORK_ORDER' | 'BLOCK';
   blockType: ScheduleBlockType;
@@ -519,14 +525,14 @@ export default function Scheduling() {
                     {hasConflict && <AlertTriangle className="w-3 h-3 shrink-0 text-destructive" />}
                   </div>
                   <div className="text-[10px] text-muted-foreground">
-                    {formatTimeRange(item)} • {(item.duration_minutes / 60).toFixed(1)}h
+                    {formatTimeRange(item)} • {formatNumber(item.duration_minutes / 60, 1)}h
                   </div>
                 </div>
               </TooltipTrigger>
               <TooltipContent className="w-64 space-y-1">
                 <p className="font-semibold">{getItemLabel(item)}</p>
                 <p className="text-xs text-muted-foreground">{formatTimeRange(item)}</p>
-                <p className="text-xs text-muted-foreground">Duration: {(item.duration_minutes / 60).toFixed(1)}h</p>
+                <p className="text-xs text-muted-foreground">Duration: {formatNumber(item.duration_minutes / 60, 1)}h</p>
                 {item.promised_at && (
                   <p className="text-xs text-muted-foreground">
                     Promised: {new Date(item.promised_at).toLocaleString()}
@@ -625,7 +631,7 @@ export default function Scheduling() {
       workOrderId: item.source_ref_type === 'BLOCK' ? '' : item.source_ref_id,
       technicianId: item.technician_id ?? '',
       start: toLocalInput(item.start_at),
-      durationHours: Number((item.duration_minutes / 60).toFixed(2)),
+      durationHours: Number(formatNumber(item.duration_minutes / 60, 2)),
       status: item.status,
       partsReady: item.parts_ready,
       priority: item.priority,
@@ -735,7 +741,7 @@ export default function Scheduling() {
         const percent = Math.min(200, (prospectiveMinutes / availableMinutes) * 100);
         toast({
           title: 'Over capacity warning',
-          description: `${getTechnicianLabel(payload.technician_id || null)} would be ${(prospectiveMinutes / 60).toFixed(1)} / ${(availableMinutes / 60).toFixed(1)} hrs (${percent.toFixed(0)}%) for that day.`,
+          description: `${getTechnicianLabel(payload.technician_id || null)} would be ${formatNumber(prospectiveMinutes / 60, 1)} / ${formatNumber(availableMinutes / 60, 1)} hrs (${formatNumber(percent, 0)}%) for that day.`,
           variant: 'destructive',
         });
       }
@@ -846,7 +852,7 @@ export default function Scheduling() {
           const availableMinutes = dayMinutes * visibleDays;
           const scheduledMinutes = laneItems.reduce((sum, item) => sum + item.duration_minutes, 0);
           const percent = availableMinutes > 0 ? Math.min(200, (scheduledMinutes / availableMinutes) * 100) : 0;
-          const loadText = `${(scheduledMinutes / 60).toFixed(1)} / ${(availableMinutes / 60).toFixed(1)} hrs (${percent.toFixed(0)}%)`;
+          const loadText = `${formatNumber(scheduledMinutes / 60, 1)} / ${formatNumber(availableMinutes / 60, 1)} hrs (${formatNumber(percent, 0)}%)`;
           const overCap = percent > 100;
 
           return (
@@ -1022,7 +1028,7 @@ export default function Scheduling() {
                       <TooltipContent className="w-64 space-y-1">
                         <p className="font-semibold">{getItemLabel(item)}</p>
                         <p className="text-xs text-muted-foreground">
-                          Duration: {(item.duration_minutes / 60).toFixed(1)}h • {formatTimeRange(item)}
+                          Duration: {formatNumber(item.duration_minutes / 60, 1)}h • {formatTimeRange(item)}
                         </p>
                         {item.promised_at && (
                           <p className="text-xs text-muted-foreground">
@@ -1183,7 +1189,7 @@ export default function Scheduling() {
           const scheduledMinutes = cellItems.reduce((sum, item) => sum + item.duration_minutes, 0);
           const availableMinutes = dayMinutes;
           const percent = availableMinutes > 0 ? Math.min(200, (scheduledMinutes / availableMinutes) * 100) : 0;
-          const loadText = `${(scheduledMinutes / 60).toFixed(1)} / ${(availableMinutes / 60).toFixed(1)} hrs (${percent.toFixed(0)}%)`;
+          const loadText = `${formatNumber(scheduledMinutes / 60, 1)} / ${formatNumber(availableMinutes / 60, 1)} hrs (${formatNumber(percent, 0)}%)`;
 
           return (
             <div
@@ -1310,7 +1316,7 @@ export default function Scheduling() {
                         <TooltipContent className="w-64 space-y-1">
                           <p className="font-semibold">{getItemLabel(item)}</p>
                           <p className="text-xs text-muted-foreground">
-                            Duration: {(item.duration_minutes / 60).toFixed(1)}h • {formatTimeRange(item)}
+                            Duration: {formatNumber(item.duration_minutes / 60, 1)}h • {formatTimeRange(item)}
                           </p>
                           {item.promised_at && (
                             <p className="text-xs text-muted-foreground">
@@ -1354,7 +1360,7 @@ export default function Scheduling() {
               const scheduledMinutes = weekItemsForTech.reduce((sum, item) => sum + item.duration_minutes, 0);
               const availableMinutes = dayMinutes * weekDayRange.length;
               const percent = availableMinutes > 0 ? Math.min(200, (scheduledMinutes / availableMinutes) * 100) : 0;
-              const loadText = `${(scheduledMinutes / 60).toFixed(1)} / ${(availableMinutes / 60).toFixed(1)} hrs (${percent.toFixed(0)}%)`;
+              const loadText = `${formatNumber(scheduledMinutes / 60, 1)} / ${formatNumber(availableMinutes / 60, 1)} hrs (${formatNumber(percent, 0)}%)`;
               return (
                 <div
                   key={`gantt-row-${techId}`}

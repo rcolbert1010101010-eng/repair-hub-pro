@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -30,6 +31,8 @@ import {
   useManufacturedProductOptions,
   useManufacturingBuildSelectedOptions,
   useSelectBuildOptions,
+  useProductCostSummary,
+  useBomAvailability,
 } from '@/hooks/useManufacturing';
 
 const BUILD_STATUS_OPTIONS: ManufacturingBuildStatus[] = [
@@ -47,6 +50,10 @@ const buildFormSchema = z.object({
   customer_id: z.string().optional(),
   unit_id: z.string().optional(),
   product_id: z.string().min(1, 'Product is required'),
+  priority: z.enum(['low', 'normal', 'high', 'rush']),
+  promisedDate: z.string().optional().nullable(),
+  assignedTechnicianId: z.string().optional().nullable(),
+  internalJobNumber: z.string().optional().nullable(),
   status: z.enum([
     'ENGINEERING',
     'FABRICATION',
@@ -63,6 +70,12 @@ const buildFormSchema = z.object({
 
 type BuildFormValues = z.infer<typeof buildFormSchema>;
 
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+const formatNumber = (value: number | string | null | undefined, digits = 2) => toNumber(value).toFixed(digits);
+
 export default function ManufacturingBuildFormPage() {
   const navigate = useNavigate();
   const params = useParams();
@@ -71,6 +84,7 @@ export default function ManufacturingBuildFormPage() {
   const { toast } = useToast();
   const customers = useShopStore((state) => state.customers);
   const units = useShopStore((state) => state.units);
+  const technicians = useShopStore((state) => state.technicians);
 
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [selectedUnitId, setSelectedUnitId] = useState<string>('');
@@ -86,6 +100,10 @@ export default function ManufacturingBuildFormPage() {
       customer_id: '',
       unit_id: '',
       product_id: '',
+      priority: 'normal',
+      promisedDate: '',
+      assignedTechnicianId: '',
+      internalJobNumber: '',
       status: 'ENGINEERING',
       notes: '',
       is_active: true,
@@ -99,6 +117,10 @@ export default function ManufacturingBuildFormPage() {
         unit_id: build.unit_id ?? '',
         product_id: build.product_id,
         status: build.status,
+        priority: build.priority ?? 'normal',
+        promisedDate: build.promisedDate ?? '',
+        assignedTechnicianId: build.assignedTechnicianId ?? '',
+        internalJobNumber: build.internalJobNumber ?? '',
         notes: build.notes ?? '',
         is_active: build.is_active,
       });
@@ -126,6 +148,11 @@ export default function ManufacturingBuildFormPage() {
     () => productsQuery.data?.find((product) => product.id === selectedProductId) ?? build?.product,
     [productsQuery.data, selectedProductId, build]
   );
+  const { summary: costSummary } = useProductCostSummary(
+    selectedProductId || build?.product_id || undefined,
+    selectedProduct
+  );
+  const bomAvailability = useBomAvailability(selectedProductId || build?.product_id || undefined);
 
   const configuredPrice = useMemo(() => {
     const basePrice = selectedProduct?.base_price ?? 0;
@@ -137,6 +164,10 @@ export default function ManufacturingBuildFormPage() {
   }, [selectedProduct, selectedOptionsQuery.data]);
 
   const handleFormSubmit = async (values: BuildFormValues) => {
+    const priority = values.priority ?? 'normal';
+    const promisedDate = values.promisedDate || null;
+    const assignedTechnicianId = values.assignedTechnicianId || null;
+    const internalJobNumber = values.internalJobNumber || null;
     try {
       if (isNew) {
         const newBuild = await createBuild.mutateAsync({
@@ -146,6 +177,10 @@ export default function ManufacturingBuildFormPage() {
           unit_id: values.unit_id || null,
           status: values.status,
           notes: values.notes || null,
+          priority,
+          promisedDate,
+          assignedTechnicianId,
+          internalJobNumber,
         });
         toast({ title: 'Build created' });
         navigate(`/manufacturing/builds/${newBuild.id}`);
@@ -157,6 +192,10 @@ export default function ManufacturingBuildFormPage() {
             unit_id: values.unit_id || null,
             status: values.status,
             notes: values.notes || null,
+            priority,
+            promisedDate,
+            assignedTechnicianId,
+            internalJobNumber,
             is_active: values.is_active,
           },
         });
@@ -280,11 +319,13 @@ export default function ManufacturingBuildFormPage() {
                     <SelectValue placeholder="Select product" />
                   </SelectTrigger>
                   <SelectContent>
-                    {productsQuery.data?.map((product) => (
-                      <SelectItem key={product.id} value={product.id}>
-                        {product.name}
-                      </SelectItem>
-                    ))}
+                    {productsQuery.data
+                      ?.filter((product) => product.id && product.id.trim() !== '')
+                      .map((product) => (
+                        <SelectItem key={product.id} value={product.id}>
+                          {product.name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               )}
@@ -299,8 +340,9 @@ export default function ManufacturingBuildFormPage() {
                 <Select
                   value={field.value === '' ? undefined : field.value}
                   onValueChange={(value) => {
-                    field.onChange(value ?? '');
-                    setSelectedCustomerId(value ?? '');
+                    const nextValue = value === '__NONE__' ? '' : value ?? '';
+                    field.onChange(nextValue);
+                    setSelectedCustomerId(nextValue);
                     setSelectedUnitId('');
                     form.setValue('unit_id', '');
                   }}
@@ -309,12 +351,14 @@ export default function ManufacturingBuildFormPage() {
                     <SelectValue placeholder="Assign customer (optional)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
-                    {customers.map((customer) => (
-                      <SelectItem key={customer.id} value={customer.id}>
-                        {customer.company_name}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="__NONE__">None</SelectItem>
+                    {customers
+                      .filter((customer) => customer.id && customer.id.trim() !== '')
+                      .map((customer) => (
+                        <SelectItem key={customer.id} value={customer.id}>
+                          {customer.company_name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               )}
@@ -331,20 +375,23 @@ export default function ManufacturingBuildFormPage() {
                 <Select
                   value={field.value === '' ? undefined : field.value}
                   onValueChange={(value) => {
-                    field.onChange(value ?? '');
-                    setSelectedUnitId(value ?? '');
+                    const nextValue = value === '__NONE__' ? '' : value ?? '';
+                    field.onChange(nextValue);
+                    setSelectedUnitId(nextValue);
                   }}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Select unit" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
-                    {availableUnits.map((unit) => (
-                      <SelectItem key={unit.id} value={unit.id}>
-                        {unit.unit_name}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="__NONE__">None</SelectItem>
+                    {availableUnits
+                      .filter((unit) => unit.id && unit.id.trim() !== '')
+                      .map((unit) => (
+                        <SelectItem key={unit.id} value={unit.id}>
+                          {unit.unit_name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               )}
@@ -368,6 +415,85 @@ export default function ManufacturingBuildFormPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              )}
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>Priority</Label>
+            <Controller
+              control={form.control}
+              name="priority"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={(value) => field.onChange(value)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select priority" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="normal">Normal</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="rush">Rush</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </div>
+          <div>
+            <Label>Promised Date</Label>
+            <Controller
+              control={form.control}
+              name="promisedDate"
+              render={({ field }) => (
+                <Input
+                  type="date"
+                  value={field.value ?? ''}
+                  onChange={(event) => field.onChange(event.target.value || '')}
+                />
+              )}
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label>Assigned Technician</Label>
+            <Controller
+              control={form.control}
+              name="assignedTechnicianId"
+              render={({ field }) => (
+                <Select
+                  value={field.value === '' ? undefined : field.value ?? undefined}
+                  onValueChange={(value) => field.onChange(value === '__NONE__' ? '' : value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Assign technician (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__NONE__">Unassigned</SelectItem>
+                    {technicians
+                      .filter((tech) => tech.id && tech.id.trim() !== '')
+                      .map((tech) => (
+                        <SelectItem key={tech.id} value={tech.id}>
+                          {tech.name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </div>
+          <div>
+            <Label>Internal Job #</Label>
+            <Controller
+              control={form.control}
+              name="internalJobNumber"
+              render={({ field }) => (
+                <Input
+                  placeholder="e.g., JOB-1234"
+                  value={field.value ?? ''}
+                  onChange={(event) => field.onChange(event.target.value)}
+                />
               )}
             />
           </div>
@@ -396,7 +522,6 @@ export default function ManufacturingBuildFormPage() {
           <h2 className="text-lg font-semibold">Selected Options</h2>
           <div className="flex gap-2">
             <Button onClick={() => setOptionDialogOpen(true)} disabled={!build}>
-              <Plus className="w-4 h-4 mr-1" />
               Add Option
             </Button>
             <Button variant="outline" onClick={handleGenerateSerial} disabled={!build}>
@@ -418,8 +543,61 @@ export default function ManufacturingBuildFormPage() {
           </div>
           <div>
             <p className="text-sm text-muted-foreground">Configured Price</p>
-            <p className="font-medium">${configuredPrice.toFixed(2)}</p>
+            <p className="font-medium">${formatNumber(configuredPrice)}</p>
           </div>
+        </div>
+        <div className="border rounded-lg p-4 bg-muted/30 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+          <div>
+            <p className="text-muted-foreground">Material</p>
+            <p className="font-semibold">${formatNumber(costSummary.materialCost)}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Labor</p>
+            <p className="font-semibold">
+              {formatNumber(costSummary.laborHours, 1)} hrs @ ${formatNumber(costSummary.laborRate)} = $
+              {formatNumber(costSummary.laborCost)}
+            </p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Overhead</p>
+            <p className="font-semibold">${formatNumber(costSummary.overhead)}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Estimated Build Cost</p>
+            <p className="font-semibold">${formatNumber(costSummary.totalEstimatedCost)}</p>
+          </div>
+        </div>
+        <div className="border rounded-lg p-4 bg-muted/40 space-y-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">Build Readiness</p>
+              {bomAvailability.unknown ? (
+                <p className="font-medium">Availability unknown (no BOM or inventory data)</p>
+              ) : bomAvailability.ready ? (
+                <p className="font-medium text-green-600">All parts available – ready to build</p>
+              ) : (
+                <p className="font-medium text-orange-600">
+                  Short parts: {bomAvailability.shortages.length} BOM line{bomAvailability.shortages.length === 1 ? '' : 's'} need stock
+                </p>
+              )}
+            </div>
+            <Badge variant={bomAvailability.ready ? 'default' : 'secondary'}>
+              {bomAvailability.ready ? 'Ready' : bomAvailability.unknown ? 'Unknown' : 'Short'}
+            </Badge>
+          </div>
+          {!bomAvailability.unknown && bomAvailability.shortages.length > 0 && (
+            <div className="space-y-1 text-sm">
+              <p className="text-muted-foreground">Top shortages</p>
+              {bomAvailability.shortages.slice(0, 3).map((short) => (
+                <div key={short.bomItemId} className="flex items-center justify-between">
+                  <span>
+                    {short.partNumber ?? short.partId} — {short.description ?? 'Part'}
+                  </span>
+                  <span className="font-medium text-orange-700">Short {formatNumber(short.shortage)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <Table>
           <TableHeader>
@@ -434,7 +612,7 @@ export default function ManufacturingBuildFormPage() {
             {selectedOptions.map((option) => (
               <TableRow key={option.id}>
                 <TableCell>{option.option_name_snapshot}</TableCell>
-                <TableCell>${option.price_delta_snapshot.toFixed(2)}</TableCell>
+                <TableCell>${formatNumber(option.price_delta_snapshot)}</TableCell>
                 <TableCell>{option.is_active ? 'Yes' : 'No'}</TableCell>
                 <TableCell className="text-right">
                   <Button variant="ghost" size="sm" onClick={() => handleRemoveSelectedOption(option.id)}>
@@ -462,18 +640,20 @@ export default function ManufacturingBuildFormPage() {
           <div className="space-y-4">
             <Label>Select Option</Label>
             <Select value={selectedOptionId} onValueChange={setSelectedOptionId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Choose an option" />
-              </SelectTrigger>
-              <SelectContent>
-                {productOptionsQuery.data?.map((option) => (
-                  <SelectItem key={option.id} value={option.id}>
-                    {option.name} (${option.price_delta.toFixed(2)})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose an option" />
+                </SelectTrigger>
+                <SelectContent>
+                  {productOptionsQuery.data
+                    ?.filter((option) => option.id && option.id.trim() !== '')
+                    .map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.name} (${formatNumber(option.price_delta)})
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
           <DialogFooter className="flex justify-between">
             <Button variant="outline" onClick={() => setOptionDialogOpen(false)}>
               Cancel

@@ -27,7 +27,8 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Edit, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import type { ManufacturedProductOption } from '@/types';
+import type { ManufacturedProductOption, ManufacturingProductBomItem, Part } from '@/types';
+import { Badge } from '@/components/ui/badge';
 import {
   useCreateManufacturedProduct,
   useManufacturedProduct,
@@ -36,7 +37,12 @@ import {
   useCreateManufacturedProductOption,
   useUpdateManufacturedProductOption,
   useDeactivateManufacturedProductOption,
+  useProductBom,
+  useSaveProductBom,
+  useProductCostSummary,
+  useBomAvailability,
 } from '@/hooks/useManufacturing';
+import { fetchParts } from '@/integrations/supabase/catalog';
 
 const PRODUCT_TYPES = [
   { value: 'DUMP_BODY', label: 'Dump Body' },
@@ -49,6 +55,8 @@ const productSchema = z.object({
   sku: z.string().min(1, 'SKU is required'),
   product_type: z.enum(['DUMP_BODY', 'TRAILER', 'CUSTOM_EQUIPMENT']),
   base_price: z.number().min(0, 'Base price must be at least 0'),
+  estimated_labor_hours: z.number().min(0),
+  estimated_overhead: z.number().min(0),
   description: z.string().optional().nullable(),
   is_active: z.boolean(),
 });
@@ -63,6 +71,12 @@ const optionSchema = z.object({
 
 type ProductFormValues = z.infer<typeof productSchema>;
 type OptionFormValues = z.infer<typeof optionSchema>;
+
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+const formatNumber = (value: number | string | null | undefined, digits = 2) => toNumber(value).toFixed(digits);
 
 export default function ManufacturingProductFormPage() {
   const navigate = useNavigate();
@@ -82,6 +96,13 @@ export default function ManufacturingProductFormPage() {
   const createOption = useCreateManufacturedProductOption(productId ?? undefined);
   const updateOption = useUpdateManufacturedProductOption(productId ?? undefined);
   const deactivateOption = useDeactivateManufacturedProductOption(productId ?? undefined);
+  const { bom, isLoading: bomLoading } = useProductBom(!isNew ? productId ?? undefined : undefined);
+  const saveBom = useSaveProductBom(!isNew ? productId ?? undefined : undefined);
+  const { summary: costSummary } = useProductCostSummary(productId ?? undefined, product ?? null);
+  const bomAvailability = useBomAvailability(!isNew ? productId ?? undefined : undefined);
+  const [bomDraft, setBomDraft] = useState<ManufacturingProductBomItem[]>([]);
+  const [parts, setParts] = useState<Part[]>([]);
+  const [isLoadingParts, setIsLoadingParts] = useState(false);
 
   const form = useForm<ProductFormValues>({
     resolver: zodResolver(productSchema),
@@ -90,6 +111,8 @@ export default function ManufacturingProductFormPage() {
       sku: '',
       product_type: 'DUMP_BODY',
       base_price: 0,
+      estimated_labor_hours: 0,
+      estimated_overhead: 0,
       description: '',
       is_active: true,
     },
@@ -102,6 +125,8 @@ export default function ManufacturingProductFormPage() {
         sku: product.sku,
         product_type: product.product_type,
         base_price: product.base_price,
+        estimated_labor_hours: product.estimatedLaborHours ?? 0,
+        estimated_overhead: product.estimatedOverhead ?? 0,
         description: product.description,
         is_active: product.is_active,
       });
@@ -192,6 +217,103 @@ export default function ManufacturingProductFormPage() {
       });
     }
   };
+
+  const handleBomChange = (id: string, patch: Partial<ManufacturingProductBomItem>) => {
+    setBomDraft((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+  };
+
+  const handleAddBomRow = () => {
+    if (!productId || isNew) {
+      toast({ title: 'Save product first', description: 'Save the product before adding a BOM', variant: 'destructive' });
+      return;
+    }
+    const defaultPartId = parts[0]?.id ?? '';
+    setBomDraft((prev) => [
+      ...prev,
+      {
+        id: `new-${Date.now()}`,
+        productId,
+        partId: defaultPartId,
+        quantity: 1,
+        scrapFactor: 0,
+        notes: '',
+      },
+    ]);
+  };
+
+  const handleRemoveBomRow = (id: string) => {
+    setBomDraft((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleSaveBom = async () => {
+    if (!productId || isNew) {
+      toast({ title: 'Save product first', description: 'Save the product before adding a BOM', variant: 'destructive' });
+      return;
+    }
+    const prepared = bomDraft
+      .filter((item) => item.partId)
+      .map((item) => ({
+        ...item,
+        partId: item.partId,
+        quantity: toNumber(item.quantity),
+        scrapFactor: toNumber(item.scrapFactor),
+        notes: item.notes ?? null,
+      }));
+    try {
+      await saveBom.mutateAsync(prepared);
+      toast({ title: 'BOM saved' });
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error?.message ?? 'Unable to save BOM',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const computeRowCost = (item: ManufacturingProductBomItem) => {
+    const part = parts.find((p) => p.id === item.partId);
+    const partCost = part?.cost ?? item.cost ?? 0;
+    const qty = toNumber(item.quantity);
+    const scrap = toNumber(item.scrapFactor);
+    const total = partCost * qty * (1 + scrap);
+    return Number.isFinite(total) ? total : 0;
+  };
+
+  useEffect(() => {
+    if (bom) {
+      setBomDraft(
+        bom.map((item) => ({
+          ...item,
+          quantity: toNumber(item.quantity) || 0,
+          scrapFactor: toNumber(item.scrapFactor) || 0,
+        }))
+      );
+    }
+  }, [bom]);
+
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoadingParts(true);
+    fetchParts()
+      .then((data) => {
+        if (isMounted) setParts(data);
+      })
+      .catch((err) => {
+        console.error('Failed to load parts for BOM', err);
+        toast({
+          title: 'Error loading parts',
+          description: err?.message ?? 'Unable to load parts',
+          variant: 'destructive',
+        });
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingParts(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [toast]);
 
   const handleSubmit = async (values: ProductFormValues) => {
     try {
@@ -292,6 +414,28 @@ export default function ManufacturingProductFormPage() {
             />
           </div>
         </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="estimated_labor_hours">Estimated Labor Hours</Label>
+            <Input
+              id="estimated_labor_hours"
+              type="number"
+              step="0.1"
+              {...form.register('estimated_labor_hours', { valueAsNumber: true })}
+              disabled={!isEditing}
+            />
+          </div>
+          <div>
+            <Label htmlFor="estimated_overhead">Estimated Overhead</Label>
+            <Input
+              id="estimated_overhead"
+              type="number"
+              step="0.01"
+              {...form.register('estimated_overhead', { valueAsNumber: true })}
+              disabled={!isEditing}
+            />
+          </div>
+        </div>
         <div>
           <Label htmlFor="description">Description</Label>
           <Textarea
@@ -342,7 +486,7 @@ export default function ManufacturingProductFormPage() {
                 <TableRow key={option.id}>
                   <TableCell>{option.name}</TableCell>
                   <TableCell>{option.option_type}</TableCell>
-                  <TableCell>${option.price_delta.toFixed(2)}</TableCell>
+                  <TableCell>${formatNumber(option.price_delta)}</TableCell>
                   <TableCell>{option.is_active ? 'Yes' : 'No'}</TableCell>
                   <TableCell className="text-right space-x-1">
                     <Button variant="ghost" size="sm" onClick={() => handleOptionOpen(option)}>
@@ -369,6 +513,140 @@ export default function ManufacturingProductFormPage() {
           </Table>
         </div>
       )}
+
+      {!isNew && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Bill of Materials</h2>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={handleSaveBom} disabled={saveBom.isLoading || isNew}>
+                Save BOM
+              </Button>
+              <Button onClick={handleAddBomRow} disabled={isNew || isLoadingParts || bomLoading}>
+                <Plus className="w-4 h-4 mr-1" />
+                Add Item
+              </Button>
+            </div>
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+              <TableHead>Part</TableHead>
+              <TableHead className="text-right">Qty</TableHead>
+              <TableHead className="text-right">Scrap</TableHead>
+              <TableHead className="text-right">QOH</TableHead>
+              <TableHead className="text-right">Shortage</TableHead>
+              <TableHead>Notes</TableHead>
+              <TableHead className="text-right">Material Cost</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {bomLoading ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-muted-foreground py-4">
+                  Loading BOM...
+                </TableCell>
+              </TableRow>
+            ) : bomDraft.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-muted-foreground py-4">
+                  No BOM items
+                </TableCell>
+              </TableRow>
+            ) : (
+              bomDraft.map((item) => {
+                const part = parts.find((p) => p.id === item.partId);
+                const rowCost = computeRowCost(item);
+                const availability = bomAvailability.items.find(
+                  (a) => a.partId === item.partId || a.bomItemId === item.id
+                );
+                const qoh = availability?.qoh ?? 0;
+                const shortage = availability?.shortage ?? 0;
+                return (
+                  <TableRow key={item.id}>
+                    <TableCell>
+                      <Select
+                        value={item.partId}
+                          onValueChange={(value) => handleBomChange(item.id, { partId: value })}
+                          disabled={isLoadingParts}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder={isLoadingParts ? 'Loading parts...' : 'Select part'} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {parts.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>
+                                {p.part_number} — {p.description}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {part && (
+                          <div className="text-xs text-muted-foreground mt-1">
+                            Cost: ${formatNumber(part.cost ?? 0)}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={item.quantity}
+                          onChange={(e) => handleBomChange(item.id, { quantity: Number(e.target.value) })}
+                          className="text-right"
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          value={item.scrapFactor}
+                          onChange={(e) => handleBomChange(item.id, { scrapFactor: Number(e.target.value) })}
+                          className="text-right"
+                        />
+                      </TableCell>
+                      <TableCell className="text-right">{formatNumber(qoh)}</TableCell>
+                      <TableCell className="text-right">
+                        {shortage > 0 ? (
+                          <Badge variant="destructive">Short {formatNumber(shortage)}</Badge>
+                        ) : (
+                          <Badge variant="secondary">OK</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          value={item.notes ?? ''}
+                          onChange={(e) => handleBomChange(item.id, { notes: e.target.value })}
+                          placeholder="Notes (optional)"
+                        />
+                      </TableCell>
+                      <TableCell className="text-right font-medium">${formatNumber(rowCost)}</TableCell>
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="sm" onClick={() => handleRemoveBomRow(item.id)}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+            )}
+          </TableBody>
+        </Table>
+        <div className="flex flex-col gap-1 text-sm font-medium sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-muted-foreground">
+            {bomAvailability.unknown
+              ? 'Availability unknown (no BOM or inventory data).'
+              : bomAvailability.ready
+              ? 'All parts available – ready to build.'
+              : `Short parts: ${bomAvailability.shortages.length} BOM line${
+                  bomAvailability.shortages.length === 1 ? '' : 's'
+                } need stock.`}
+          </div>
+          <div>Total material cost: ${formatNumber(costSummary.materialCost)}</div>
+        </div>
+      </div>
+    )}
 
       <Dialog open={optionDialogOpen} onOpenChange={setOptionDialogOpen}>
         <DialogContent>
