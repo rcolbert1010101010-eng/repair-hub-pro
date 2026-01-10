@@ -563,8 +563,8 @@ export default function PaymentsPage() {
             <Button variant="outline" onClick={() => setReceivePaymentOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSubmitReceivePayment} disabled={receivePayments.addPayment.isLoading}>
-              {receivePayments.addPayment.isLoading ? 'Saving...' : 'Save Payment'}
+            <Button onClick={handleSubmitReceivePayment} disabled={receivePayments.addPayment.isPending}>
+              {receivePayments.addPayment.isPending ? 'Saving...' : 'Save Payment'}
             </Button>
           </DialogFooter>
         </DialogContent>

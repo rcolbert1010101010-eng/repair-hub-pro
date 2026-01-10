@@ -400,8 +400,8 @@ export default function InvoiceRegistry() {
             <Button variant="outline" onClick={() => setSelectedInvoice(null)}>
               Cancel
             </Button>
-            <Button onClick={handleSavePayment} disabled={addPaymentMutation.isLoading}>
-              {addPaymentMutation.isLoading ? 'Saving...' : 'Save Payment'}
+            <Button onClick={handleSavePayment} disabled={addPaymentMutation.isPending}>
+              {addPaymentMutation.isPending ? 'Saving...' : 'Save Payment'}
             </Button>
           </DialogFooter>
         </DialogContent>

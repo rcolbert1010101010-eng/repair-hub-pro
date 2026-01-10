@@ -34,7 +34,7 @@ import type { LucideIcon } from 'lucide-react';
 type NavLink = { type: 'link'; path: string; label: string; icon: LucideIcon };
 type NavGroup = {
   type: 'group';
-  key: 'serviceOrders' | 'inventory' | 'returnsWarranty';
+  key: 'serviceOrders' | 'inventory' | 'returnsWarranty' | 'manufacturing';
   label: string;
   icon: LucideIcon;
   children: NavLink[];

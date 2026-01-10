@@ -17,17 +17,17 @@ import {
   fetchManufacturingBuildSelectedOptions,
   addManufacturingBuildSelectedOption,
   deactivateManufacturingBuildSelectedOption,
-  ManufacturingBuildFilters,
-  ManufacturedProductType,
   fetchProductBom,
   upsertProductBom,
   computeProductMaterialCost,
 } from '@/integrations/supabase/manufacturing';
+import type { ManufacturingBuildFilters } from '@/integrations/supabase/manufacturing';
 import type {
   ManufacturingProductBomItem,
   ManufacturingProductCostSummary,
   ManufacturedProduct,
   ManufacturingBuildStatus,
+  ManufacturedProductType,
 } from '@/types';
 import type { ManufacturingBuildWithRelations } from '@/integrations/supabase/manufacturing';
 import type { Part } from '@/types';
@@ -179,7 +179,7 @@ export const useManufacturedProducts = (options?: {
         includeInactive: options?.includeInactive ?? false,
         productType: options?.productType,
       }),
-    keepPreviousData: true,
+    placeholderData: (previousData) => previousData,
   });
 
 export const useManufacturedProduct = (id?: string | null) =>
@@ -202,8 +202,8 @@ export const useCreateManufacturedProduct = () => {
 export const useUpdateManufacturedProduct = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, patch }: Parameters<typeof updateManufacturedProduct>) =>
-      updateManufacturedProduct(id, patch),
+    mutationFn: (args: { id: string; patch: Parameters<typeof updateManufacturedProduct>[1] }) =>
+      updateManufacturedProduct(args.id, args.patch),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['manufactured-products'] });
       queryClient.invalidateQueries({ queryKey: ['manufactured-product', data.id] });
@@ -244,8 +244,8 @@ export const useCreateManufacturedProductOption = (productId?: string) => {
 export const useUpdateManufacturedProductOption = (productId?: string) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, patch }: Parameters<typeof updateManufacturedProductOption>) =>
-      updateManufacturedProductOption(id, patch),
+    mutationFn: (args: { id: string; patch: Parameters<typeof updateManufacturedProductOption>[1] }) =>
+      updateManufacturedProductOption(args.id, args.patch),
     onSuccess: () => {
       if (productId) {
         queryClient.invalidateQueries({ queryKey: ['manufactured-product-options', productId] });
@@ -270,7 +270,7 @@ export const useManufacturingBuilds = (filters?: ManufacturingBuildFilters) =>
   useQuery({
     queryKey: ['manufacturing-builds', filters],
     queryFn: () => fetchManufacturingBuilds(filters),
-    keepPreviousData: true,
+    placeholderData: (previousData) => previousData,
   });
 
 export const useManufacturingBuild = (id?: string | null) =>
@@ -293,8 +293,8 @@ export const useCreateManufacturingBuild = () => {
 export const useUpdateManufacturingBuild = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, patch }: Parameters<typeof updateManufacturingBuild>) =>
-      updateManufacturingBuild(id, patch),
+    mutationFn: (args: { id: string; patch: Parameters<typeof updateManufacturingBuild>[1] }) =>
+      updateManufacturingBuild(args.id, args.patch),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['manufacturing-builds'] });
       queryClient.invalidateQueries({ queryKey: ['manufacturing-build', variables.id] });
@@ -346,8 +346,8 @@ export const useSelectBuildOptions = (buildId?: string) => {
   return {
     addOption,
     removeOption,
-    isAdding: addOption.isLoading,
-    isRemoving: removeOption.isLoading,
+    isAdding: addOption.isPending,
+    isRemoving: removeOption.isPending,
   };
 };
 
