@@ -318,7 +318,16 @@ export default function ManufacturingProductFormPage() {
   const handleSubmit = async (values: ProductFormValues) => {
     try {
       if (isNew) {
-        const created = await createProduct.mutateAsync(values);
+        const created = await createProduct.mutateAsync({
+          name: values.name,
+          sku: values.sku,
+          product_type: values.product_type,
+          base_price: values.base_price,
+          estimated_labor_hours: values.estimated_labor_hours,
+          estimated_overhead: values.estimated_overhead,
+          description: values.description ?? null,
+          is_active: values.is_active,
+        });
         toast({ title: 'Product created' });
         navigate(`/manufacturing/products/${created.id}`);
       } else {
@@ -519,7 +528,7 @@ export default function ManufacturingProductFormPage() {
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Bill of Materials</h2>
             <div className="flex items-center gap-2">
-              <Button variant="outline" onClick={handleSaveBom} disabled={saveBom.isLoading || isNew}>
+              <Button variant="outline" onClick={handleSaveBom} disabled={saveBom.isPending || isNew}>
                 Save BOM
               </Button>
               <Button onClick={handleAddBomRow} disabled={isNew || isLoadingParts || bomLoading}>

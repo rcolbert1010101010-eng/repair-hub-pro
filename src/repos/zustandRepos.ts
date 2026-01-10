@@ -187,7 +187,7 @@ const ensureScheduleItemForWorkOrder = (
 
 import type { Repos } from './repos';
 
-export const zustandRepos: Repos = {
+export const zustandRepos: Omit<Repos, 'invoices'> = {
   settings: {
     get settings() {
       return useShopStore.getState().settings;

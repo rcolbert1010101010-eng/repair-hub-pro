@@ -145,7 +145,7 @@ export default function ManufacturingBuildFormPage() {
   );
 
   const selectedProduct = useMemo(
-    () => productsQuery.data?.find((product) => product.id === selectedProductId) ?? build?.product,
+    () => (productsQuery.data ?? []).find((product) => product.id === selectedProductId) ?? build?.product,
     [productsQuery.data, selectedProductId, build]
   );
   const { summary: costSummary } = useProductCostSummary(
@@ -235,7 +235,7 @@ export default function ManufacturingBuildFormPage() {
     if (!build || !build.status || build.status !== 'DELIVERED' || !selectedProduct) return;
     const unitName = `${selectedProduct.name} - ${build.serial_number ?? build.build_number}`;
     try {
-      const unit = await apiClient.post('/units', {
+      const unit = await apiClient.post<{ id: string; unit_name: string }>('/units', {
         customer_id: build.customer_id ?? undefined,
         unit_name: unitName,
         vin: build.serial_number ?? undefined,

@@ -247,8 +247,8 @@ export default function InvoiceDetail() {
                     value={paymentNotes}
                     onChange={(e) => setPaymentNotes(e.target.value)}
                   />
-                  <Button onClick={handleAddPayment} disabled={!invoice || payments.addPayment.isLoading}>
-                    {payments.addPayment.isLoading ? 'Saving...' : 'Add Payment'}
+                  <Button onClick={handleAddPayment} disabled={!invoice || payments.addPayment.isPending}>
+                    {payments.addPayment.isPending ? 'Saving...' : 'Add Payment'}
                   </Button>
                 </div>
               </div>
@@ -277,7 +277,7 @@ export default function InvoiceDetail() {
                             size="sm"
                             variant="ghost"
                             onClick={() => handleVoidPayment(payment.id)}
-                            disabled={payments.voidPayment.isLoading}
+                            disabled={payments.voidPayment.isPending}
                           >
                             Void
                           </Button>
