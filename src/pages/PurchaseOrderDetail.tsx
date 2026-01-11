@@ -27,18 +27,29 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
 import { useRepos } from '@/repos';
 import { useToast } from '@/hooks/use-toast';
 import { Save, Plus, Trash2, PackageCheck, Lock, ChevronsUpDown } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { getPurchaseOrderDerivedStatus } from '@/services/purchaseOrderStatus';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { SmartSearchSelect } from '@/components/common/SmartSearchSelect';
 
 const toNumber = (value: number | string | null | undefined) => {
   const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
   return Number.isFinite(numeric) ? numeric : 0;
 };
 const formatCurrency = (value: number | string | null | undefined) => `$${toNumber(value).toFixed(2)}`;
+const BROWSE_PARTS_PAGE_SIZE = 25;
 
 export default function PurchaseOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -55,7 +66,7 @@ export default function PurchaseOrderDetail() {
     updatePurchaseOrderLinks,
   } = repos.purchaseOrders;
   const { vendors } = repos.vendors;
-  const { parts } = repos.parts;
+  const { parts, addPart } = repos.parts;
   const { salesOrders } = repos.salesOrders;
   const { workOrders } = repos.workOrders;
   const { customers } = repos.customers;
@@ -70,6 +81,18 @@ export default function PurchaseOrderDetail() {
   const [addPartOpen, setAddPartOpen] = useState(false);
   const [selectedPartId, setSelectedPartId] = useState('');
   const [partQty, setPartQty] = useState('1');
+  const [newPartDialogOpen, setNewPartDialogOpen] = useState(false);
+  const [newPartData, setNewPartData] = useState({
+    part_number: '',
+    description: '',
+    vendor_id: '',
+    category_id: '',
+    cost: '',
+    selling_price: '',
+  });
+  const [isBrowsePartsOpen, setIsBrowsePartsOpen] = useState(false);
+  const [browsePartsInStockOnly, setBrowsePartsInStockOnly] = useState(false);
+  const [browsePartsPage, setBrowsePartsPage] = useState(0);
 
   const [receiveLineId, setReceiveLineId] = useState<string | null>(null);
   const [receiveQty, setReceiveQty] = useState('');
@@ -89,6 +112,46 @@ export default function PurchaseOrderDetail() {
   const activeVendors = vendors.filter((v) => v.is_active);
   const activeParts = parts.filter((p) => p.is_active);
   const isClosed = currentOrder?.status === 'CLOSED';
+  const poPartPickerItems = useMemo(
+    () =>
+      activeParts.map((part) => {
+        const partNumber = (part.part_number ?? '').toString();
+        const description = part.description ?? '';
+        const vendor = (part as any).vendor_label ?? (part as any).vendor_name ?? '';
+        const category = (part as any).category_label ?? (part as any).category_name ?? '';
+        const rawSearchText = [partNumber, description, vendor, category].filter(Boolean).join(' ').toLowerCase();
+        const labelParts = [partNumber, description].filter(Boolean);
+        return {
+          id: String(part.id),
+          label: labelParts.length ? labelParts.join(' – ') : 'Unnamed part',
+          searchText: rawSearchText,
+          meta: { vendor, category },
+        };
+      }),
+    [activeParts]
+  );
+  const browseableParts = useMemo(
+    () =>
+      activeParts.filter((part) => {
+        if (browsePartsInStockOnly) {
+          const qoh = (part as any).quantity_on_hand ?? 0;
+          if (qoh <= 0) return false;
+        }
+        return true;
+      }),
+    [activeParts, browsePartsInStockOnly]
+  );
+  const pagedBrowseParts = useMemo(() => {
+    const totalPages = Math.max(1, Math.ceil(browseableParts.length / BROWSE_PARTS_PAGE_SIZE));
+    const clampedPage = Math.min(Math.max(browsePartsPage, 0), totalPages - 1);
+    const start = clampedPage * BROWSE_PARTS_PAGE_SIZE;
+    const end = start + BROWSE_PARTS_PAGE_SIZE;
+    return {
+      items: browseableParts.slice(start, end),
+      totalPages,
+      page: clampedPage,
+    };
+  }, [browsePartsPage, browseableParts]);
 
   if (!isNew && !currentOrder) {
     return (
@@ -145,6 +208,79 @@ export default function PurchaseOrderDetail() {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
   };
+  const handleQuickAddPart = () => {
+    if (!newPartData.part_number.trim()) {
+      toast({
+        title: 'Validation Error',
+        description: 'Part number is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!newPartData.vendor_id) {
+      toast({
+        title: 'Validation Error',
+        description: 'Vendor is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (!newPartData.category_id) {
+      toast({
+        title: 'Validation Error',
+        description: 'Category is required',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const exists = parts.some(
+      (p) => (p.part_number || '').toLowerCase() === newPartData.part_number.trim().toLowerCase()
+    );
+    if (exists) {
+      toast({
+        title: 'Validation Error',
+        description: 'A part with this number already exists',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const partNumber = newPartData.part_number.trim().toUpperCase();
+    const newPart = addPart({
+      part_number: partNumber,
+      description: newPartData.description.trim() || null,
+      vendor_id: newPartData.vendor_id,
+      category_id: newPartData.category_id,
+      cost: parseFloat(newPartData.cost) || 0,
+      selling_price: parseFloat(newPartData.selling_price) || 0,
+      quantity_on_hand: 0,
+      core_required: false,
+      core_charge: 0,
+      min_qty: null,
+      max_qty: null,
+      bin_location: null,
+      model: null,
+      serial_number: null,
+      is_kit: false,
+      barcode: null,
+    });
+
+    toast({
+      title: 'Part Created',
+      description: `${partNumber} has been added`,
+    });
+    setNewPartDialogOpen(false);
+    setNewPartData({
+      part_number: '',
+      description: '',
+      vendor_id: '',
+      category_id: '',
+      cost: '',
+      selling_price: '',
+    });
+    setSelectedPartId(newPart.id);
+  };
 
   const lines = useMemo(
     () => (currentOrder ? getPurchaseOrderLines(currentOrder.id) : []),
@@ -195,6 +331,9 @@ export default function PurchaseOrderDetail() {
     setLinkSalesOrderId(currentOrder?.sales_order_id || '');
     setLinkWorkOrderId(currentOrder?.work_order_id || '');
   }, [currentOrder?.sales_order_id, currentOrder?.work_order_id]);
+  useEffect(() => {
+    setBrowsePartsPage(0);
+  }, [browsePartsInStockOnly]);
 
   const getSalesOrderLabel = (id: string) => {
     if (!id) return 'None';
@@ -841,37 +980,256 @@ export default function PurchaseOrderDetail() {
         </AlertDialogContent>
       </AlertDialog>
       {/* Add Part Dialog */}
+      <Dialog open={addPartOpen} onOpenChange={setAddPartOpen}>
+        <DialogContent className="max-w-3xl w-full">
+          <DialogHeader>
+            <DialogTitle>Add Part to PO</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Part *</Label>
+              <div className="flex items-center gap-2">
+                <SmartSearchSelect
+                  className="flex-1 min-w-0"
+                  value={selectedPartId || null}
+                  onChange={(id) => setSelectedPartId(id ?? '')}
+                  items={poPartPickerItems}
+                  placeholder="Search parts by # or description..."
+                  minChars={2}
+                  limit={25}
+                  renderItem={(item) => (
+                    <div className="flex flex-col">
+                      <span className="font-medium">{item.label}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {item.meta?.vendor && `${item.meta.vendor} · `}
+                        {item.meta?.category}
+                      </span>
+                    </div>
+                  )}
+                />
+                <Button
+                  variant="outline"
+                  className="flex-shrink-0"
+                  type="button"
+                  onClick={() => setIsBrowsePartsOpen(true)}
+                >
+                  Browse parts
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-shrink-0"
+                  type="button"
+                  onClick={() => setNewPartDialogOpen(true)}
+                >
+                  New Part
+                </Button>
+              </div>
+            </div>
+            <div>
+              <Label>Quantity</Label>
+              <Input
+                type="number"
+                min="1"
+                value={partQty}
+                onChange={(e) => setPartQty(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddPartOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddPart}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isBrowsePartsOpen} onOpenChange={setIsBrowsePartsOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Browse Parts</DialogTitle>
+            <DialogDescription>Find parts by browsing without loading the entire catalog.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground mb-2">
+              Viewing all active parts. Use the in-stock filter and pagination to browse.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={browsePartsInStockOnly}
+                  onCheckedChange={setBrowsePartsInStockOnly}
+                  id="po-browse-in-stock"
+                />
+                <Label htmlFor="po-browse-in-stock" className="text-sm">
+                  In stock only
+                </Label>
+              </div>
+            </div>
+
+            <div className="overflow-auto rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Part #</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Vendor</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>QOH</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pagedBrowseParts.items.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground">
+                        No parts found.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    pagedBrowseParts.items.map((p) => (
+                      <TableRow key={p.id}>
+                        <TableCell className="font-medium">{p.part_number}</TableCell>
+                        <TableCell>{p.description}</TableCell>
+                        <TableCell>{(p as any).vendor_label ?? (p as any).vendor_name ?? '—'}</TableCell>
+                        <TableCell>{(p as any).category_label ?? (p as any).category_name ?? '—'}</TableCell>
+                        <TableCell>{(p as any).quantity_on_hand ?? 0}</TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setSelectedPartId(p.id);
+                              setIsBrowsePartsOpen(false);
+                            }}
+                          >
+                            Select
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span>
+                Page {pagedBrowseParts.page + 1} of {pagedBrowseParts.totalPages}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBrowsePartsPage((p) => Math.max(0, p - 1))}
+                  disabled={pagedBrowseParts.page === 0}
+                >
+                  Previous
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBrowsePartsPage((p) => Math.min(pagedBrowseParts.totalPages - 1, p + 1))}
+                  disabled={pagedBrowseParts.page >= pagedBrowseParts.totalPages - 1}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsBrowsePartsOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <QuickAddDialog
-        open={addPartOpen}
-        onOpenChange={setAddPartOpen}
-        title="Add Part to PO"
-        onSave={handleAddPart}
-        onCancel={() => setAddPartOpen(false)}
+        open={newPartDialogOpen}
+        onOpenChange={setNewPartDialogOpen}
+        title="New Part"
+        onSave={handleQuickAddPart}
+        onCancel={() => setNewPartDialogOpen(false)}
       >
-        <div className="space-y-4">
+        <div className="space-y-3">
           <div>
-            <Label>Part *</Label>
-            <Select value={selectedPartId} onValueChange={setSelectedPartId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select part" />
-              </SelectTrigger>
-              <SelectContent>
-                {activeParts.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.part_number} - {p.description}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Part Number *</Label>
+            <Input
+              value={newPartData.part_number}
+              onChange={(e) => setNewPartData({ ...newPartData, part_number: e.target.value.toUpperCase() })}
+              placeholder="e.g., BRK-001"
+              className="font-mono"
+            />
           </div>
           <div>
-            <Label>Quantity</Label>
+            <Label>Description</Label>
             <Input
-              type="number"
-              min="1"
-              value={partQty}
-              onChange={(e) => setPartQty(e.target.value)}
+              value={newPartData.description}
+              onChange={(e) => setNewPartData({ ...newPartData, description: e.target.value })}
+              placeholder="Part description"
             />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Vendor *</Label>
+              <Select
+                value={newPartData.vendor_id}
+                onValueChange={(value) => setNewPartData({ ...newPartData, vendor_id: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select vendor" />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeVendors.map((vendor) => (
+                    <SelectItem key={vendor.id} value={vendor.id}>
+                      {vendor.vendor_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Category *</Label>
+              <Select
+                value={newPartData.category_id}
+                onValueChange={(value) => setNewPartData({ ...newPartData, category_id: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories
+                    .filter((c) => c.is_active)
+                    .map((category) => (
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.category_name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Cost</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={newPartData.cost}
+                onChange={(e) => setNewPartData({ ...newPartData, cost: e.target.value })}
+                placeholder="0.00"
+              />
+            </div>
+            <div>
+              <Label>Selling Price</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={newPartData.selling_price}
+                onChange={(e) => setNewPartData({ ...newPartData, selling_price: e.target.value })}
+                placeholder="0.00"
+              />
+            </div>
           </div>
         </div>
       </QuickAddDialog>
