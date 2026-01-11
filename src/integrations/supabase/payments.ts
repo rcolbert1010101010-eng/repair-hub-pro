@@ -90,6 +90,7 @@ export async function voidPayment(id: string, reason?: string | null): Promise<P
       void_reason: reason ?? null,
     })
     .eq('id', id)
+    .is('voided_at', null)
     .select('*')
     .maybeSingle();
 
@@ -99,7 +100,7 @@ export async function voidPayment(id: string, reason?: string | null): Promise<P
   }
 
   if (!data) {
-    throw new Error('Payment not found');
+    throw new Error('Payment already voided or not found');
   }
 
   return mapPayment(data);

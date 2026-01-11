@@ -419,7 +419,7 @@ export interface SalesOrderChargeLine {
 }
 
 // Payments
-export type PaymentOrderType = 'WORK_ORDER' | 'SALES_ORDER';
+export type PaymentOrderType = 'WORK_ORDER' | 'SALES_ORDER' | 'INVOICE';
 export type PaymentMethod = 'cash' | 'check' | 'card' | 'ach' | 'other';
 export type PaymentStatus = 'UNPAID' | 'PARTIAL' | 'PAID' | 'OVERPAID';
 
@@ -1003,7 +1003,7 @@ export interface UnitPMHistory {
 }
 
 export type InvoiceSourceType = 'SALES_ORDER' | 'WORK_ORDER';
-export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'VOID' | 'PAID' | 'PARTIAL';
+export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'VOID' | 'VOIDED' | 'PAID' | 'PARTIAL';
 export type InvoiceLineType = 'PART' | 'LABOR' | 'FEE' | 'DISCOUNT' | 'TAX' | 'NOTE';
 
 export interface Invoice {
@@ -1023,6 +1023,8 @@ export interface Invoice {
   total: number;
   balance_due: number;
   snapshot_json?: unknown;
+  voided_at?: string | null;
+  void_reason?: string | null;
 }
 
 export interface InvoiceLine {

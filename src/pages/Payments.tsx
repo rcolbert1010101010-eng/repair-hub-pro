@@ -1,6 +1,6 @@
 ﻿import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -9,7 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { fetchAllPayments, type PaymentsFilter, computePaymentSummary } from '@/integrations/supabase/payments';
+import { Textarea } from '@/components/ui/textarea';
+import { fetchAllPayments, type PaymentsFilter, computePaymentSummary, voidPayment } from '@/integrations/supabase/payments';
 import type { Payment, PaymentMethod, PaymentOrderType, PaymentStatus } from '@/types';
 import { useRepos } from '@/repos';
 import { usePayments } from '@/hooks/usePayments';
@@ -67,6 +68,9 @@ export default function PaymentsPage() {
   const [receiveMethod, setReceiveMethod] = useState<PaymentMethod>('cash');
   const [receiveReference, setReceiveReference] = useState('');
   const [receiveNotes, setReceiveNotes] = useState('');
+  const [voidDialogOpen, setVoidDialogOpen] = useState(false);
+  const [voidReason, setVoidReason] = useState('');
+  const [voidPaymentId, setVoidPaymentId] = useState<string | null>(null);
 
   useEffect(() => {
     const formatInputDate = (date: Date) => date.toISOString().slice(0, 10);
@@ -234,6 +238,11 @@ export default function PaymentsPage() {
   const getOrderLink = (payment: Payment) =>
     payment.order_type === 'WORK_ORDER' ? `/work-orders/${payment.order_id}` : `/sales-orders/${payment.order_id}`;
 
+  const voidingPayment = useMemo(
+    () => enrichedPayments.find((p) => p.id === voidPaymentId) ?? null,
+    [enrichedPayments, voidPaymentId]
+  );
+
   const statusBadge = (payment: Payment) => {
     if (payment.voided_at) {
       return <Badge variant="outline" className="bg-destructive/10 text-destructive">Voided</Badge>;
@@ -295,6 +304,44 @@ export default function PaymentsPage() {
     }
   };
 
+  const voidPaymentMutation = useMutation({
+    mutationFn: (input: { paymentId: string; reason: string }) => voidPayment(input.paymentId, input.reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['payments-ledger'] });
+      queryClient.invalidateQueries({ queryKey: ['payments-ledger-all'] });
+      toast({ title: 'Payment voided' });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Unable to void payment',
+        description: error?.message ?? 'Please try again',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const handleOpenVoidPayment = (paymentId: string) => {
+    setVoidPaymentId(paymentId);
+    setVoidReason('');
+    setVoidDialogOpen(true);
+  };
+
+  const handleConfirmVoid = async () => {
+    if (!voidPaymentId) return;
+    if (!voidReason.trim()) {
+      toast({ title: 'Void reason required', variant: 'destructive' });
+      return;
+    }
+    try {
+      await voidPaymentMutation.mutateAsync({ paymentId: voidPaymentId, reason: voidReason.trim() });
+      setVoidDialogOpen(false);
+      setVoidReason('');
+      setVoidPaymentId(null);
+    } catch (error) {
+      // error handled in mutation onError
+    }
+  };
+
   return (
     <div className="page-container space-y-6">
       <div className="flex items-center justify-between gap-3">
@@ -329,7 +376,7 @@ export default function PaymentsPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Total Amount</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Total Amount (Active)</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">${formatMoney(summary.totalAmount)}</div>
@@ -455,14 +502,24 @@ export default function PaymentsPage() {
                 <TableCell>{payment.reference || '-'}</TableCell>
                 <TableCell className="max-w-xs truncate">{payment.notes || '-'}</TableCell>
                 <TableCell className="text-right">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleOpenReceivePaymentForRow(payment)}
-                    disabled={payment.balanceDue <= 0 || !payment.order_id}
-                  >
-                    Receive Payment
-                  </Button>
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleOpenReceivePaymentForRow(payment)}
+                      disabled={payment.balanceDue <= 0 || !payment.order_id}
+                    >
+                      Receive Payment
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleOpenVoidPayment(payment.id)}
+                      disabled={Boolean(payment.voided_at)}
+                    >
+                      {payment.voided_at ? 'Voided' : 'Void'}
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -569,8 +626,47 @@ export default function PaymentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog
+        open={voidDialogOpen}
+        onOpenChange={(open) => {
+          setVoidDialogOpen(open);
+          if (!open) {
+            setVoidReason('');
+            setVoidPaymentId(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Void Payment</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-sm text-muted-foreground">
+              {voidingPayment
+                ? `Voiding payment of $${formatMoney(voidingPayment.amount)} for ${voidingPayment.orderLabel}`
+                : 'Provide a reason to void this payment.'}
+            </div>
+            <Textarea
+              placeholder="Enter void reason"
+              value={voidReason}
+              onChange={(e) => setVoidReason(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setVoidDialogOpen(false)} disabled={voidPaymentMutation.isPending}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmVoid}
+              disabled={voidPaymentMutation.isPending}
+            >
+              {voidPaymentMutation.isPending ? 'Voiding...' : 'Confirm Void'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
-
-

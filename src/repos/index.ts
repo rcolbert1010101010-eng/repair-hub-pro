@@ -62,6 +62,8 @@ const apiBackedRepos: Repos = {
         total,
         balance_due: total,
         snapshot_json: undefined,
+        voided_at: null,
+        void_reason: null,
       };
 
       const invoiceLines: import('@/types').InvoiceLine[] = partLines.map((line, idx) => ({
@@ -129,6 +131,8 @@ const apiBackedRepos: Repos = {
         total,
         balance_due: total,
         snapshot_json: undefined,
+        voided_at: null,
+        void_reason: null,
       };
 
       const invoiceLines: import('@/types').InvoiceLine[] = [];
@@ -190,6 +194,30 @@ const apiBackedRepos: Repos = {
 
       return { invoiceId };
     },
+    voidInvoice: async (input: { invoiceId: string; reason: string }) => {
+      const reason = input.reason?.trim();
+      if (!reason) {
+        throw new Error('Void reason is required');
+      }
+      const current = invoicesStore.get(input.invoiceId);
+      if (!current) throw new Error('Invoice not found');
+      if (current.voided_at) throw new Error('Invoice already voided');
+
+      const paid = Math.max(0, (current.total ?? 0) - (current.balance_due ?? 0));
+      if (paid > 0.01) {
+        throw new Error('Invoice has payments; void payments first.');
+      }
+
+      const updated: import('@/types').Invoice = {
+        ...current,
+        voided_at: new Date().toISOString(),
+        void_reason: reason,
+        status: 'VOIDED',
+        balance_due: 0,
+      };
+      invoicesStore.set(input.invoiceId, updated);
+      return updated;
+    },
     getById: async (input: { invoiceId: string }) => {
       const invoice = invoicesStore.get(input.invoiceId);
       if (!invoice) {
@@ -199,6 +227,9 @@ const apiBackedRepos: Repos = {
     },
     listLines: async (input: { invoiceId: string }) => {
       return invoiceLinesStore.get(input.invoiceId) ?? [];
+    },
+    listAll: async () => {
+      return Array.from(invoicesStore.values());
     },
   },
 };

@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { fetchAllPayments, computePaymentSummary } from '@/integrations/supabase/payments';
-import type { InvoiceRow, Payment, PaymentMethod, PaymentStatus } from '@/types';
+import type { Invoice, InvoiceRow, InvoiceStatus, Payment, PaymentMethod, PaymentStatus } from '@/types';
 import { useRepos } from '@/repos';
 import { useOrderPayments } from '@/hooks/usePayments';
 import { useToast } from '@/hooks/use-toast';
@@ -61,6 +61,12 @@ export default function InvoiceRegistry() {
     queryFn: () => fetchAllPayments({ includeVoided: true }),
   });
 
+  const invoiceRepo = repos.invoices as typeof repos.invoices & { listAll?: () => Promise<Invoice[]> };
+  const invoicesQuery = useQuery({
+    queryKey: ['invoices'],
+    queryFn: () => invoiceRepo.listAll?.() ?? Promise.resolve([] as Invoice[]),
+  });
+
   const paymentsByOrder = useMemo(() => {
     const grouped = new Map<string, Payment[]>();
     (paymentsQuery.data ?? []).forEach((payment) => {
@@ -70,7 +76,21 @@ export default function InvoiceRegistry() {
     return grouped;
   }, [paymentsQuery.data]);
 
-  type InvoiceRowWithMeta = InvoiceRow & { dueAt?: string | null; sourceLabel: string };
+  const invoicesBySource = useMemo(() => {
+    const map = new Map<string, Invoice>();
+    (invoicesQuery.data ?? []).forEach((invoice) => {
+      map.set(`${invoice.source_type}:${invoice.source_id}`, invoice);
+    });
+    return map;
+  }, [invoicesQuery.data]);
+
+  type InvoiceRowWithMeta = InvoiceRow & {
+    dueAt?: string | null;
+    sourceLabel: string;
+    voided_at?: string | null;
+    void_reason?: string | null;
+    invoiceStatus?: InvoiceStatus;
+  };
 
   const invoiceRows: InvoiceRowWithMeta[] = useMemo(() => {
     const salesRows: InvoiceRowWithMeta[] = invoicedSalesOrders.map((order) => {
@@ -82,6 +102,9 @@ export default function InvoiceRegistry() {
       const paymentsForOrder = paymentsByOrder.get(key);
       const paymentSummary = computePaymentSummary(paymentsForOrder, toNumber(order.total));
       const dueAt = (order as { due_at?: string | null })?.due_at ?? null;
+      const invoiceRecord = invoicesBySource.get(key);
+      const isVoided = Boolean(invoiceRecord?.voided_at);
+      const balanceDue = isVoided ? 0 : paymentSummary.balanceDue;
       return {
         orderType: 'SALES_ORDER',
         orderId: order.id,
@@ -90,10 +113,13 @@ export default function InvoiceRegistry() {
         invoiceDate: order.invoiced_at || order.created_at,
         orderTotal: toNumber(order.total),
         totalPaid: paymentSummary.totalPaid,
-        balanceDue: paymentSummary.balanceDue,
+        balanceDue,
         paymentStatus: paymentSummary.status,
         dueAt,
         sourceLabel: `SO ${order.order_number}`,
+        voided_at: invoiceRecord?.voided_at ?? null,
+        void_reason: invoiceRecord?.void_reason ?? null,
+        invoiceStatus: invoiceRecord?.status,
       };
     });
 
@@ -106,6 +132,9 @@ export default function InvoiceRegistry() {
       const paymentsForOrder = paymentsByOrder.get(key);
       const paymentSummary = computePaymentSummary(paymentsForOrder, toNumber(order.total));
       const dueAt = (order as { due_at?: string | null })?.due_at ?? null;
+      const invoiceRecord = invoicesBySource.get(key);
+      const isVoided = Boolean(invoiceRecord?.voided_at);
+      const balanceDue = isVoided ? 0 : paymentSummary.balanceDue;
       return {
         orderType: 'WORK_ORDER',
         orderId: order.id,
@@ -114,17 +143,20 @@ export default function InvoiceRegistry() {
         invoiceDate: order.invoiced_at || order.created_at,
         orderTotal: toNumber(order.total),
         totalPaid: paymentSummary.totalPaid,
-        balanceDue: paymentSummary.balanceDue,
+        balanceDue,
         paymentStatus: paymentSummary.status,
         dueAt,
         sourceLabel: `WO ${order.order_number}`,
+        voided_at: invoiceRecord?.voided_at ?? null,
+        void_reason: invoiceRecord?.void_reason ?? null,
+        invoiceStatus: invoiceRecord?.status,
       };
     });
 
     return [...salesRows, ...workRows].sort(
       (a, b) => new Date(b.invoiceDate).getTime() - new Date(a.invoiceDate).getTime()
     );
-  }, [customers, invoicedSalesOrders, invoicedWorkOrders, paymentsByOrder]);
+  }, [customers, invoicedSalesOrders, invoicedWorkOrders, paymentsByOrder, invoicesBySource]);
 
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<PaymentStatus | 'ALL' | 'OVERDUE'>('ALL');
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceRowWithMeta | null>(null);
@@ -136,12 +168,20 @@ export default function InvoiceRegistry() {
   const filteredInvoiceRows = useMemo(() => {
     const now = Date.now();
     return invoiceRows.filter((row) => {
+      if (row.voided_at) {
+        return paymentStatusFilter === 'ALL';
+      }
       const isOverdue = row.dueAt ? row.balanceDue > 0 && new Date(row.dueAt).getTime() < now : false;
       if (paymentStatusFilter === 'ALL') return true;
       if (paymentStatusFilter === 'OVERDUE') return isOverdue;
       return row.paymentStatus === paymentStatusFilter;
     });
   }, [invoiceRows, paymentStatusFilter]);
+
+  const activeInvoiceRows = useMemo(
+    () => filteredInvoiceRows.filter((row) => !row.voided_at),
+    [filteredInvoiceRows]
+  );
 
   const {
     addPayment,
@@ -153,6 +193,14 @@ export default function InvoiceRegistry() {
   );
 
   const handleOpenPayment = (row: InvoiceRowWithMeta) => {
+    if (row.voided_at) {
+      toast({
+        title: 'Invoice is voided',
+        description: 'Cannot receive payments on a voided invoice.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setSelectedInvoice(row);
     setPaymentAmount(row.balanceDue > 0 ? row.balanceDue.toFixed(2) : '');
     setPaymentMethod('cash');
@@ -217,39 +265,39 @@ export default function InvoiceRegistry() {
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Invoices</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Invoices (Active)</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-semibold">{filteredInvoiceRows.length}</div>
+            <div className="text-2xl font-semibold">{activeInvoiceRows.length}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Total Billed</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Total Billed (Active)</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">
-              ${formatMoney(filteredInvoiceRows.reduce((sum, row) => sum + row.orderTotal, 0))}
+              ${formatMoney(activeInvoiceRows.reduce((sum, row) => sum + row.orderTotal, 0))}
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Total Paid</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Total Paid (Active)</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">
-              ${formatMoney(filteredInvoiceRows.reduce((sum, row) => sum + row.totalPaid, 0))}
+              ${formatMoney(activeInvoiceRows.reduce((sum, row) => sum + row.totalPaid, 0))}
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-muted-foreground">Balance Due</CardTitle>
+            <CardTitle className="text-sm text-muted-foreground">Balance Due (Active)</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-semibold">
-              ${formatMoney(filteredInvoiceRows.reduce((sum, row) => sum + row.balanceDue, 0))}
+              ${formatMoney(activeInvoiceRows.reduce((sum, row) => sum + row.balanceDue, 0))}
             </div>
           </CardContent>
         </Card>
@@ -299,7 +347,9 @@ export default function InvoiceRegistry() {
               </TableRow>
             )}
             {filteredInvoiceRows.map((row) => {
-              const isOverdue = row.dueAt ? row.balanceDue > 0 && new Date(row.dueAt).getTime() < Date.now() : false;
+              const isVoided = Boolean(row.voided_at);
+              const displayBalance = isVoided ? 0 : row.balanceDue;
+              const isOverdue = !isVoided && row.dueAt ? displayBalance > 0 && new Date(row.dueAt).getTime() < Date.now() : false;
               return (
                 <TableRow key={`${row.orderType}-${row.orderId}`} className={isOverdue ? 'bg-amber-50/70' : undefined}>
                   <TableCell>
@@ -314,16 +364,29 @@ export default function InvoiceRegistry() {
                       {row.invoiceNumber}
                     </Link>
                   </TableCell>
-                  <TableCell>{row.sourceLabel}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col">
+                      <span>{row.sourceLabel}</span>
+                      {row.void_reason && (
+                        <span className="text-[11px] text-muted-foreground">Void reason: {row.void_reason}</span>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>{row.customerName}</TableCell>
                   <TableCell>{new Date(row.invoiceDate).toLocaleDateString()}</TableCell>
                   <TableCell className="text-right">${formatMoney(row.orderTotal)}</TableCell>
                   <TableCell className="text-right">${formatMoney(row.totalPaid)}</TableCell>
-                  <TableCell className="text-right">${formatMoney(row.balanceDue)}</TableCell>
+                  <TableCell className="text-right">${formatMoney(displayBalance)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
-                      {paymentStatusBadge(row.paymentStatus)}
-                      {isOverdue && (
+                      {isVoided ? (
+                        <Badge variant="outline" className="bg-destructive/10 text-destructive">
+                          Voided
+                        </Badge>
+                      ) : (
+                        paymentStatusBadge(row.paymentStatus)
+                      )}
+                      {!isVoided && isOverdue && (
                         <Badge variant="outline" className="bg-amber-100 text-amber-800">
                           Overdue
                         </Badge>
@@ -344,7 +407,12 @@ export default function InvoiceRegistry() {
                     >
                       View
                     </Button>
-                    <Button size="sm" onClick={() => handleOpenPayment(row)}>
+                    <Button
+                      size="sm"
+                      onClick={() => handleOpenPayment(row)}
+                      disabled={isVoided}
+                      title={isVoided ? 'Cannot receive payment on a voided invoice' : undefined}
+                    >
                       Receive Payment
                     </Button>
                   </TableCell>
@@ -409,7 +477,3 @@ export default function InvoiceRegistry() {
     </div>
   );
 }
-
-
-
-
