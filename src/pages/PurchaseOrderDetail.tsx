@@ -34,7 +34,11 @@ import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { getPurchaseOrderDerivedStatus } from '@/services/purchaseOrderStatus';
 import { StatusBadge } from '@/components/ui/status-badge';
 
-const formatCurrency = (value: number) => `$${value.toFixed(2)}`;
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+const formatCurrency = (value: number | string | null | undefined) => `$${toNumber(value).toFixed(2)}`;
 
 export default function PurchaseOrderDetail() {
   const { id } = useParams<{ id: string }>();
