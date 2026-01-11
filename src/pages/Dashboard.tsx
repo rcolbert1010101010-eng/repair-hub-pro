@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -34,14 +33,6 @@ import { Wrench, ShoppingCart, AlertTriangle, DollarSign, Shield, ClipboardList,
 import type { ScheduleItem, WorkOrder } from '@/types';
 
 const VIEW_STORAGE_KEY = 'dashboard-view';
-const PIPELINE_VIEW_STORAGE_KEY = 'dashboard.pipelineView';
-
-type PipelineViewMode = 'pipeline' | 'kanban';
-
-const toNumber = (value: number | string | null | undefined) => {
-  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
-  return Number.isFinite(numeric) ? numeric : 0;
-};
 
 type FocusKey = 'blocked' | 'waitingApproval' | 'waitingParts' | 'unassigned';
 
@@ -127,9 +118,6 @@ export default function Dashboard() {
     timeEntries,
     customers,
     units,
-    woConvertToOpen,
-    woUpdateStatus,
-    woInvoice,
   } = useShopStore();
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -146,11 +134,6 @@ export default function Dashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(Date.now());
   const [now, setNow] = useState(Date.now());
-  const [pipelineView, setPipelineView] = useState<PipelineViewMode>(() => {
-    if (typeof window === 'undefined') return 'pipeline';
-    const saved = window.localStorage.getItem(PIPELINE_VIEW_STORAGE_KEY);
-    return saved === 'kanban' ? 'kanban' : 'pipeline';
-  });
 
   useEffect(() => {
     const timer = setTimeout(() => setIsHydrating(false), 200);
@@ -161,11 +144,6 @@ export default function Dashboard() {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem(VIEW_STORAGE_KEY, selectedViewId);
   }, [selectedViewId]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(PIPELINE_VIEW_STORAGE_KEY, pipelineView);
-  }, [pipelineView]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -391,15 +369,13 @@ export default function Dashboard() {
           `Waiting Parts ${waitingPartsWorkOrders.length}`,
           `Waiting Approval ${waitingApprovalWorkOrders.length}`,
         ],
-        description: '',
         icon: AlertTriangle,
         tone: blockedCount > 0 ? 'warning' as const : 'default' as const,
         onClick: () => navigate('/work-orders?filter=blocked'),
       },
       {
         title: 'Today Revenue',
-        value: Math.round(dailyRevenue),
-        meta: [`$${toNumber(dailyRevenue).toFixed(2)}`],
+        value: `$${dailyRevenue.toFixed(2)}`,
         description: 'Invoiced today',
         icon: DollarSign,
         tone: 'success' as const,
@@ -408,7 +384,6 @@ export default function Dashboard() {
       {
         title: 'Negative Inventory',
         value: negativeInventoryParts.length,
-        meta: [],
         description: 'Parts tracking below zero',
         icon: ClipboardList,
         tone: negativeInventoryParts.length > 0 ? 'warning' as const : 'default' as const,
@@ -419,8 +394,7 @@ export default function Dashboard() {
     if (showWarrantyCard) {
       cards.splice(3, 0, {
         title: 'Warranty Exposure',
-        value: warrantyExposure > 0 ? Math.round(warrantyExposure) : 0,
-        meta: [warrantyExposure > 0 ? `$${toNumber(warrantyExposure).toFixed(2)}` : '—'],
+        value: warrantyExposure > 0 ? `$${warrantyExposure.toFixed(2)}` : '—',
         description: 'Includes warranty labor + parts',
         icon: Shield,
         tone: warrantyExposure > 0 ? 'warning' as const : 'default' as const,
@@ -466,102 +440,6 @@ export default function Dashboard() {
       return 'scheduled';
     },
     [scheduleMap]
-  );
-
-  const handleKanbanItemMove = useCallback(
-    (itemId: string, fromColumnId: string, toColumnId: string) => {
-      // Map column transitions to work order status changes
-      const workOrder = workOrders.find((wo) => wo.id === itemId);
-      if (!workOrder) {
-        toast.error('Work order not found');
-        return;
-      }
-
-      // Determine what action to take based on the target column
-      let result: { success: boolean; error?: string } = { success: false, error: 'Invalid move' };
-      let actionTaken = '';
-
-      switch (toColumnId) {
-        case 'new':
-        case 'waitingApproval':
-          // These are ESTIMATE status - can't move back to estimate easily
-          toast.error('Cannot move to this column. Work orders in this status are determined by their approval state.');
-          return;
-
-        case 'waitingParts':
-          // This is determined by inventory, not status
-          toast.error('This column is determined by parts availability, not work order status.');
-          return;
-
-        case 'scheduled':
-        case 'inProgress':
-          // Moving to scheduled or in-progress
-          if (workOrder.status === 'ESTIMATE') {
-            // First convert to OPEN
-            result = woConvertToOpen(workOrder.id);
-            if (result.success && toColumnId === 'inProgress') {
-              result = woUpdateStatus(workOrder.id, 'IN_PROGRESS');
-              actionTaken = 'Approved and started';
-            } else {
-              actionTaken = 'Approved';
-            }
-          } else if (workOrder.status === 'OPEN') {
-            if (toColumnId === 'inProgress') {
-              result = woUpdateStatus(workOrder.id, 'IN_PROGRESS');
-              actionTaken = 'Started work';
-            } else {
-              result = { success: true };
-              actionTaken = 'Moved to scheduled';
-            }
-          } else {
-            result = { success: true };
-          }
-          break;
-
-        case 'qa':
-          // QA is typically marked via notes or schedule status
-          if (workOrder.status === 'ESTIMATE') {
-            result = woConvertToOpen(workOrder.id);
-            if (result.success) {
-              result = woUpdateStatus(workOrder.id, 'IN_PROGRESS');
-            }
-          } else if (workOrder.status === 'OPEN') {
-            result = woUpdateStatus(workOrder.id, 'IN_PROGRESS');
-          } else {
-            result = { success: true };
-          }
-          actionTaken = 'Moved to QA';
-          break;
-
-        case 'readyToInvoice':
-          // Work order should be IN_PROGRESS to be ready for invoice
-          if (workOrder.status === 'ESTIMATE') {
-            result = woConvertToOpen(workOrder.id);
-            if (result.success) {
-              result = woUpdateStatus(workOrder.id, 'IN_PROGRESS');
-              actionTaken = 'Approved and ready for invoice';
-            }
-          } else if (workOrder.status === 'OPEN') {
-            result = woUpdateStatus(workOrder.id, 'IN_PROGRESS');
-            actionTaken = 'Ready for invoice';
-          } else {
-            result = { success: true };
-            actionTaken = 'Ready for invoice';
-          }
-          break;
-
-        default:
-          toast.error('Unknown column');
-          return;
-      }
-
-      if (result.success) {
-        toast.success(actionTaken || `Moved ${workOrder.order_number || 'work order'}`);
-      } else {
-        toast.error(result.error || 'Could not move work order');
-      }
-    },
-    [workOrders, woConvertToOpen, woUpdateStatus]
   );
 
   const pipelineColumns = useMemo(() => {
@@ -877,23 +755,12 @@ export default function Dashboard() {
                 <CardTitle className="text-base font-semibold">Work Order Pipeline</CardTitle>
                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Open only</p>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs"
-                onClick={() => setPipelineView(pipelineView === 'pipeline' ? 'kanban' : 'pipeline')}
-              >
-                {pipelineView === 'pipeline' ? 'Kanban view' : 'List view'}
-              </Button>
+              <Badge variant="outline" className="text-xs">
+                Kanban view
+              </Badge>
             </CardHeader>
             <CardContent>
-              <DashboardKanban
-                columns={pipelineColumns}
-                loading={isHydrating}
-                emptyState={pipelineEmptyState}
-                layout={pipelineView === 'kanban' ? 'kanban' : 'grid'}
-                onItemMove={handleKanbanItemMove}
-              />
+              <DashboardKanban columns={pipelineColumns} loading={isHydrating} emptyState={pipelineEmptyState} />
             </CardContent>
           </Card>
         </div>

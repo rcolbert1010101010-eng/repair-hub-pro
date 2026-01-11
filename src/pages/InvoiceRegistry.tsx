@@ -14,6 +14,7 @@ import type { Invoice, InvoiceRow, InvoiceStatus, Payment, PaymentMethod, Paymen
 import { useRepos } from '@/repos';
 import { useOrderPayments } from '@/hooks/usePayments';
 import { useToast } from '@/hooks/use-toast';
+import { Textarea } from '@/components/ui/textarea';
 
 const PAYMENT_METHOD_OPTIONS: Array<{ value: PaymentMethod; label: string }> = [
   { value: 'cash', label: 'Cash' },
@@ -164,6 +165,9 @@ export default function InvoiceRegistry() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash');
   const [paymentReference, setPaymentReference] = useState('');
   const [paymentNotes, setPaymentNotes] = useState('');
+  const [voidDialogOpen, setVoidDialogOpen] = useState(false);
+  const [voidReason, setVoidReason] = useState('');
+  const [voidInvoiceId, setVoidInvoiceId] = useState<string | null>(null);
 
   const filteredInvoiceRows = useMemo(() => {
     const now = Date.now();
@@ -239,6 +243,42 @@ export default function InvoiceRegistry() {
     } catch (error: any) {
       toast({
         title: 'Unable to record payment',
+        description: error?.message ?? 'Please try again',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleOpenVoidInvoice = (row: InvoiceRowWithMeta) => {
+    const invoiceRecord = invoicesBySource.get(`${row.orderType}:${row.orderId}`);
+    setVoidInvoiceId(invoiceRecord?.id ?? null);
+    setVoidReason('');
+    setVoidDialogOpen(true);
+  };
+
+  const handleConfirmVoid = async () => {
+    if (!voidInvoiceId) return;
+    if (!voidReason.trim()) {
+      toast({ title: 'Void reason required', variant: 'destructive' });
+      return;
+    }
+    const invoiceRepo = repos.invoices as typeof repos.invoices & {
+      voidInvoice?: (input: { invoiceId: string; reason: string }) => Promise<Invoice>;
+    };
+    if (!invoiceRepo.voidInvoice) {
+      toast({ title: 'Void not available', variant: 'destructive' });
+      return;
+    }
+    try {
+      await invoiceRepo.voidInvoice({ invoiceId: voidInvoiceId, reason: voidReason.trim() });
+      toast({ title: 'Invoice voided' });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setVoidDialogOpen(false);
+      setVoidReason('');
+      setVoidInvoiceId(null);
+    } catch (error: any) {
+      toast({
+        title: 'Unable to void invoice',
         description: error?.message ?? 'Please try again',
         variant: 'destructive',
       });
@@ -415,6 +455,21 @@ export default function InvoiceRegistry() {
                     >
                       Receive Payment
                     </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleOpenVoidInvoice(row)}
+                      disabled={isVoided || Math.max(0, toNumber(row.orderTotal) - toNumber(row.balanceDue)) > 0.01}
+                      title={
+                        isVoided
+                          ? 'Invoice already voided'
+                          : Math.max(0, toNumber(row.orderTotal) - toNumber(row.balanceDue)) > 0.01
+                            ? 'Invoice has payments; void payments first.'
+                            : undefined
+                      }
+                    >
+                      {isVoided ? 'Voided' : 'Void'}
+                    </Button>
                   </TableCell>
                 </TableRow>
               );
@@ -470,6 +525,38 @@ export default function InvoiceRegistry() {
             </Button>
             <Button onClick={handleSavePayment} disabled={addPaymentMutation.isPending}>
               {addPaymentMutation.isPending ? 'Saving...' : 'Save Payment'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={voidDialogOpen}
+        onOpenChange={(open) => {
+          setVoidDialogOpen(open);
+          if (!open) {
+            setVoidReason('');
+            setVoidInvoiceId(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Void Invoice</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Textarea
+              placeholder="Enter void reason"
+              value={voidReason}
+              onChange={(e) => setVoidReason(e.target.value)}
+            />
+          </div>
+          <DialogFooter className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setVoidDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmVoid}>
+              Confirm Void
             </Button>
           </DialogFooter>
         </DialogContent>
