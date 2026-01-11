@@ -19,29 +19,30 @@ export default function Settings() {
   const { settings, updateSettings } = useRepos().settings;
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
-  const [formData, setFormData] = useState({
-    shop_name: settings.shop_name,
-    default_labor_rate: settings.default_labor_rate.toString(),
-    default_tax_rate: settings.default_tax_rate.toString(),
-    currency: settings.currency,
-    units: settings.units,
-    markup_retail_percent: settings.markup_retail_percent.toString(),
-    markup_fleet_percent: settings.markup_fleet_percent.toString(),
-    markup_wholesale_percent: settings.markup_wholesale_percent.toString(),
-    session_user_name: settings.session_user_name || '',
-    inventory_negative_qoh_policy: settings.inventory_negative_qoh_policy || 'WARN',
-  });
+  const [formData, setFormData] = useState(() => ({
+    shop_name: settings?.shop_name ?? '',
+    default_labor_rate: (settings?.default_labor_rate ?? 0).toString(),
+    default_tax_rate: (settings?.default_tax_rate ?? 0).toString(),
+    currency: settings?.currency ?? 'USD',
+    units: settings?.units ?? 'imperial',
+    markup_retail_percent: (settings?.markup_retail_percent ?? 0).toString(),
+    markup_fleet_percent: (settings?.markup_fleet_percent ?? 0).toString(),
+    markup_wholesale_percent: (settings?.markup_wholesale_percent ?? 0).toString(),
+    session_user_name: settings?.session_user_name || '',
+    inventory_negative_qoh_policy: settings?.inventory_negative_qoh_policy || 'WARN',
+  }));
 
   const hydrateForm = useCallback(() => {
+    if (!settings) return;
     setFormData({
-      shop_name: settings.shop_name,
-      default_labor_rate: settings.default_labor_rate.toString(),
-      default_tax_rate: settings.default_tax_rate.toString(),
-      currency: settings.currency,
-      units: settings.units,
-      markup_retail_percent: settings.markup_retail_percent.toString(),
-      markup_fleet_percent: settings.markup_fleet_percent.toString(),
-      markup_wholesale_percent: settings.markup_wholesale_percent.toString(),
+      shop_name: settings.shop_name ?? '',
+      default_labor_rate: (settings.default_labor_rate ?? 0).toString(),
+      default_tax_rate: (settings.default_tax_rate ?? 0).toString(),
+      currency: settings.currency ?? 'USD',
+      units: settings.units ?? 'imperial',
+      markup_retail_percent: (settings.markup_retail_percent ?? 0).toString(),
+      markup_fleet_percent: (settings.markup_fleet_percent ?? 0).toString(),
+      markup_wholesale_percent: (settings.markup_wholesale_percent ?? 0).toString(),
       session_user_name: settings.session_user_name || '',
       inventory_negative_qoh_policy: settings.inventory_negative_qoh_policy || 'WARN',
     });
