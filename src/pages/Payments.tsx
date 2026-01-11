@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { fetchAllPayments, type PaymentsFilter, computePaymentSummary, voidPayment } from '@/integrations/supabase/payments';
-import type { Payment, PaymentMethod, PaymentOrderType, PaymentStatus } from '@/types';
+import type { Invoice, Payment, PaymentMethod, PaymentOrderType, PaymentStatus } from '@/types';
 import { useRepos } from '@/repos';
 import { usePayments } from '@/hooks/usePayments';
 import { useToast } from '@/hooks/use-toast';
@@ -55,6 +55,7 @@ export default function PaymentsPage() {
   const { salesOrders } = repos.salesOrders;
   const { workOrders } = repos.workOrders;
   const { customers } = repos.customers;
+  const invoiceRepo = repos.invoices as typeof repos.invoices & { listAll?: () => Promise<Invoice[]> };
   const [orderTypeFilter, setOrderTypeFilter] = useState<PaymentOrderType | 'ALL'>('ALL');
   const [methodFilter, setMethodFilter] = useState<PaymentMethod | 'ALL'>('ALL');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('active');
@@ -68,6 +69,7 @@ export default function PaymentsPage() {
   const [receiveMethod, setReceiveMethod] = useState<PaymentMethod>('cash');
   const [receiveReference, setReceiveReference] = useState('');
   const [receiveNotes, setReceiveNotes] = useState('');
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [voidReason, setVoidReason] = useState('');
   const [voidPaymentId, setVoidPaymentId] = useState<string | null>(null);
@@ -183,6 +185,19 @@ export default function PaymentsPage() {
   }, [customerMap, payments, salesOrderMap, summaryByOrder, workOrderMap]);
 
   const receiveOrderOptions = useMemo(() => {
+    if (receiveOrderType === 'INVOICE') {
+      return invoices
+        .filter((invoice) => !invoice.voided_at && toNumber(invoice.balance_due) > 0.01)
+        .map((invoice) => {
+          const customerName =
+            customerMap.get(invoice.customer_id)?.company_name ??
+            'Customer';
+          return {
+            id: invoice.id,
+            label: `${invoice.invoice_number} — ${customerName}`,
+          };
+        });
+    }
     const options =
       receiveOrderType === 'WORK_ORDER'
         ? workOrders
@@ -197,17 +212,24 @@ export default function PaymentsPage() {
         label: `${order.order_number} — ${customerName}`,
       };
     });
-  }, [customerMap, receiveOrderType, salesOrders, workOrders]);
+  }, [customerMap, invoices, receiveOrderType, salesOrders, workOrders]);
 
+  const selectedInvoice = invoices.find((inv) => inv.id === receiveOrderId);
   const selectedOrder =
     receiveOrderType === 'WORK_ORDER'
       ? workOrderMap.get(receiveOrderId)
-      : salesOrderMap.get(receiveOrderId);
-  const selectedOrderTotal = toNumber(selectedOrder?.total);
+      : receiveOrderType === 'SALES_ORDER'
+        ? salesOrderMap.get(receiveOrderId)
+        : selectedInvoice;
+  const selectedOrderTotal = toNumber(
+    receiveOrderType === 'INVOICE' ? selectedInvoice?.total : selectedOrder?.total
+  );
   const selectedCustomerName =
-    (selectedOrder ? customerMap.get((selectedOrder as { customer_id: string }).customer_id)?.company_name : undefined) ??
-    (selectedOrder as { customer?: { company_name?: string } } | undefined)?.customer?.company_name ??
-    '';
+    receiveOrderType === 'INVOICE'
+      ? customerMap.get(selectedInvoice?.customer_id ?? '')?.company_name ?? 'Customer'
+      : (selectedOrder ? customerMap.get((selectedOrder as { customer_id: string }).customer_id)?.company_name : undefined) ??
+        (selectedOrder as { customer?: { company_name?: string } } | undefined)?.customer?.company_name ??
+        '';
   const receivePayments = usePayments(
     receiveOrderId ? receiveOrderType : undefined,
     receiveOrderId || undefined,
@@ -242,6 +264,28 @@ export default function PaymentsPage() {
     () => enrichedPayments.find((p) => p.id === voidPaymentId) ?? null,
     [enrichedPayments, voidPaymentId]
   );
+
+  useEffect(() => {
+    if (receiveOrderType !== 'INVOICE') return;
+    let active = true;
+    const loadInvoices = async () => {
+      if (!invoiceRepo.listAll) return;
+      try {
+        const data = await invoiceRepo.listAll();
+        if (!active) return;
+        setInvoices(data);
+        if (receiveOrderId && !data.find((inv) => inv.id === receiveOrderId && !inv.voided_at && toNumber(inv.balance_due) > 0.01)) {
+          setReceiveOrderId('');
+        }
+      } catch (error) {
+        console.error('Failed to load invoices', error);
+      }
+    };
+    loadInvoices();
+    return () => {
+      active = false;
+    };
+  }, [invoiceRepo, receiveOrderId, receiveOrderType]);
 
   const statusBadge = (payment: Payment) => {
     if (payment.voided_at) {
@@ -534,35 +578,49 @@ export default function PaymentsPage() {
           </DialogHeader>
           <div className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <Select
-                value={receiveOrderType}
-                onValueChange={(value) => {
-                  setReceiveOrderType(value as PaymentOrderType);
-                  setReceiveOrderId('');
-                  setReceiveAmount('');
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Order type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="WORK_ORDER">Work Order</SelectItem>
-                  <SelectItem value="SALES_ORDER">Sales Order</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={receiveOrderId} onValueChange={(value) => setReceiveOrderId(value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder={`Select ${receiveOrderType === 'WORK_ORDER' ? 'Work Order' : 'Sales Order'}`} />
-                </SelectTrigger>
-                <SelectContent>
-                  {receiveOrderOptions.map((option) => (
-                    <SelectItem key={option.id} value={option.id}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                <Select
+                  value={receiveOrderType}
+                  onValueChange={(value) => {
+                    setReceiveOrderType(value as PaymentOrderType);
+                    setReceiveOrderId('');
+                    setReceiveAmount('');
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Order type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="WORK_ORDER">Work Order</SelectItem>
+                    <SelectItem value="SALES_ORDER">Sales Order</SelectItem>
+                    <SelectItem value="INVOICE">Invoice</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={receiveOrderId} onValueChange={(value) => setReceiveOrderId(value)}>
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={
+                        receiveOrderType === 'WORK_ORDER'
+                          ? 'Select Work Order'
+                          : receiveOrderType === 'SALES_ORDER'
+                            ? 'Select Sales Order'
+                            : 'Select Invoice'
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {receiveOrderOptions.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            {receiveOrderType === 'INVOICE' && receiveOrderOptions.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                No open invoices available (voided invoices cannot receive payments).
+              </p>
+            )}
 
             {receiveOrderId && (
               <div className="grid grid-cols-3 gap-3 bg-muted/40 rounded-md p-3 text-sm">
@@ -620,7 +678,13 @@ export default function PaymentsPage() {
             <Button variant="outline" onClick={() => setReceivePaymentOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSubmitReceivePayment} disabled={receivePayments.addPayment.isPending}>
+            <Button
+              onClick={handleSubmitReceivePayment}
+              disabled={
+                receivePayments.addPayment.isPending ||
+                (receiveOrderType === 'INVOICE' && receiveOrderOptions.length === 0)
+              }
+            >
               {receivePayments.addPayment.isPending ? 'Saving...' : 'Save Payment'}
             </Button>
           </DialogFooter>

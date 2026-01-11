@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Payment, PaymentMethod, PaymentOrderType } from '@/types';
 import { computePaymentSummary, fetchPayments, PAYMENT_EPSILON, recordPayment, voidPayment } from '@/integrations/supabase/payments';
+import { repos } from '@/repos';
 
 const toNumber = (value: number | string | null | undefined) => {
   const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
@@ -24,17 +25,26 @@ const usePaymentsInternal = (
   });
 
   const addPayment = useMutation({
-    mutationFn: (input: { amount: number; method: PaymentMethod; reference?: string | null; notes?: string | null }) => {
+    mutationFn: async (input: { amount: number; method: PaymentMethod; reference?: string | null; notes?: string | null }) => {
       if (!hasOrder) {
-        return Promise.reject(new Error('Order required to record payment'));
+        throw new Error('Order required to record payment');
+      }
+      if (orderType === 'INVOICE') {
+        let invoice;
+        try {
+          invoice = await repos.invoices.getById({ invoiceId: orderId as string });
+        } catch (error) {
+          throw new Error('Invoice not found; cannot receive payment.');
+        }
+        if (invoice.voided_at) {
+          throw new Error('Invoice is voided; cannot receive payment.');
+        }
       }
       const currentSummary = computePaymentSummary(paymentsQuery.data, orderTotal);
       const projectedPaid = currentSummary.totalPaid + toNumber(input.amount);
       const allowedTotal = toNumber(orderTotal);
       if (projectedPaid - allowedTotal > PAYMENT_EPSILON) {
-        return Promise.reject(
-          new Error('Payment too large: Amount exceeds the remaining balance. Adjust the amount or use a credit workflow.')
-        );
+        throw new Error('Payment too large: Amount exceeds the remaining balance. Adjust the amount or use a credit workflow.');
       }
       return recordPayment({
         order_type: orderType as PaymentOrderType,
