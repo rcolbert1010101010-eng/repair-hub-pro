@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useShopStore } from '@/stores/shopStore';
@@ -30,7 +30,7 @@ import {
   CommandList,
 } from '@/components/ui/command';
 import { Wrench, ShoppingCart, AlertTriangle, DollarSign, Shield, ClipboardList, Clock3, Search, LayoutDashboard, RotateCw, Command as CommandIcon } from 'lucide-react';
-import type { ScheduleItem, WorkOrder } from '@/types';
+import type { ScheduleItem, WorkOrder, Customer, Unit, Part } from '@/types';
 
 const VIEW_STORAGE_KEY = 'dashboard-view';
 
@@ -120,7 +120,7 @@ export default function Dashboard() {
     units,
   } = useShopStore();
 
-  const [searchTerm, setSearchTerm] = useState('');
+  const [commandQuery, setCommandQuery] = useState('');
   const [isHydrating, setIsHydrating] = useState(true);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const queryClient = useQueryClient();
@@ -134,6 +134,23 @@ export default function Dashboard() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState(Date.now());
   const [now, setNow] = useState(Date.now());
+  const isMac = useMemo(
+    () =>
+      typeof window !== 'undefined' &&
+      /Mac|iPod|iPhone|iPad/i.test(window.navigator?.platform || window.navigator?.userAgent || ''),
+    []
+  );
+  const quickShortcutLabel = isMac ? '⌘ + K' : 'Ctrl + K';
+  const quickButtonLabel = isMac ? 'Quick (⌘ + K)' : 'Quick (Ctrl + K)';
+  type GlobalSearchResults = {
+    customers: { id: string; label: string; detail?: string; route: string }[];
+    units: { id: string; label: string; detail?: string; route: string }[];
+    workOrders: { id: string; label: string; detail?: string; route: string }[];
+    parts: { id: string; label: string; detail?: string; route: string }[];
+  };
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  const [globalSearchResults, setGlobalSearchResults] = useState<GlobalSearchResults | null>(null);
+  const [isGlobalSearching, setIsGlobalSearching] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setIsHydrating(false), 200);
@@ -342,8 +359,138 @@ export default function Dashboard() {
     ],
     [navigate]
   );
+  const filteredCommands = useMemo(
+    () =>
+      commandPaletteActions.filter((item) =>
+        item.label.toLowerCase().includes(commandQuery.toLowerCase())
+      ),
+    [commandPaletteActions, commandQuery]
+  );
 
-  const kpiCards = useMemo(() => {
+  const handleGlobalSearchSubmit = useCallback(() => {
+    const query = globalSearchQuery.trim();
+    if (!query) {
+      setGlobalSearchResults(null);
+      return;
+    }
+    setIsGlobalSearching(true);
+    const q = query.toLowerCase();
+
+    const customersResults = (customers as Customer[]).filter((c) => {
+      const name = c.company_name ?? '';
+      const contact = `${(c as any).first_name ?? ''} ${(c as any).last_name ?? ''}`;
+      const phone = (c as any).phone ?? '';
+      const email = (c as any).email ?? '';
+      return (
+        name.toLowerCase().includes(q) ||
+        contact.toLowerCase().includes(q) ||
+        phone.toLowerCase().includes(q) ||
+        email.toLowerCase().includes(q)
+      );
+    }).map((c) => ({
+      id: c.id,
+      label: c.company_name ?? 'Customer',
+      detail: (c as any).phone ?? (c as any).email ?? undefined,
+      route: `/customers/${c.id}`,
+    }));
+
+    const unitsResults = (units as Unit[]).filter((u) => {
+      const iden = u.unit_name ?? '';
+      const vin = (u as any).vin ?? '';
+      const plate = (u as any).license_plate ?? '';
+      const desc = (u as any).description ?? '';
+      return (
+        iden.toLowerCase().includes(q) ||
+        vin.toLowerCase().includes(q) ||
+        plate.toLowerCase().includes(q) ||
+        desc.toLowerCase().includes(q)
+      );
+    }).map((u) => ({
+      id: u.id,
+      label: u.unit_name ?? 'Unit',
+      detail: (u as any).vin ?? (u as any).license_plate ?? undefined,
+      route: `/units/${u.id}`,
+    }));
+
+    const workOrdersResults = (openWorkOrders as WorkOrder[]).filter((wo) => {
+      const number = wo.order_number ?? '';
+      const customerName = customersMap.get(wo.customer_id)?.company_name ?? '';
+      const unitName = unitsMap.get(wo.unit_id)?.unit_name ?? '';
+      return (
+        number.toLowerCase().includes(q) ||
+        customerName.toLowerCase().includes(q) ||
+        unitName.toLowerCase().includes(q)
+      );
+    }).map((wo) => ({
+      id: wo.id,
+      label: wo.order_number || wo.id,
+      detail: customersMap.get(wo.customer_id)?.company_name ?? 'Customer',
+      route: `/work-orders/${wo.id}`,
+    }));
+
+    const partsResults = (parts as Part[]).filter((p) => {
+      const num = (p as any).part_number ?? '';
+      const desc = p.description ?? '';
+      return num.toLowerCase().includes(q) || desc.toLowerCase().includes(q);
+    }).map((p) => ({
+      id: p.id,
+      label: (p as any).part_number ?? p.name ?? 'Part',
+      detail: p.description,
+      route: '/inventory', // no direct part detail route noted
+    }));
+
+    setGlobalSearchResults({
+      customers: customersResults,
+      units: unitsResults,
+      workOrders: workOrdersResults,
+      parts: partsResults,
+    });
+    setIsGlobalSearching(false);
+  }, [customers, customersMap, globalSearchQuery, navigate, openWorkOrders, parts, units, unitsMap]);
+
+  const managerKpiCards = useMemo(() => {
+    const overdueCount = openWorkOrders.filter((wo) => {
+      const due = (wo as { due_at?: string | null }).due_at;
+      return due && new Date(due) < new Date();
+    }).length;
+
+    return [
+      {
+        title: 'Today Revenue',
+        value: `$${dailyRevenue.toFixed(2)}`,
+        description: 'Invoiced today',
+        icon: DollarSign,
+        tone: 'success' as const,
+        onClick: () => navigate('/work-orders?filter=today'),
+      },
+      {
+        title: 'Open WOs',
+        value: openWorkOrders.length,
+        description: 'Excludes invoiced',
+        icon: Wrench,
+        tone: 'primary' as const,
+        onClick: () => navigate('/work-orders?status=open'),
+      },
+      {
+        title: 'Overdue',
+        value: overdueCount,
+        description: 'Past due dates',
+        icon: AlertTriangle,
+        tone: overdueCount > 0 ? 'warning' as const : 'default' as const,
+        onClick: () => navigate('/work-orders?filter=overdue'),
+      },
+      {
+        title: 'Efficiency',
+        value: '—',
+        description: 'Coming soon',
+        icon: Shield,
+        tone: 'default' as const,
+        onClick: () => {},
+      },
+    ];
+  }, [dailyRevenue, navigate, openWorkOrders]);
+
+  const defaultKpiCards = useMemo(() => {
     const inProgressCount = openWorkOrders.filter((wo) => wo.status === 'IN_PROGRESS').length;
     const waitingCount = openWorkOrders.filter((wo) => wo.status === 'OPEN').length;
     const newCount = openWorkOrders.filter((wo) => wo.status === 'ESTIMATE').length;
@@ -414,6 +561,8 @@ export default function Dashboard() {
     showWarrantyCard,
     navigate,
   ]);
+
+  const kpiCards = activeView.id === 'manager' ? managerKpiCards : defaultKpiCards;
 
   const determineColumnId = useCallback(
     (
@@ -578,8 +727,15 @@ export default function Dashboard() {
       });
     }
 
-    const order = activeView.alertOrder;
-    return groups.sort((a, b) => {
+    const order = activeView.alertOrder ?? [];
+    const filtered =
+      activeView.id === 'parts'
+        ? groups.filter((g) => ['waitingParts', 'negativeInventory', 'openPurchaseOrders'].includes(g.id))
+        : activeView.id === 'technician'
+          ? groups.filter((g) => ['waitingParts', 'waitingApproval'].includes(g.id))
+          : groups;
+
+    return filtered.sort((a, b) => {
       const idxA = order.indexOf(a.id);
       const idxB = order.indexOf(b.id);
       const valueA = idxA === -1 ? Number.MAX_SAFE_INTEGER : idxA;
@@ -624,7 +780,10 @@ export default function Dashboard() {
                 <DropdownMenuTrigger asChild>
                   <Button size="sm" variant="outline" className="flex items-center gap-2">
                     <LayoutDashboard className="w-4 h-4" />
-                    {activeView.label}
+                    <span className="font-semibold">Custom View</span>
+                    <Badge variant="secondary" className="text-[10px]">
+                      {activeView.label}
+                    </Badge>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
@@ -664,16 +823,22 @@ export default function Dashboard() {
                 </Button>
               ))}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
               <Input
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
+                value={globalSearchQuery}
+                onChange={(event) => {
+                  setGlobalSearchQuery(event.target.value);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleGlobalSearchSubmit();
+                }}
                 placeholder="Global search"
                 className="min-w-[220px]"
                 aria-label="Global search"
                 ref={searchInputRef}
               />
-              <Button size="sm" variant="outline" onClick={() => searchInputRef.current?.focus()}>
+              <Button size="sm" variant="outline" onClick={handleGlobalSearchSubmit}>
                 <Search className="w-4 h-4" />
               </Button>
               <Button
@@ -683,8 +848,64 @@ export default function Dashboard() {
                 className="flex items-center gap-1"
               >
                 <CommandIcon className="w-4 h-4" />
-                <span className="text-[11px]">Cmd+K</span>
+                <span className="text-[11px]">{quickButtonLabel}</span>
               </Button>
+              </div>
+              {globalSearchQuery && globalSearchResults && (
+                <Card className="max-h-80 overflow-auto border border-muted/70">
+                  {isGlobalSearching ? (
+                    <div className="p-3 text-sm text-muted-foreground">Searching…</div>
+                  ) : (
+                    <div className="divide-y divide-border/70 text-sm">
+                      {(['customers', 'units', 'workOrders', 'parts'] as const).map((section) => {
+                        const sectionLabel =
+                          section === 'customers'
+                            ? 'Customers'
+                            : section === 'units'
+                              ? 'Units'
+                              : section === 'workOrders'
+                                ? 'Work Orders'
+                                : 'Parts';
+                        const items = globalSearchResults[section];
+                        return (
+                          <div key={section} className="p-3">
+                            <p className="text-xs font-semibold text-muted-foreground mb-2">{sectionLabel}</p>
+                            {items.length === 0 ? (
+                              <p className="text-xs text-muted-foreground">No {sectionLabel.toLowerCase()} found.</p>
+                            ) : (
+                              <div className="space-y-1">
+                                {items.map((item) => (
+                                  <Button
+                                    key={item.id}
+                                    variant="ghost"
+                                    className="w-full justify-start px-2 py-1.5"
+                                    onClick={() => navigate(item.route)}
+                                  >
+                                    <div className="flex flex-col items-start">
+                                      <span className="font-medium text-sm">{item.label}</span>
+                                      {item.detail && (
+                                        <span className="text-xs text-muted-foreground">{item.detail}</span>
+                                      )}
+                                    </div>
+                                  </Button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {globalSearchResults.customers.length === 0 &&
+                        globalSearchResults.units.length === 0 &&
+                        globalSearchResults.workOrders.length === 0 &&
+                        globalSearchResults.parts.length === 0 && (
+                          <div className="p-3 text-sm text-muted-foreground">
+                            No results found for “{globalSearchQuery}”.
+                          </div>
+                        )}
+                    </div>
+                  )}
+                </Card>
+              )}
             </div>
           </div>
         }
@@ -694,7 +915,9 @@ export default function Dashboard() {
         <Card className="border border-muted/70">
           <CardHeader className="flex items-center justify-between gap-2">
             <div>
-              <CardTitle className="text-base font-semibold">Today's Focus</CardTitle>
+              <CardTitle className="text-base font-semibold">
+                {activeView.id === 'service-writer' ? 'My Work Queue' : "Today's Focus"}
+              </CardTitle>
               <p className="text-xs text-muted-foreground">{activeView.description}</p>
             </div>
             <Badge variant="outline" className="text-xs">
@@ -704,6 +927,110 @@ export default function Dashboard() {
           <CardContent className="space-y-4">
             {todayFocusActions.length === 0 ? (
               <p className="text-sm text-muted-foreground">No prioritized work right now.</p>
+            ) : activeView.id === 'service-writer' ? (
+              <div className="mt-2 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                <Card className="flex flex-col justify-between">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <CardTitle className="text-base font-semibold">Approvals Needed</CardTitle>
+                      <Badge variant="outline" className="text-xs">
+                        {waitingApprovalWorkOrders.length}
+                      </Badge>
+                    </div>
+                    <CardDescription className="text-xs">Estimates pending sign off</CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-0 flex items-center justify-between gap-2">
+                    <div className="text-xs text-muted-foreground">
+                      Review and approve estimates to keep work moving.
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => navigate('/work-orders?filter=waiting-approval')}
+                    >
+                      View
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card className="flex flex-col justify-between">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <CardTitle className="text-base font-semibold">Blocked Work Orders</CardTitle>
+                      <Badge variant="outline" className="text-xs">
+                        {blockedCount}
+                      </Badge>
+                    </div>
+                    <CardDescription className="text-xs">Work stalled for action</CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-0 flex items-center justify-between gap-2">
+                    <div className="text-xs text-muted-foreground">
+                      Clear blockers to keep the schedule flowing.
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => navigate('/work-orders?filter=blocked')}
+                    >
+                      View
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                <Card className="flex flex-col justify-between">
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <CardTitle className="text-base font-semibold">Waiting on Parts</CardTitle>
+                      <Badge variant="outline" className="text-xs">
+                        {waitingPartsWorkOrders.length}
+                      </Badge>
+                    </div>
+                    <CardDescription className="text-xs">Parts shortages blocking progress</CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-0 flex items-center justify-between gap-2">
+                    <div className="text-xs text-muted-foreground">
+                      Follow up on orders to reduce downtime.
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => navigate('/work-orders?filter=waiting-parts')}
+                    >
+                      View
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : activeView.id === 'manager' || activeView.id === 'parts' ? (
+              <div className="mt-2 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {todayFocusActions.slice(0, 3).map((action) => (
+                  <Card key={action.key} className="flex flex-col justify-between">
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <CardTitle className="text-base font-semibold">{action.label}</CardTitle>
+                        <Badge variant="outline" className="text-xs">
+                          {action.count}
+                        </Badge>
+                      </div>
+                      <CardDescription className="text-xs">{action.description}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="pt-0 flex items-center justify-between gap-2">
+                      <div className="text-xs text-muted-foreground">
+                        {activeView.id === 'parts' && action.key === 'waitingParts'
+                          ? 'Check parts shortages blocking work.'
+                          : activeView.id === 'parts' && action.key === 'blocked'
+                            ? 'Clear blockers to keep orders moving.'
+                            : activeView.id === 'parts' && action.key === 'waitingApproval'
+                              ? 'Follow up on approvals tied to parts.'
+                              : action.description}
+                      </div>
+                      <Button size="sm" variant="outline" onClick={() => navigate(action.route)}>
+                        View
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             ) : (
               todayFocusActions.map((action) => (
                 <div key={action.key} className="flex flex-wrap items-center justify-between gap-3 rounded border border-border/70 p-3">
@@ -747,73 +1074,82 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <div>
-          <Card>
-            <CardHeader className="flex items-center justify-between space-x-2">
-              <div>
-                <CardTitle className="text-base font-semibold">Work Order Pipeline</CardTitle>
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Open only</p>
-              </div>
-              <Badge variant="outline" className="text-xs">
-                Kanban view
-              </Badge>
+      <Card>
+        <CardHeader className="flex items-center justify-between space-x-2">
+          <div>
+            <CardTitle className="text-base font-semibold">Work Order Pipeline</CardTitle>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Open only</p>
+          </div>
+          <Badge variant="outline" className="text-xs">
+            Kanban view
+          </Badge>
+        </CardHeader>
+        <CardContent>
+          <DashboardKanban columns={pipelineColumns} loading={isHydrating} emptyState={pipelineEmptyState} />
+        </CardContent>
+      </Card>
+
+      <div className="space-y-4">
+        {activeView.sections.showAlertsRail && (
+          <Card className="border border-muted/70">
+            <CardHeader>
+              <CardTitle className="text-base font-semibold">Alerts</CardTitle>
             </CardHeader>
             <CardContent>
-              <DashboardKanban columns={pipelineColumns} loading={isHydrating} emptyState={pipelineEmptyState} />
+              <DashboardAlertsRail groups={alertGroups} loading={isHydrating} />
             </CardContent>
           </Card>
-        </div>
-        <div className="space-y-4">
-          {activeView.sections.showAlertsRail && (
-            <DashboardAlertsRail groups={alertGroups} loading={isHydrating} />
-          )}
-          {activeView.sections.showTechSnapshot && (
-            <>
-              {techSnapshot ? (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm font-semibold">Technician Snapshot</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3 text-sm">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Total technicians</p>
-                      <p className="text-2xl font-semibold">{techSnapshot.total}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Clocked in now</p>
-                      <p className="text-xl font-medium">{techSnapshot.clockedIn}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-sm font-semibold">Technician Snapshot</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-xs text-muted-foreground">
-                      Technician/time data will show once time entries or staff profiles are available.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-            </>
-          )}
-        </div>
+        )}
+        {activeView.sections.showTechSnapshot && (
+          <>
+            {techSnapshot ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm font-semibold">Technician Snapshot</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Total technicians</p>
+                    <p className="text-2xl font-semibold">{techSnapshot.total}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Clocked in now</p>
+                    <p className="text-xl font-medium">{techSnapshot.clockedIn}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm font-semibold">Technician Snapshot</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xs text-muted-foreground">
+                    Technician/time data will show once time entries or staff profiles are available.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+          </>
+        )}
       </div>
       <Dialog open={isCommandPaletteOpen} onOpenChange={setIsCommandPaletteOpen}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Command Palette</DialogTitle>
-            <DialogDescription>Ctrl+K opens quick actions.</DialogDescription>
+            <DialogDescription>{isMac ? '⌘K' : 'Ctrl+K'} opens quick actions.</DialogDescription>
           </DialogHeader>
           <Command>
-            <CommandInput placeholder="Search or trigger an action" autoFocus />
+            <CommandInput
+              placeholder="Search or trigger an action"
+              autoFocus
+              value={commandQuery}
+              onValueChange={setCommandQuery}
+            />
             <CommandList>
-              <CommandEmpty>No commands available.</CommandEmpty>
+              <CommandEmpty>Type to search quick actions.</CommandEmpty>
               <CommandGroup>
-                {commandPaletteActions.map((item) => (
+                {filteredCommands.map((item) => (
                   <CommandItem
                     key={item.label}
                     onSelect={() => {
