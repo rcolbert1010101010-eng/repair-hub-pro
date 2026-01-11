@@ -160,10 +160,6 @@ export default function SalesOrderDetail() {
   const isLocked = isInvoiced || isCancelled;
   const isCustomerOnHold = Boolean(customer?.credit_hold);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
-  const [quickMode, setQuickMode] = useState(false);
-  const [quickPartSearch, setQuickPartSearch] = useState('');
-  const [quickQty, setQuickQty] = useState('1');
-  const quickPartInputRef = useRef<HTMLInputElement | null>(null);
   const statusLabel =
     currentOrder?.status === 'INVOICED'
       ? 'Invoiced'
@@ -184,17 +180,6 @@ export default function SalesOrderDetail() {
     () => (currentOrder ? getSalesOrderLines(currentOrder.id) : []),
     [currentOrder, currentOrderId, currentOrderUpdatedAt, getSalesOrderLines]
   );
-  const quickInvoiceIssues = useMemo(() => {
-    const issues: string[] = [];
-    if (!currentOrder) issues.push('Order missing');
-    if (isLocked) issues.push('Order is locked');
-    if (currentOrder?.status === 'ESTIMATE') issues.push('Convert estimate before invoicing');
-    if (isCustomerOnHold) issues.push('Customer on credit hold');
-    if (!orderLines.length) issues.push('Add at least one line');
-    const hasInvalidQty = orderLines.some((l) => l.quantity <= 0);
-    if (hasInvalidQty) issues.push('Line quantities must be > 0');
-    return issues;
-  }, [currentOrder, isCustomerOnHold, isLocked, orderLines]);
   const orderTotal = toNumber(currentOrder?.total);
   const payments = usePayments('SALES_ORDER', currentOrder?.id, orderTotal);
   const paymentStatusClass = useMemo(() => {
@@ -258,46 +243,6 @@ export default function SalesOrderDetail() {
     }
   };
 
-  const quickSelectedPart = useMemo(() => {
-    const search = quickPartSearch.trim().toLowerCase();
-    if (!search) return null;
-    return (
-      activeParts.find(
-        (p) => p.part_number.toLowerCase() === search || (p.barcode && p.barcode.toLowerCase() === search)
-      ) || null
-    );
-  }, [activeParts, quickPartSearch]);
-
-  const handleQuickAdd = () => {
-    if (!currentOrder) return;
-    if (isLocked) {
-      toast({ title: 'Locked', description: 'Order is locked and cannot be edited.', variant: 'destructive' });
-      return;
-    }
-    if (!quickSelectedPart) {
-      toast({ title: 'Select a part', variant: 'destructive' });
-      return;
-    }
-    const qtyNum = Number(quickQty);
-    if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
-      toast({ title: 'Invalid quantity', description: 'Quantity must be greater than 0', variant: 'destructive' });
-      return;
-    }
-    const result = soAddPartLine(currentOrder.id, quickSelectedPart.id, qtyNum);
-    if (!result.success) {
-      toast({ title: 'Error', description: result.error, variant: 'destructive' });
-      return;
-    }
-    setQuickQty('1');
-    setQuickPartSearch('');
-    setIsDirty(true);
-    toast({ title: 'Line Added', description: `${quickSelectedPart.part_number} added/updated` });
-    setTimeout(() => {
-      quickPartInputRef.current?.focus();
-      quickPartInputRef.current?.select();
-    }, 0);
-  };
-
   const handleUpdateQty = (lineId: string, newQty: number) => {
     if (isLocked) {
       toast({ title: 'Locked', description: 'Order is locked and cannot be edited.', variant: 'destructive' });
@@ -357,26 +302,6 @@ export default function SalesOrderDetail() {
     } else {
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
-  };
-
-  const handleQuickInvoiceAndPrint = () => {
-    if (quickInvoiceIssues.length > 0 || !currentOrder) return;
-    if (currentOrder.status === 'ESTIMATE') {
-      const convert = soConvertToOpen(currentOrder.id);
-      if (!convert.success) {
-        toast({ title: 'Error', description: convert.error, variant: 'destructive' });
-        return;
-      }
-      setOrder((prev) => (prev && prev.id === currentOrder.id ? { ...prev, status: 'OPEN' } : prev || currentOrder));
-    }
-    const result = soInvoice(currentOrder.id);
-    if (!result.success) {
-      toast({ title: 'Error', description: result.error, variant: 'destructive' });
-      return;
-    }
-    toast({ title: 'Order Invoiced' });
-    setPrintMode('invoice');
-    setTimeout(() => window.print(), 0);
   };
 
   const handleQuickAddCustomer = () => {
@@ -727,18 +652,6 @@ export default function SalesOrderDetail() {
         actions={
           <div className="flex flex-wrap gap-2">
             {currentOrder && <StatusBadge status={currentOrder.status} />}
-            {currentOrder?.order_number && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={async () => {
-                  await navigator.clipboard.writeText(currentOrder.order_number);
-                  toast({ title: 'Copied', description: 'Sales order number copied' });
-                }}
-              >
-                Copy SO #
-              </Button>
-            )}
             <Button variant="outline" onClick={() => window.print()}>
               <Printer className="w-4 h-4 mr-2" />
               Print
@@ -825,111 +738,6 @@ export default function SalesOrderDetail() {
           <AlertTitle>Order Cancelled</AlertTitle>
           <AlertDescription>This order is cancelled and cannot be edited.</AlertDescription>
         </Alert>
-      )}
-
-      {!isLocked && (
-        <Card className="mb-4 p-4 space-y-3 no-print">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-semibold">Quick Sale Mode</h3>
-                {quickMode && <Badge variant="secondary">Quick</Badge>}
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Fast add and invoice with keyboard-friendly flow.
-              </p>
-            </div>
-            <Button
-              variant={quickMode ? 'default' : 'outline'}
-              onClick={() => {
-                setQuickMode((prev) => {
-                  const next = !prev;
-                  if (next) {
-                    setTimeout(() => quickPartInputRef.current?.focus(), 0);
-                  } else {
-                    setQuickPartSearch('');
-                    setQuickQty('1');
-                  }
-                  return next;
-                });
-              }}
-            >
-              {quickMode ? 'Exit Quick Mode' : 'Enter Quick Mode'}
-            </Button>
-          </div>
-          {quickMode && (
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 md:grid-cols-[2fr_auto_auto] gap-3 items-end">
-                <div className="space-y-1">
-                  <Label>Part or Barcode</Label>
-                  <Input
-                    ref={quickPartInputRef}
-                    value={quickPartSearch}
-                    onChange={(e) => {
-                      setQuickPartSearch(e.target.value);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleQuickAdd();
-                      } else if (e.key === 'Tab') {
-                        // default behavior ok
-                      }
-                    }}
-                    placeholder="Scan or type part number"
-                    autoFocus
-                  />
-                  {quickSelectedPart && (
-                    <p className="text-xs text-muted-foreground">
-                      {quickSelectedPart.part_number} — {quickSelectedPart.description || 'No description'}
-                    </p>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <Label>Qty</Label>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={quickQty}
-                    onChange={(e) => setQuickQty(e.target.value)}
-                    onFocus={(e) => e.currentTarget.select()}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleQuickAdd();
-                      } else if (e.key === 'Tab') {
-                        // allow tab
-                      }
-                    }}
-                    className="w-24"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="invisible">Add</Label>
-                  <Button onClick={handleQuickAdd} className="w-full">
-                    Add / Increment
-                  </Button>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2 items-center">
-                <Button
-                  onClick={handleQuickInvoiceAndPrint}
-                  disabled={quickInvoiceIssues.length > 0}
-                  title={quickInvoiceIssues[0] || undefined}
-                >
-                  Invoice + Print Receipt
-                </Button>
-                {quickInvoiceIssues.length > 0 && (
-                  <ul className="list-disc list-inside text-destructive text-xs">
-                    {quickInvoiceIssues.map((issue) => (
-                      <li key={issue}>{issue}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          )}
-        </Card>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 no-print">
