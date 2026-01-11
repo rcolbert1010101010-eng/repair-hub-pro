@@ -15,6 +15,11 @@ import { getReturnInsights } from '@/services/returnsWarrantyInsights';
 const STATUS_FLOW: ReturnStatus[] = ['DRAFT', 'REQUESTED', 'APPROVED', 'SHIPPED', 'RECEIVED', 'CREDITED', 'CLOSED', 'CANCELLED'];
 const CONDITIONS: ReturnLineCondition[] = ['NEW', 'INSTALLED', 'DEFECTIVE', 'DAMAGED', 'UNKNOWN'];
 
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
 export default function ReturnDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -268,7 +273,7 @@ export default function ReturnDetail() {
                     <TableRow key={line.id}>
                       <TableCell className="font-mono">{part?.part_number || line.part_id}</TableCell>
                       <TableCell>{line.quantity}</TableCell>
-                      <TableCell>{line.unit_cost != null ? `$${line.unit_cost.toFixed(2)}` : '—'}</TableCell>
+                      <TableCell>{line.unit_cost != null ? `$${toNumber(line.unit_cost).toFixed(2)}` : '—'}</TableCell>
                       <TableCell>{line.condition}</TableCell>
                       <TableCell>{line.reason || '—'}</TableCell>
                       <TableCell>

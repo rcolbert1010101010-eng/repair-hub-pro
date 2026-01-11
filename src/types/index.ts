@@ -189,6 +189,95 @@ export interface CycleCountLine {
   updated_at: string;
 }
 
+export type ManufacturedProductType = 'DUMP_BODY' | 'TRAILER' | 'CUSTOM_EQUIPMENT';
+
+export interface ManufacturedProduct {
+  id: string;
+  name: string;
+  sku: string;
+  product_type: ManufacturedProductType;
+  description: string | null;
+  base_price: number;
+  estimatedLaborHours: number;
+  estimatedOverhead: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ManufacturedProductOption {
+  id: string;
+  product_id: string;
+  name: string;
+  option_type: string;
+  price_delta: number;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ManufacturingProductBomItem {
+  id: string;
+  productId: string;
+  partId: string;
+  quantity: number;
+  scrapFactor: number;
+  notes?: string | null;
+  partNumber?: string;
+  description?: string;
+  cost?: number;
+}
+
+export interface ManufacturingProductCostSummary {
+  productId: string;
+  materialCost: number;
+  laborHours: number;
+  laborRate: number;
+  laborCost: number;
+  overhead: number;
+  totalEstimatedCost: number;
+}
+
+export type ManufacturingBuildStatus =
+  | 'ENGINEERING'
+  | 'FABRICATION'
+  | 'ASSEMBLY'
+  | 'PAINT'
+  | 'QA'
+  | 'READY'
+  | 'DELIVERED'
+  | 'CANCELLED';
+
+export interface ManufacturingBuild {
+  id: string;
+  build_number: string;
+  customer_id: string | null;
+  unit_id: string | null;
+  product_id: string;
+  status: ManufacturingBuildStatus;
+  serial_number: string | null;
+  notes: string | null;
+  priority: 'low' | 'normal' | 'high' | 'rush';
+  promisedDate?: string | null;
+  assignedTechnicianId?: string | null;
+  internalJobNumber?: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ManufacturingBuildSelectedOption {
+  id: string;
+  build_id: string;
+  option_id: string | null;
+  option_name_snapshot: string;
+  price_delta_snapshot: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export type VendorCostSource = 'RECEIVING' | 'MANUAL';
 
 export interface VendorCostHistory {
@@ -328,6 +417,44 @@ export interface SalesOrderChargeLine {
   created_at: string;
   updated_at: string;
 }
+
+// Payments
+export type PaymentOrderType = 'WORK_ORDER' | 'SALES_ORDER' | 'INVOICE';
+export type PaymentMethod = 'cash' | 'check' | 'card' | 'ach' | 'other';
+export type PaymentStatus = 'UNPAID' | 'PARTIAL' | 'PAID' | 'OVERPAID';
+
+export interface Payment {
+  id: string;
+  created_at: string;
+  order_type: PaymentOrderType;
+  order_id: string;
+  amount: number;
+  method: PaymentMethod;
+  reference?: string | null;
+  notes?: string | null;
+  voided_at?: string | null;
+  void_reason?: string | null;
+}
+
+export interface PaymentSummary {
+  totalPaid: number;
+  balanceDue: number;
+  status: PaymentStatus;
+}
+
+export type InvoiceOrderType = 'WORK_ORDER' | 'SALES_ORDER';
+
+export type InvoiceRow = {
+  orderType: InvoiceOrderType;
+  orderId: string;
+  invoiceNumber: string;
+  customerName: string;
+  invoiceDate: string;
+  orderTotal: number;
+  totalPaid: number;
+  balanceDue: number;
+  paymentStatus: PaymentStatus;
+};
 
 // Fabrication Jobs
 export type FabJobSourceType = 'STANDALONE' | 'WORK_ORDER';
@@ -873,4 +1000,43 @@ export interface UnitPMHistory {
   related_work_order_id: string | null;
   is_active: boolean;
   created_at: string;
+}
+
+export type InvoiceSourceType = 'SALES_ORDER' | 'WORK_ORDER';
+export type InvoiceStatus = 'DRAFT' | 'ISSUED' | 'VOID' | 'VOIDED' | 'PAID' | 'PARTIAL';
+export type InvoiceLineType = 'PART' | 'LABOR' | 'FEE' | 'DISCOUNT' | 'TAX' | 'NOTE';
+
+export interface Invoice {
+  id: string;
+  invoice_number: string;
+  source_type: InvoiceSourceType;
+  source_id: string;
+  customer_id: string;
+  unit_id?: string | null;
+  status: InvoiceStatus;
+  issued_at?: string | null;
+  due_at?: string | null;
+  subtotal_parts: number;
+  subtotal_labor: number;
+  subtotal_fees: number;
+  tax_amount: number;
+  total: number;
+  balance_due: number;
+  snapshot_json?: unknown;
+  voided_at?: string | null;
+  void_reason?: string | null;
+}
+
+export interface InvoiceLine {
+  id: string;
+  invoice_id: string;
+  line_type: InvoiceLineType;
+  ref_type?: string | null;
+  ref_id?: string | null;
+  description: string;
+  qty: number;
+  unit_price: number;
+  amount: number;
+  taxable?: boolean | null;
+  tax_rate?: number | null;
 }

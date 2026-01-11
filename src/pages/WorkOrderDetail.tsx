@@ -50,13 +50,14 @@ import { useToast } from '@/hooks/use-toast';
 import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Clock, Square, Shield, RotateCcw, Check, Pencil, X as XIcon, Info, ClipboardList } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { PrintWorkOrder, PrintWorkOrderPickList } from '@/components/print/PrintInvoice';
-import { calcPartPriceForLevel } from '@/domain/pricing/partPricing';
+import { calcPartPriceForLevel, getPartCostBasis } from '@/domain/pricing/partPricing';
 import { getPurchaseOrderDerivedStatus } from '@/services/purchaseOrderStatus';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { PurchaseOrderPreviewDialog } from '@/components/purchase-orders/PurchaseOrderPreviewDialog';
 import { AddUnitDialog } from '@/components/units/AddUnitDialog';
 import { useRepos } from '@/repos';
 import { summarizeFabJob } from '@/services/fabJobSummary';
+import { usePayments } from '@/hooks/usePayments';
 import type {
   FabJobLine,
   PlasmaJobLine,
@@ -116,6 +117,14 @@ const JOB_STATUS_OPTIONS: { value: WorkOrderJobStatus; label: string }[] = [
 ];
 
 type BlockerChip = { label: string; variant: 'outline' | 'secondary' | 'destructive' };
+
+const PAYMENT_METHOD_OPTIONS = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'check', label: 'Check' },
+  { value: 'card', label: 'Credit Card' },
+  { value: 'ach', label: 'ACH' },
+  { value: 'other', label: 'Other' },
+];
 
 const PRINT_STYLES = `
   @media print {
@@ -239,6 +248,16 @@ export default function WorkOrderDetail() {
   const plasmaRepo = repos.plasma;
   const workOrderRepo = repos.workOrders;
   const schedulingRepo = repos.scheduling;
+  const toNumeric = (value: number | string | null | undefined) => {
+    if (typeof value === 'number') return value;
+    if (typeof value === 'string') {
+      const parsed = parseFloat(value);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    }
+    return 0;
+  };
+  const formatNumber = (value: number | string | null | undefined, digits = 2) =>
+    toNumeric(value).toFixed(digits);
 
   const isNew = id === 'new';
   const unitFromQuery = searchParams.get('unit_id') || '';
@@ -299,6 +318,10 @@ export default function WorkOrderDetail() {
   >({});
   const [jobEditingMode, setJobEditingMode] = useState<Record<string, boolean>>({});
   const [jobSaving, setJobSaving] = useState<Record<string, boolean>>({});
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'check' | 'card' | 'ach' | 'other'>('cash');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
   const [deleteJobDialog, setDeleteJobDialog] = useState<{ open: boolean; jobId: string | null; jobTitle: string }>({ open: false, jobId: null, jobTitle: '' });
   const [deleteJobConfirmText, setDeleteJobConfirmText] = useState('');
   const [newJobTitle, setNewJobTitle] = useState('');
@@ -307,6 +330,9 @@ export default function WorkOrderDetail() {
   const [plasmaWarnings, setPlasmaWarnings] = useState<string[]>([]);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const currentOrder = workOrders.find((o) => o.id === id) || order;
+  const currentOrderId = currentOrder?.id ?? null;
+  const currentOrderUpdatedAt =
+    (currentOrder as any)?.updated_at ?? (currentOrder as any)?.updatedAt ?? null;
   const scheduleItems = schedulingRepo.list();
   const isScheduled =
     !!currentOrder &&
@@ -332,7 +358,10 @@ export default function WorkOrderDetail() {
       fabricationRepo.createForWorkOrder(currentOrder.id);
     }
   }, [currentOrder, fabricationRepo, plasmaRepo]);
-  const jobLines: WorkOrderJobLine[] = currentOrder ? getWorkOrderJobLines(currentOrder.id) : [];
+  const jobLines: WorkOrderJobLine[] = useMemo(
+    () => (currentOrder ? getWorkOrderJobLines(currentOrder.id) : []),
+    [currentOrder, currentOrderId, currentOrderUpdatedAt, getWorkOrderJobLines]
+  );
   const activityEvents = currentOrder ? getWorkOrderActivity(currentOrder.id) : [];
   const jobMap = useMemo(
     () => {
@@ -352,9 +381,33 @@ export default function WorkOrderDetail() {
     return map;
   }, [jobLines, getJobPartReadiness]);
   const allPartLines = currentOrder ? getWorkOrderPartLines(currentOrder.id) : [];
-  const laborLines = currentOrder ? getWorkOrderLaborLines(currentOrder.id) : [];
+  const laborLines = useMemo(
+    () => (currentOrder ? getWorkOrderLaborLines(currentOrder.id) : []),
+    [currentOrder, currentOrderId, currentOrderUpdatedAt, getWorkOrderLaborLines]
+  );
   const partLines = allPartLines.filter((l) => !l.is_core_refund_line);
   const activeJobTimers = currentOrder ? getActiveJobTimers(currentOrder.id) : [];
+  const orderTotal = toNumeric(currentOrder?.total);
+  const payments = usePayments('WORK_ORDER', currentOrder?.id, orderTotal);
+  const paymentStatusClass = useMemo(() => {
+    switch (payments.summary.status) {
+      case 'PAID':
+        return 'bg-green-100 text-green-700';
+      case 'OVERPAID':
+        return 'bg-amber-100 text-amber-800';
+      case 'PARTIAL':
+        return 'bg-orange-100 text-orange-700';
+      default:
+        return 'bg-slate-100 text-slate-700';
+    }
+  }, [payments.summary.status]);
+  useEffect(() => {
+    if (!currentOrder) return;
+    if (paymentAmount !== '') return;
+    if (payments.summary.balanceDue > 0) {
+      setPaymentAmount(payments.summary.balanceDue.toFixed(2));
+    }
+  }, [currentOrder, paymentAmount, payments.summary.balanceDue]);
   const workOrderActualHours = currentOrder ? getWorkOrderActualHours(currentOrder.id) : 0;
   const jobProfitSummaries = useMemo(() => {
     const summary: Record<string, JobProfitSummary> = {};
@@ -363,7 +416,7 @@ export default function WorkOrderDetail() {
       const jobLaborLines = laborLines.filter((line) => line.job_line_id === job.id);
       const jobTimeEntries = getJobTimeEntries(job.id);
       const jobActualHours = getJobActualHours(job.id);
-      const partsRevenue = jobPartLines.reduce((sum, line) => sum + line.line_total, 0);
+      const partsRevenue = jobPartLines.reduce((sum, line) => sum + toNumeric(line.line_total), 0);
       const partsCost = jobPartLines.reduce((sum, line) => {
         const part = parts.find((p) => p.id === line.part_id);
         return sum + line.quantity * (part?.cost ?? 0);
@@ -456,6 +509,44 @@ const jobReadinessValues = Object.values(jobReadinessById);
       return updated ? next : prev;
     });
   }, [jobLines]);
+
+  useEffect(() => {
+    if (jobLines.length === 0) return;
+
+    // Find the default "General" job for this work order
+    const generalJob = jobLines.find((job) => job.title === 'General');
+    if (!generalJob) return;
+
+    // If it's already in editing mode, do nothing
+    if (jobEditingMode[generalJob.id]) return;
+
+    const draft = jobDrafts[generalJob.id];
+    if (!draft) return;
+
+    // Only auto-edit if the draft still matches the pristine job state
+    const isPristine =
+      draft.title === generalJob.title &&
+      draft.complaint === (generalJob.complaint ?? '') &&
+      draft.cause === (generalJob.cause ?? '') &&
+      draft.correction === (generalJob.correction ?? '');
+
+    if (!isPristine) return;
+
+    // Clear title so the input shows the "Job Title" placeholder
+    setJobDrafts((prev) => ({
+      ...prev,
+      [generalJob.id]: {
+        ...prev[generalJob.id],
+        title: '',
+      },
+    }));
+
+    // Start the default job in editing mode
+    setJobEditingMode((prev) => ({
+      ...prev,
+      [generalJob.id]: true,
+    }));
+  }, [jobLines, jobDrafts, jobEditingMode]);
 
   const handleJobDraftChange = <K extends keyof JobDraft>(jobId: string, field: K, value: JobDraft[K]) => {
     setJobDrafts((prev) => ({
@@ -677,7 +768,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
   const plasmaData = currentOrder ? plasmaRepo.getByWorkOrder(currentOrder.id) : null;
   const plasmaJob = plasmaData?.job;
   const plasmaLines = plasmaData?.lines ?? [];
-  const plasmaTotal = plasmaLines.reduce((sum, line) => sum + (line.sell_price_total ?? 0), 0);
+  const plasmaTotal = plasmaLines.reduce((sum, line) => sum + toNumeric(line.sell_price_total), 0);
   const plasmaChargeLine = chargeLines.find(
     (line) => line.source_ref_type === 'PLASMA_JOB' && line.source_ref_id === plasmaJob?.id
   );
@@ -697,7 +788,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
   // Time tracking data
   const timeEntries = currentOrder ? getTimeEntriesByWorkOrder(currentOrder.id) : [];
   const totalMinutes = timeEntries.reduce((sum, te) => sum + te.total_minutes, 0);
-  const totalHours = (totalMinutes / 60).toFixed(2);
+  const totalHours = formatNumber(totalMinutes / 60);
   useEffect(() => {
     const orderId = currentOrder?.id;
     if (orderId && orderId !== prevOrderIdRef.current) {
@@ -909,8 +1000,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
       toast({ title: 'Error', description: result.error, variant: 'destructive' });
     }
   };
-
-  const handleInvoice = () => {
+  const handleInvoice = async () => {
     if (!currentOrder) return;
     if (isCustomerOnHold) {
       toast({
@@ -920,15 +1010,23 @@ const jobReadinessValues = Object.values(jobReadinessById);
       });
       return;
     }
-    const result = woInvoice(currentOrder.id);
-    if (result.success) {
-      toast({ title: 'Order Invoiced', description: 'Work order has been invoiced and locked' });
-      setShowInvoiceDialog(false);
-    } else {
-      toast({ title: 'Error', description: result.error, variant: 'destructive' });
+
+    try {
+      const { invoiceId } = await repos.invoices.createFromWorkOrder({ workOrderId: currentOrder.id });
+
+      const result = woInvoice(currentOrder.id);
+      if (result.success) {
+        toast({ title: 'Order Invoiced', description: 'Work order has been invoiced and locked' });
+        setShowInvoiceDialog(false);
+        navigate(`/invoices/${invoiceId}`);
+      } else {
+        toast({ title: 'Error', description: result.error, variant: 'destructive' });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast({ title: 'Error', description: message, variant: 'destructive' });
     }
   };
-
   const handleQuickAddCustomer = () => {
     if (!newCustomerName.trim()) return;
     const result = addCustomer({
@@ -981,6 +1079,47 @@ const jobReadinessValues = Object.values(jobReadinessById);
     updateWorkOrderNotes(currentOrder.id, notesValue.trim() || null);
     setIsEditingNotes(false);
     toast({ title: 'Notes Updated' });
+  };
+
+  const handleAddPayment = async () => {
+    if (!currentOrder) return;
+    const amountValue = toNumeric(paymentAmount);
+    if (amountValue <= 0) {
+      toast({ title: 'Enter amount', description: 'Payment amount must be greater than 0', variant: 'destructive' });
+      return;
+    }
+    try {
+      await payments.addPayment.mutateAsync({
+        amount: amountValue,
+        method: paymentMethod,
+        reference: paymentReference || null,
+        notes: paymentNotes || null,
+      });
+      toast({ title: 'Payment recorded' });
+      setPaymentAmount('');
+      setPaymentReference('');
+      setPaymentNotes('');
+    } catch (error: any) {
+      toast({
+        title: 'Unable to record payment',
+        description: error?.message ?? 'Please try again',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleVoidPayment = async (paymentId: string) => {
+    const reason = window.prompt('Enter void reason (optional)') ?? '';
+    try {
+      await payments.voidPayment.mutateAsync({ paymentId, reason });
+      toast({ title: 'Payment voided' });
+    } catch (error: any) {
+      toast({
+        title: 'Unable to void payment',
+        description: error?.message ?? 'Please try again',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleMarkCoreReturned = (lineId: string) => {
@@ -1208,9 +1347,9 @@ const jobReadinessValues = Object.values(jobReadinessById);
       : customer?.price_level === 'FLEET'
       ? 'Fleet'
       : 'Retail';
-  const partsSubtotal = partLines.reduce((sum, line) => sum + line.line_total, 0);
-  const laborSubtotal = laborLines.reduce((sum, line) => sum + line.line_total, 0);
-  const otherCharges = otherChargeLines.reduce((sum, line) => sum + line.total_price, 0);
+  const partsSubtotal = partLines.reduce((sum, line) => sum + toNumeric(line.line_total), 0);
+  const laborSubtotal = laborLines.reduce((sum, line) => sum + toNumeric(line.line_total), 0);
+  const otherCharges = otherChargeLines.reduce((sum, line) => sum + toNumeric(line.total_price), 0);
   const fabricationTotal = fabTotal;
   const overviewGrandTotal = partsSubtotal + laborSubtotal + fabricationTotal + plasmaTotal + otherCharges;
   const prevOrderIdRef = useRef<string | undefined>(undefined);
@@ -1519,11 +1658,11 @@ const jobReadinessValues = Object.values(jobReadinessById);
             <div className="pt-2 border-t border-border">
               <p className="text-sm font-medium">Work Order Rollups</p>
               <div className="flex flex-wrap gap-4 text-xs text-muted-foreground mt-2">
-                <span>Actual Hours: {workOrderActualHours.toFixed(2)}h</span>
-                <span>Labor Revenue: ${woProfitTotals.laborRevenue.toFixed(2)}</span>
-                <span>Parts Revenue: ${woProfitTotals.partsRevenue.toFixed(2)}</span>
+                <span>Actual Hours: {formatNumber(workOrderActualHours)}h</span>
+                <span>Labor Revenue: ${formatNumber(woProfitTotals.laborRevenue)}</span>
+                <span>Parts Revenue: ${formatNumber(woProfitTotals.partsRevenue)}</span>
                 <span>
-                  Margin: ${woProfitTotals.margin.toFixed(2)} ({woProfitTotals.marginPercent.toFixed(1)}%)
+                  Margin: ${formatNumber(woProfitTotals.margin)} ({formatNumber(woProfitTotals.marginPercent, 1)}%)
                 </span>
               </div>
             </div>
@@ -1599,7 +1738,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                       <TooltipContent>Sum of parts, labor, fabrication, plasma, and other charges</TooltipContent>
                     </Tooltip>
                   </div>
-                  <div className="text-2xl font-bold">${overviewGrandTotal.toFixed(2)}</div>
+                  <div className="text-2xl font-bold">${formatNumber(overviewGrandTotal)}</div>
                 </div>
                 <div className="border rounded-lg p-4">
                   <div className="text-sm text-muted-foreground flex items-center gap-1">
@@ -1613,7 +1752,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                       <TooltipContent>{partLines.length} part lines, sum of line totals</TooltipContent>
                     </Tooltip>
                   </div>
-                  <div className="text-lg font-semibold">${partsSubtotal.toFixed(2)}</div>
+                  <div className="text-lg font-semibold">${formatNumber(partsSubtotal)}</div>
                 </div>
                 <div className="border rounded-lg p-4">
                   <div className="text-sm text-muted-foreground flex items-center gap-1">
@@ -1629,7 +1768,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                       </TooltipContent>
                     </Tooltip>
                   </div>
-                  <div className="text-lg font-semibold">${laborSubtotal.toFixed(2)}</div>
+                  <div className="text-lg font-semibold">${formatNumber(laborSubtotal)}</div>
                 </div>
                 <div className="border rounded-lg p-4">
                   <div className="text-sm text-muted-foreground flex items-center gap-1">
@@ -1645,7 +1784,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                       </TooltipContent>
                     </Tooltip>
                   </div>
-                  <div className="text-lg font-semibold">${fabricationTotal.toFixed(2)}</div>
+                  <div className="text-lg font-semibold">${formatNumber(fabricationTotal)}</div>
                 </div>
                 <div className="border rounded-lg p-4">
                   <div className="text-sm text-muted-foreground flex items-center gap-1">
@@ -1661,7 +1800,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                       </TooltipContent>
                     </Tooltip>
                   </div>
-                  <div className="text-lg font-semibold">${plasmaTotal.toFixed(2)}</div>
+                  <div className="text-lg font-semibold">${formatNumber(plasmaTotal)}</div>
                 </div>
                 <div className="border rounded-lg p-4">
                   <div className="text-sm text-muted-foreground flex items-center gap-1">
@@ -1675,7 +1814,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                       <TooltipContent>{otherChargeLines.length} other charge lines included</TooltipContent>
                     </Tooltip>
                   </div>
-                  <div className="text-lg font-semibold">${otherCharges.toFixed(2)}</div>
+                  <div className="text-lg font-semibold">${formatNumber(otherCharges)}</div>
                 </div>
               </div>
 
@@ -1703,13 +1842,23 @@ const jobReadinessValues = Object.values(jobReadinessById);
                         ) : (
                           partLines.map((line) => {
                             const part = parts.find((p) => p.id === line.part_id);
+                            const { basis } = part ? getPartCostBasis(part) : { basis: null };
                             return (
                               <TableRow key={line.id}>
                                 <TableCell className="font-mono">{part?.part_number || '-'}</TableCell>
                                 <TableCell>{part?.description || line.description || '-'}</TableCell>
                                 <TableCell className="text-right">{line.quantity}</TableCell>
-                                <TableCell className="text-right">${line.unit_price.toFixed(2)}</TableCell>
-                                <TableCell className="text-right font-medium">${line.line_total.toFixed(2)}</TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex flex-col items-end gap-1">
+                                    <span>${formatNumber(line.unit_price)}</span>
+                                    {basis !== null && line.unit_price < basis && (
+                                      <span className="text-xs text-destructive">
+                                        Warning: below cost (basis ${formatNumber(basis)})
+                                      </span>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right font-medium">${formatNumber(line.line_total)}</TableCell>
                               </TableRow>
                             );
                           })
@@ -1747,8 +1896,8 @@ const jobReadinessValues = Object.values(jobReadinessById);
                                 <TableCell>{line.description}</TableCell>
                                 <TableCell>{tech?.name || '-'}</TableCell>
                                 <TableCell className="text-right">{line.hours}</TableCell>
-                                <TableCell className="text-right">${line.rate.toFixed(2)}</TableCell>
-                                <TableCell className="text-right font-medium">${line.line_total.toFixed(2)}</TableCell>
+                                <TableCell className="text-right">${formatNumber(line.rate)}</TableCell>
+                                <TableCell className="text-right font-medium">${formatNumber(line.line_total)}</TableCell>
                               </TableRow>
                             );
                           })
@@ -1785,7 +1934,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                               <TableCell>{line.description || '-'}</TableCell>
                               <TableCell className="text-right">{line.qty}</TableCell>
                               <TableCell className="text-right">{line.machine_minutes ?? 0}</TableCell>
-                              <TableCell className="text-right font-medium">${(line.sell_price_total ?? 0).toFixed(2)}</TableCell>
+                              <TableCell className="text-right font-medium">${formatNumber(line.sell_price_total)}</TableCell>
                             </TableRow>
                           ))
                         )}
@@ -1821,7 +1970,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                               <TableCell className="text-right">{line.thickness ?? '-'}</TableCell>
                               <TableCell className="text-right">{line.qty}</TableCell>
                               <TableCell className="text-right">{line.machine_minutes ?? 0}</TableCell>
-                              <TableCell className="text-right font-medium">${(line.sell_price_total ?? 0).toFixed(2)}</TableCell>
+                              <TableCell className="text-right font-medium">${formatNumber(line.sell_price_total)}</TableCell>
                             </TableRow>
                           ))
                         )}
@@ -1851,16 +2000,16 @@ const jobReadinessValues = Object.values(jobReadinessById);
                           </TableRow>
                         ) : (
                           chargeLines
-                            .filter((c) => c.source_ref_type !== 'PLASMA_JOB' && c.source_ref_type !== 'FAB_JOB')
-                            .map((line) => (
-                              <TableRow key={line.id}>
-                                <TableCell>{line.description}</TableCell>
-                                <TableCell className="text-right">{line.qty}</TableCell>
-                                <TableCell className="text-right">${line.unit_price.toFixed(2)}</TableCell>
-                                <TableCell className="text-right font-medium">${line.total_price.toFixed(2)}</TableCell>
-                              </TableRow>
-                            ))
-                        )}
+                                .filter((c) => c.source_ref_type !== 'PLASMA_JOB' && c.source_ref_type !== 'FAB_JOB')
+                                .map((line) => (
+                                  <TableRow key={line.id}>
+                                    <TableCell>{line.description}</TableCell>
+                                    <TableCell className="text-right">{line.qty}</TableCell>
+                                    <TableCell className="text-right">${formatNumber(line.unit_price)}</TableCell>
+                                    <TableCell className="text-right font-medium">${formatNumber(line.total_price)}</TableCell>
+                                  </TableRow>
+                                ))
+                            )}
                       </TableBody>
                     </Table>
                   </div>
@@ -1930,7 +2079,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                                   <Input
                                     value={draft?.title ?? job.title}
                                     onChange={(event) => handleJobDraftChange(job.id, 'title', event.target.value)}
-                                    placeholder="Job title"
+                                    placeholder="Job Title"
                                     className="flex-1 min-w-[180px] h-10"
                                   />
                                   <Select
@@ -2080,8 +2229,8 @@ const jobReadinessValues = Object.values(jobReadinessById);
                                 </div>
                               )}
                               <span className="text-[11px] text-muted-foreground">
-                                Actual: {jobSummary.jobActualHours.toFixed(2)}h
-                                {estimatedHours > 0 ? ` · Est: ${estimatedHours.toFixed(2)}h` : ''}
+                                Actual: {formatNumber(jobSummary.jobActualHours)}h
+                                {estimatedHours > 0 ? ` · Est: ${formatNumber(estimatedHours)}h` : ''}
                               </span>
                             </div>
                             <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
@@ -2104,15 +2253,15 @@ const jobReadinessValues = Object.values(jobReadinessById);
                               </div>
                               <div className="flex flex-wrap items-center gap-2 text-[11px]">
                                 <span>{partsQty} parts</span>
-                                <span>${jobSummary.partsRevenue.toFixed(2)}</span>
+                                <span>${formatNumber(jobSummary.partsRevenue)}</span>
                               </div>
                             </div>
                             <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                              <span>Labor Revenue: ${jobSummary.laborRevenue.toFixed(2)}</span>
-                              <span>Labor Cost{jobSummary.hasLaborCost ? '' : ' (est)'}: ${jobSummary.laborCost.toFixed(2)}</span>
-                              <span>Parts Cost: ${jobSummary.partsCost.toFixed(2)}</span>
+                              <span>Labor Revenue: ${formatNumber(jobSummary.laborRevenue)}</span>
+                              <span>Labor Cost{jobSummary.hasLaborCost ? '' : ' (est)'}: ${formatNumber(jobSummary.laborCost)}</span>
+                              <span>Parts Cost: ${formatNumber(jobSummary.partsCost)}</span>
                               <span>
-                                Margin: ${jobSummary.margin.toFixed(2)} ({jobSummary.marginPercent.toFixed(1)}%)
+                                Margin: ${formatNumber(jobSummary.margin)} ({formatNumber(jobSummary.marginPercent, 1)}%)
                               </span>
                             </div>
                             <div className="space-y-2">
@@ -2160,7 +2309,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                                               {line.is_warranty ? (
                                                 <span className="text-muted-foreground">$0.00</span>
                                               ) : (
-                                                `$${line.line_total.toFixed(2)}`
+                                                `$${formatNumber(line.line_total)}`
                                               )}
                                             </TableCell>
                                           </TableRow>
@@ -2204,7 +2353,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                                               {line.is_warranty ? (
                                                 <span className="text-muted-foreground">$0.00</span>
                                               ) : (
-                                                `$${line.line_total.toFixed(2)}`
+                                                `$${formatNumber(line.line_total)}`
                                               )}
                                             </TableCell>
                                           </TableRow>
@@ -2308,7 +2457,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                             </TableCell>
                         <TableCell className="text-right">
                           {isInvoiced ? (
-                            `$${line.unit_price.toFixed(2)}`
+                            `$${formatNumber(line.unit_price)}`
                           ) : editingPriceLineId === line.id ? (
                             <div className="flex items-center justify-end gap-2">
                               <Input
@@ -2350,7 +2499,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                                 onClick={() => {
                                   const suggested = part ? calcPartPriceForLevel(part, settings, priceLevel) : null;
                                   if (suggested != null) {
-                                    setPriceDraft(suggested.toFixed(2));
+                                    setPriceDraft(formatNumber(suggested));
                                   }
                                 }}
                               >
@@ -2359,13 +2508,13 @@ const jobReadinessValues = Object.values(jobReadinessById);
                             </div>
                           ) : (
                             <div className="flex items-center justify-end gap-2">
-                              <span>${line.unit_price.toFixed(2)}</span>
+                              <span>${formatNumber(line.unit_price)}</span>
                               <Button
                                 size="icon"
                                 variant="ghost"
                                 onClick={() => {
                                   setEditingPriceLineId(line.id);
-                                  setPriceDraft(line.unit_price.toFixed(2));
+                                  setPriceDraft(formatNumber(line.unit_price));
                                 }}
                               >
                                 <Pencil className="w-4 h-4" />
@@ -2374,7 +2523,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                           )}
                         </TableCell>
                             <TableCell className="text-right font-medium">
-                              {line.is_warranty ? <span className="text-muted-foreground">$0.00</span> : `$${line.line_total.toFixed(2)}`}
+                              {line.is_warranty ? <span className="text-muted-foreground">$0.00</span> : `$${formatNumber(line.line_total)}`}
                             </TableCell>
                             {!isInvoiced && (
                               <TableCell>
@@ -2430,14 +2579,14 @@ const jobReadinessValues = Object.values(jobReadinessById);
                             <TableCell className="text-center">
                               {!isInvoiced ? (
                                 <Checkbox checked={line.is_warranty} onCheckedChange={() => woToggleLaborWarranty(line.id)} />
-                              ) : line.is_warranty ? (
+                            ) : line.is_warranty ? (
                                 <Badge variant="secondary"><Shield className="w-3 h-3" /></Badge>
                               ) : null}
                             </TableCell>
                             <TableCell className="text-right">{line.hours}</TableCell>
-                            <TableCell className="text-right">${line.rate.toFixed(2)}</TableCell>
+                            <TableCell className="text-right">${formatNumber(line.rate)}</TableCell>
                             <TableCell className="text-right font-medium">
-                              {line.is_warranty ? <span className="text-muted-foreground">$0.00</span> : `$${line.line_total.toFixed(2)}`}
+                              {line.is_warranty ? <span className="text-muted-foreground">$0.00</span> : `$${formatNumber(line.line_total)}`}
                             </TableCell>
                             {!isInvoiced && (
                               <TableCell>
@@ -2712,7 +2861,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                           />
                           <p className="text-xs text-muted-foreground">
                             {!line.override_machine_minutes && line.derived_machine_minutes != null
-                              ? `Derived: ${line.derived_machine_minutes.toFixed(2)} min`
+                              ? `Derived: ${formatNumber(line.derived_machine_minutes)} min`
                               : 'Manual entry when override is enabled'}
                           </p>
                         </div>
@@ -2771,8 +2920,8 @@ const jobReadinessValues = Object.values(jobReadinessById);
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="text-sm text-right">
-                            <div className="font-medium">Unit: ${line.sell_price_each?.toFixed(2) ?? '0.00'}</div>
-                            <div className="text-muted-foreground text-xs">Line Total: ${line.sell_price_total?.toFixed(2) ?? '0.00'}</div>
+                            <div className="font-medium">Unit: ${formatNumber(line.sell_price_each)}</div>
+                            <div className="text-muted-foreground text-xs">Line Total: ${formatNumber(line.sell_price_total)}</div>
                           </div>
                           {!fabLocked && (
                             <Button variant="ghost" size="icon" onClick={() => handleDeleteFabLine(line.id)}>
@@ -2794,9 +2943,9 @@ const jobReadinessValues = Object.values(jobReadinessById);
                   </Button>
                 )}
                 <div className="text-sm text-right space-y-1">
-                  <div className="font-medium">Fabrication Total: ${fabTotal.toFixed(2)}</div>
+                  <div className="font-medium">Fabrication Total: ${formatNumber(fabTotal)}</div>
                   <div className="text-xs text-muted-foreground">
-                    Qty {fabSummary.total_qty} · Setup {fabSummary.total_setup_minutes.toFixed(2)} min · Machine {fabSummary.total_machine_minutes.toFixed(2)} min · Cost ${fabSummary.total_cost.toFixed(2)}
+                    Qty {fabSummary.total_qty} · Setup {formatNumber(fabSummary.total_setup_minutes)} min · Machine {formatNumber(fabSummary.total_machine_minutes)} min · Cost ${formatNumber(fabSummary.total_cost)}
                   </div>
                 </div>
               </div>
@@ -2819,7 +2968,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                   <div>
                     <span className="text-muted-foreground">Cut Length:</span>{' '}
                     <span className="font-medium">
-                      {plasmaLines.reduce((s, l) => s + (l.cut_length ?? 0) * (l.qty ?? 0), 0).toFixed(2)} in
+                      {formatNumber(plasmaLines.reduce((s, l) => s + toNumeric(l.cut_length) * toNumeric(l.qty), 0))} in
                     </span>
                   </div>
                   <div>
@@ -2828,7 +2977,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                   </div>
                   <div>
                     <span className="text-muted-foreground">Total:</span>{' '}
-                    <span className="font-semibold">${plasmaTotal.toFixed(2)}</span>
+                    <span className="font-semibold">${formatNumber(plasmaTotal)}</span>
                   </div>
                   {plasmaChargeLine && (
                     <div className="text-xs text-muted-foreground">
@@ -3160,7 +3309,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                               </TableCell>
                             </>
                           )}
-                          <TableCell className="text-right font-medium">${(line.sell_price_total ?? 0).toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-medium">${formatNumber(line.sell_price_total)}</TableCell>
                           {!plasmaLocked && (
                             <TableCell>
                               <div className="flex gap-2">
@@ -3192,30 +3341,30 @@ const jobReadinessValues = Object.values(jobReadinessById);
                     Add Line
                   </Button>
                 )}
-                <div className="text-sm text-right space-y-1">
-                  <div className="font-medium">Plasma Total: ${plasmaTotal.toFixed(2)}</div>
-                  {plasmaChargeLine && (
-                    <div className="text-muted-foreground">
-                      Posted as "{plasmaChargeLine.description}" (${plasmaChargeLine.total_price.toFixed(2)})
-                    </div>
-                  )}
-                  {plasmaJob && (
-                    <div className="text-xs text-muted-foreground">
-                      From Lines: Cut {plasmaLines.reduce((s, l) => s + (l.cut_length ?? 0) * (l.qty ?? 0), 0).toFixed(2)} in, Pierces{' '}
-                      {plasmaLines.reduce((s, l) => s + (l.pierce_count ?? 0) * (l.qty ?? 0), 0)}{' '}
-                      {plasmaLines.some((l) => l.machine_minutes) && (
-                        <>· Machine {plasmaLines.reduce((s, l) => s + (l.machine_minutes ?? 0) * (l.qty ?? 0), 0).toFixed(2)} min</>
-                      )}
-                      {plasmaJob.dxf_estimated_total_cut_length != null && (
-                        <>
-                          {' '}
-                          | DXF: Cut {plasmaJob.dxf_estimated_total_cut_length} in, Pierces {plasmaJob.dxf_estimated_total_pierces ?? '-'} · Machine{' '}
-                          {plasmaJob.dxf_estimated_machine_minutes ?? '-'} min
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
+                  <div className="text-sm text-right space-y-1">
+                    <div className="font-medium">Plasma Total: ${formatNumber(plasmaTotal)}</div>
+                    {plasmaChargeLine && (
+                      <div className="text-muted-foreground">
+                        Posted as "{plasmaChargeLine.description}" (${formatNumber(plasmaChargeLine.total_price)})
+                      </div>
+                    )}
+                    {plasmaJob && (
+                      <div className="text-xs text-muted-foreground">
+                        From Lines: Cut {formatNumber(plasmaLines.reduce((s, l) => s + toNumeric(l.cut_length) * toNumeric(l.qty), 0))} in, Pierces{' '}
+                        {plasmaLines.reduce((s, l) => s + (l.pierce_count ?? 0) * (l.qty ?? 0), 0)}{' '}
+                        {plasmaLines.some((l) => l.machine_minutes) && (
+                          <>· Machine {formatNumber(plasmaLines.reduce((s, l) => s + toNumeric(l.machine_minutes) * toNumeric(l.qty), 0))} min</>
+                        )}
+                        {plasmaJob.dxf_estimated_total_cut_length != null && (
+                          <>
+                            {' '}
+                            | DXF: Cut {plasmaJob.dxf_estimated_total_cut_length} in, Pierces {plasmaJob.dxf_estimated_total_pierces ?? '-'} · Machine{' '}
+                            {plasmaJob.dxf_estimated_machine_minutes ?? '-'} min
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
               </div>
 
               <div className="mt-6 space-y-3">
@@ -3272,7 +3421,7 @@ const jobReadinessValues = Object.values(jobReadinessById);
                               <Badge variant="secondary">{att.kind}</Badge>
                             </TableCell>
                             <TableCell className="text-right text-sm text-muted-foreground">
-                              {(att.size_bytes / 1024 / 1024).toFixed(2)} MB
+                              {formatNumber(att.size_bytes / 1024 / 1024)} MB
                             </TableCell>
                             <TableCell>
                               <Input
@@ -3337,35 +3486,142 @@ const jobReadinessValues = Object.values(jobReadinessById);
             <div className="w-72 space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Parts Subtotal:</span>
-                <span>${currentOrder?.parts_subtotal.toFixed(2)}</span>
+                <span>${formatNumber(currentOrder?.parts_subtotal)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Labor Subtotal:</span>
-                <span>${currentOrder?.labor_subtotal.toFixed(2)}</span>
+                <span>${formatNumber(currentOrder?.labor_subtotal)}</span>
               </div>
               {(currentOrder?.charge_subtotal ?? 0) > 0 && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Charges:</span>
-                  <span>${(currentOrder?.charge_subtotal ?? 0).toFixed(2)}</span>
+                  <span>${formatNumber(currentOrder?.charge_subtotal)}</span>
                 </div>
               )}
               {(currentOrder?.core_charges_total ?? 0) > 0 && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Core Charges:</span>
-                  <span>${currentOrder?.core_charges_total.toFixed(2)}</span>
+                  <span>${formatNumber(currentOrder?.core_charges_total)}</span>
                 </div>
               )}
               <div className="flex justify-between border-t border-border pt-2">
                 <span className="text-muted-foreground">Subtotal:</span>
-                <span>${currentOrder?.subtotal.toFixed(2)}</span>
+                <span>${formatNumber(currentOrder?.subtotal)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Tax ({currentOrder?.tax_rate}%):</span>
-                <span>${currentOrder?.tax_amount.toFixed(2)}</span>
+                <span>${formatNumber(currentOrder?.tax_amount)}</span>
               </div>
               <div className="flex justify-between text-lg font-semibold border-t border-border pt-2">
                 <span>Total:</span>
-                <span>${currentOrder?.total.toFixed(2)}</span>
+                <span>${formatNumber(currentOrder?.total)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="border rounded-lg p-4 bg-muted/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Payment Status</p>
+                  <p className="font-semibold">
+                    ${formatNumber(payments.summary.totalPaid)} paid of ${formatNumber(orderTotal)}
+                  </p>
+                </div>
+                <Badge variant="outline" className={paymentStatusClass}>
+                  {payments.summary.status}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total Paid</span>
+                  <span className="font-medium">${formatNumber(payments.summary.totalPaid)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Balance Due</span>
+                  <span className="font-medium">${formatNumber(payments.summary.balanceDue)}</span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Record Payment</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Amount"
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                  />
+                  <Select value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as typeof paymentMethod)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Method" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAYMENT_METHOD_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Input
+                  placeholder="Reference (optional)"
+                  value={paymentReference}
+                  onChange={(e) => setPaymentReference(e.target.value)}
+                />
+                <Input
+                  placeholder="Notes (optional)"
+                  value={paymentNotes}
+                  onChange={(e) => setPaymentNotes(e.target.value)}
+                />
+                <Button onClick={handleAddPayment} disabled={!currentOrder || payments.addPayment.isPending}>
+                  {payments.addPayment.isPending ? 'Saving...' : 'Add Payment'}
+                </Button>
+              </div>
+            </div>
+
+            <div className="border rounded-lg p-4 bg-muted/20 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-lg">Payment History</h3>
+                {payments.isLoading && <span className="text-xs text-muted-foreground">Loading…</span>}
+              </div>
+              <div className="space-y-2 text-sm">
+                {payments.payments.length === 0 && (
+                  <p className="text-muted-foreground">No payments recorded yet.</p>
+                )}
+                {payments.payments.map((payment) => (
+                  <div key={payment.id} className="border rounded-md p-3 bg-background space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">
+                        ${formatNumber(payment.amount)} · {payment.method}
+                      </span>
+                      {payment.voided_at ? (
+                        <Badge variant="outline" className="bg-destructive/10 text-destructive">
+                          Voided
+                        </Badge>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleVoidPayment(payment.id)}
+                          disabled={payments.voidPayment.isPending}
+                        >
+                          Void
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{new Date(payment.created_at).toLocaleString()}</span>
+                      {payment.reference && <span>Ref: {payment.reference}</span>}
+                    </div>
+                    {payment.notes && <div className="text-xs text-muted-foreground">Notes: {payment.notes}</div>}
+                    {payment.void_reason && (
+                      <div className="text-xs text-muted-foreground">Void reason: {payment.void_reason}</div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -3602,13 +3858,13 @@ const jobReadinessValues = Object.values(jobReadinessById);
             <Label>Part *</Label>
             <div className="flex gap-2">
               <Select value={selectedPartId} onValueChange={setSelectedPartId}>
-                <SelectTrigger className="flex-1"><SelectValue placeholder="Select part" /></SelectTrigger>
-                <SelectContent>
-                  {activeParts.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.part_number} - {p.description} (${p.selling_price.toFixed(2)})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  <SelectTrigger className="flex-1"><SelectValue placeholder="Select part" /></SelectTrigger>
+                  <SelectContent>
+                    {activeParts.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.part_number} - {p.description} (${formatNumber(p.selling_price)})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               <Button variant="outline" onClick={() => setNewPartDialogOpen(true)}>
                 New Part
               </Button>

@@ -7,6 +7,9 @@ export interface SystemSettings {
   default_tax_rate: number;
   currency: string;
   units: string;
+  markup_retail_percent: number;
+  markup_fleet_percent: number;
+  markup_wholesale_percent: number;
 }
 
 // In-memory store for now (per-process, non-persistent)
@@ -18,7 +21,10 @@ const DEFAULT_SETTINGS: SystemSettings = {
   default_labor_rate: 125,
   default_tax_rate: 0.07,
   currency: "USD",
-  units: "imperial"
+  units: "imperial",
+  markup_retail_percent: 60,
+  markup_fleet_percent: 40,
+  markup_wholesale_percent: 25
 };
 
 const router = Router();

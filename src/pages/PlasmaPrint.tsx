@@ -5,6 +5,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { useRepos } from '@/repos';
 
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+const formatNumber = (value: number | string | null | undefined, digits = 2) => toNumber(value).toFixed(digits);
+
 export default function PlasmaPrint() {
   const { id } = useParams<{ id: string }>();
   const repos = useRepos();
@@ -81,7 +87,7 @@ export default function PlasmaPrint() {
         </div>
         <div className="p-3 border rounded-lg">
           <div className="text-muted-foreground">Total Cut Length</div>
-          <div className="font-semibold">{metrics.total_cut_length.toFixed(2)}</div>
+          <div className="font-semibold">{formatNumber(metrics.total_cut_length)}</div>
         </div>
         <div className="p-3 border rounded-lg">
           <div className="text-muted-foreground">Total Pierces</div>
@@ -89,15 +95,15 @@ export default function PlasmaPrint() {
         </div>
         <div className="p-3 border rounded-lg">
           <div className="text-muted-foreground">Total Machine Minutes</div>
-          <div className="font-semibold">{metrics.total_machine_minutes.toFixed(2)}</div>
+          <div className="font-semibold">{formatNumber(metrics.total_machine_minutes)}</div>
         </div>
       </div>
       <div className="grid md:grid-cols-2 gap-3 text-sm mb-4">
         <div className="p-3 border rounded-lg bg-muted/30">
           <div className="font-semibold mb-1">From Lines</div>
-          <div>Cut: {lineTotals.cut.toFixed(2)} in</div>
+          <div>Cut: {formatNumber(lineTotals.cut)} in</div>
           <div>Pierces: {lineTotals.pierces}</div>
-          <div>Machine: {lineTotals.machine.toFixed(2)} min</div>
+          <div>Machine: {formatNumber(lineTotals.machine)} min</div>
         </div>
         <div className="p-3 border rounded-lg bg-muted/30">
           <div className="font-semibold mb-1">DXF Estimate</div>

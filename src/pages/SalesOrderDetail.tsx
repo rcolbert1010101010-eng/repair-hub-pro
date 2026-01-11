@@ -39,15 +39,24 @@ import { useToast } from '@/hooks/use-toast';
 import { Save, Plus, Trash2, FileCheck, Printer, Edit, X, Shield, RotateCcw, Check, Pencil, X as XIcon } from 'lucide-react';
 import { QuickAddDialog } from '@/components/ui/quick-add-dialog';
 import { PrintSalesOrder, PrintSalesOrderPickList } from '@/components/print/PrintInvoice';
-import { calcPartPriceForLevel } from '@/domain/pricing/partPricing';
+import { calcPartPriceForLevel, getPartCostBasis } from '@/domain/pricing/partPricing';
 import { getPurchaseOrderDerivedStatus } from '@/services/purchaseOrderStatus';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { PurchaseOrderPreviewDialog } from '@/components/purchase-orders/PurchaseOrderPreviewDialog';
 import type { SalesOrderStatus } from '@/types';
+import { usePayments } from '@/hooks/usePayments';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
+
+const PAYMENT_METHOD_OPTIONS = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'check', label: 'Check' },
+  { value: 'card', label: 'Credit Card' },
+  { value: 'ach', label: 'ACH' },
+  { value: 'other', label: 'Other' },
+];
 
 export default function SalesOrderDetail() {
   const { id } = useParams<{ id: string }>();
@@ -112,6 +121,12 @@ export default function SalesOrderDetail() {
   const [editingPriceLineId, setEditingPriceLineId] = useState<string | null>(null);
   const [priceDraft, setPriceDraft] = useState<string>('');
   
+  const toNumber = (value: number | string | null | undefined) => {
+    const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+    return Number.isFinite(numeric) ? numeric : 0;
+  };
+  const formatMoney = (value: number | string | null | undefined) => toNumber(value).toFixed(2);
+
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notesValue, setNotesValue] = useState('');
   const notesRef = useRef<HTMLTextAreaElement | null>(null);
@@ -121,6 +136,10 @@ export default function SalesOrderDetail() {
   const [showCoreReturnDialog, setShowCoreReturnDialog] = useState(false);
   const [coreReturnLineId, setCoreReturnLineId] = useState<string | null>(null);
   const [printMode, setPrintMode] = useState<'invoice' | 'picklist'>('invoice');
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'check' | 'card' | 'ach' | 'other'>('cash');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentNotes, setPaymentNotes] = useState('');
 
   const currentOrder = salesOrders.find((o) => o.id === id) || order;
   const customer = customers.find((c) => c.id === (currentOrder?.customer_id || selectedCustomerId));
@@ -157,7 +176,14 @@ export default function SalesOrderDetail() {
       : currentOrder?.status === 'CANCELLED'
       ? 'Cancelled'
       : 'Open';
-  const orderLines = currentOrder ? getSalesOrderLines(currentOrder.id) : [];
+  const currentOrderId = currentOrder?.id ?? null;
+  const currentOrderUpdatedAt =
+    (currentOrder as any)?.updated_at ?? (currentOrder as any)?.updatedAt ?? null;
+
+  const orderLines = useMemo(
+    () => (currentOrder ? getSalesOrderLines(currentOrder.id) : []),
+    [currentOrder, currentOrderId, currentOrderUpdatedAt, getSalesOrderLines]
+  );
   const quickInvoiceIssues = useMemo(() => {
     const issues: string[] = [];
     if (!currentOrder) issues.push('Order missing');
@@ -169,6 +195,28 @@ export default function SalesOrderDetail() {
     if (hasInvalidQty) issues.push('Line quantities must be > 0');
     return issues;
   }, [currentOrder, isCustomerOnHold, isLocked, orderLines]);
+  const orderTotal = toNumber(currentOrder?.total);
+  const payments = usePayments('SALES_ORDER', currentOrder?.id, orderTotal);
+  const paymentStatusClass = useMemo(() => {
+    switch (payments.summary.status) {
+      case 'PAID':
+        return 'bg-green-100 text-green-700';
+      case 'OVERPAID':
+        return 'bg-amber-100 text-amber-800';
+      case 'PARTIAL':
+        return 'bg-orange-100 text-orange-700';
+      default:
+        return 'bg-slate-100 text-slate-700';
+    }
+  }, [payments.summary.status]);
+
+  useEffect(() => {
+    if (!currentOrder) return;
+    if (paymentAmount !== '') return;
+    if (payments.summary.balanceDue > 0) {
+      setPaymentAmount(payments.summary.balanceDue.toFixed(2));
+    }
+  }, [currentOrder, paymentAmount, payments.summary.balanceDue]);
 
   if (!isNew && !currentOrder) {
     return (
@@ -472,6 +520,47 @@ export default function SalesOrderDetail() {
     setIsEditingNotes(false);
     toast({ title: 'Notes Updated' });
     setIsDirty(false);
+  };
+
+  const handleAddPayment = async () => {
+    if (!currentOrder) return;
+    const amountValue = toNumber(paymentAmount);
+    if (amountValue <= 0) {
+      toast({ title: 'Enter amount', description: 'Payment amount must be greater than 0', variant: 'destructive' });
+      return;
+    }
+    try {
+      await payments.addPayment.mutateAsync({
+        amount: amountValue,
+        method: paymentMethod,
+        reference: paymentReference || null,
+        notes: paymentNotes || null,
+      });
+      toast({ title: 'Payment recorded' });
+      setPaymentAmount('');
+      setPaymentReference('');
+      setPaymentNotes('');
+    } catch (error: any) {
+      toast({
+        title: 'Unable to record payment',
+        description: error?.message ?? 'Please try again',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleVoidPayment = async (paymentId: string) => {
+    const reason = window.prompt('Enter void reason (optional)') ?? '';
+    try {
+      await payments.voidPayment.mutateAsync({ paymentId, reason });
+      toast({ title: 'Payment voided' });
+    } catch (error: any) {
+      toast({
+        title: 'Unable to void payment',
+        description: error?.message ?? 'Please try again',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleMarkCoreReturned = (lineId: string) => {
@@ -967,6 +1056,11 @@ export default function SalesOrderDetail() {
                 ) : (
                   orderLines.map((line) => {
                     const part = parts.find((p) => p.id === line.part_id);
+                    const priceLevel = customer?.price_level ?? 'RETAIL';
+                    const suggestedUnitPrice = part ? calcPartPriceForLevel(part, settings, priceLevel) : null;
+                    const showSuggested =
+                      suggestedUnitPrice != null && Math.abs(suggestedUnitPrice - line.unit_price) > 0.009;
+                    const { basis } = part ? getPartCostBasis(part) : { basis: null };
                     return (
                       <TableRow key={line.id} className={line.is_warranty ? 'bg-accent/30' : ''}>
                         <TableCell className="font-mono">{part?.part_number || '-'}</TableCell>
@@ -1003,75 +1097,86 @@ export default function SalesOrderDetail() {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          {isLocked ? (
-                            `$${line.unit_price.toFixed(2)}`
-                          ) : editingPriceLineId === line.id ? (
-                            <div className="flex items-center justify-end gap-2">
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={priceDraft}
-                                onChange={(e) => setPriceDraft(e.target.value)}
-                                className="w-24 h-8 text-right"
-                              />
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => {
-                                  const parsed = parseFloat(priceDraft);
-                                  const result = soUpdateLineUnitPrice(line.id, parsed);
-                                  if (!result.success) {
-                                    toast({ title: 'Error', description: result.error, variant: 'destructive' });
-                                    return;
-                                  }
-                                  setEditingPriceLineId(null);
-                                  setPriceDraft('');
-                                  setIsDirty(true);
-                                }}
-                              >
-                                <Check className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => {
-                                  setEditingPriceLineId(null);
-                                  setPriceDraft('');
-                                }}
-                              >
-                                <XIcon className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => {
-                                  const suggested = part ? calcPartPriceForLevel(part, settings, customer?.price_level ?? 'RETAIL') : null;
-                                  if (suggested != null) {
-                                    setPriceDraft(suggested.toFixed(2));
-                                  }
-                                }}
-                              >
-                                Reset
-                              </Button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-end gap-2">
-                              <span>${line.unit_price.toFixed(2)}</span>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                onClick={() => {
-                                  setEditingPriceLineId(line.id);
-                                  setPriceDraft(line.unit_price.toFixed(2));
-                                }}
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          )}
+                          <div className="flex flex-col items-end gap-1">
+                            {isLocked ? (
+                              <span>${formatMoney(line.unit_price)}</span>
+                            ) : editingPriceLineId === line.id ? (
+                              <div className="flex items-center justify-end gap-2">
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  value={priceDraft}
+                                  onChange={(e) => setPriceDraft(e.target.value)}
+                                  className="w-24 h-8 text-right"
+                                />
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    const parsed = parseFloat(priceDraft);
+                                    const result = soUpdateLineUnitPrice(line.id, parsed);
+                                    if (!result.success) {
+                                      toast({ title: 'Error', description: result.error, variant: 'destructive' });
+                                      return;
+                                    }
+                                    setEditingPriceLineId(null);
+                                    setPriceDraft('');
+                                    setIsDirty(true);
+                                  }}
+                                >
+                                  <Check className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setEditingPriceLineId(null);
+                                    setPriceDraft('');
+                                  }}
+                                >
+                                  <XIcon className="w-4 h-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    if (suggestedUnitPrice != null) {
+                                      setPriceDraft(formatMoney(suggestedUnitPrice));
+                                    }
+                                  }}
+                                >
+                                  Reset
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-end gap-2">
+                                <span>${formatMoney(line.unit_price)}</span>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setEditingPriceLineId(line.id);
+                                    setPriceDraft(formatMoney(line.unit_price));
+                                  }}
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            )}
+                            {showSuggested && (
+                              <span className="text-xs text-muted-foreground">
+                                Suggested ({priceLevel}): ${formatMoney(suggestedUnitPrice!)}
+                              </span>
+                            )}
+                            {basis !== null && line.unit_price < basis && (
+                              <span className="text-xs text-destructive">
+                                Warning: below cost (basis ${formatMoney(basis)})
+                              </span>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right font-medium">
-                          {line.is_warranty ? <span className="text-muted-foreground">$0.00</span> : `$${line.line_total.toFixed(2)}`}
+                          {line.is_warranty ? <span className="text-muted-foreground">$0.00</span> : `$${formatMoney(line.line_total)}`}
                         </TableCell>
                         {!isLocked && (
                           <TableCell>
@@ -1093,21 +1198,128 @@ export default function SalesOrderDetail() {
             <div className="w-64 space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Subtotal:</span>
-                <span>${currentOrder?.subtotal.toFixed(2)}</span>
+                <span>${formatMoney(currentOrder?.subtotal)}</span>
               </div>
               {(currentOrder?.core_charges_total ?? 0) > 0 && (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Core Charges:</span>
-                  <span>${currentOrder?.core_charges_total.toFixed(2)}</span>
+                  <span>${formatMoney(currentOrder?.core_charges_total)}</span>
                 </div>
               )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Tax ({currentOrder?.tax_rate}%):</span>
-                <span>${currentOrder?.tax_amount.toFixed(2)}</span>
+                <span>${formatMoney(currentOrder?.tax_amount)}</span>
               </div>
               <div className="flex justify-between text-lg font-semibold border-t border-border pt-2">
                 <span>Total:</span>
-                <span>${currentOrder?.total.toFixed(2)}</span>
+                <span>${formatMoney(currentOrder?.total)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="border rounded-lg p-4 bg-muted/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Payment Status</p>
+                  <p className="font-semibold">
+                    ${formatMoney(payments.summary.totalPaid)} paid of ${formatMoney(orderTotal)}
+                  </p>
+                </div>
+                <Badge variant="outline" className={paymentStatusClass}>
+                  {payments.summary.status}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total Paid</span>
+                  <span className="font-medium">${formatMoney(payments.summary.totalPaid)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Balance Due</span>
+                  <span className="font-medium">${formatMoney(payments.summary.balanceDue)}</span>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Record Payment</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Amount"
+                    value={paymentAmount}
+                    onChange={(e) => setPaymentAmount(e.target.value)}
+                  />
+                  <Select value={paymentMethod} onValueChange={(value) => setPaymentMethod(value as typeof paymentMethod)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Method" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAYMENT_METHOD_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Input
+                  placeholder="Reference (optional)"
+                  value={paymentReference}
+                  onChange={(e) => setPaymentReference(e.target.value)}
+                />
+                <Input
+                  placeholder="Notes (optional)"
+                  value={paymentNotes}
+                  onChange={(e) => setPaymentNotes(e.target.value)}
+                />
+                <Button onClick={handleAddPayment} disabled={!currentOrder || payments.addPayment.isPending}>
+                  {payments.addPayment.isPending ? 'Saving...' : 'Add Payment'}
+                </Button>
+              </div>
+            </div>
+
+            <div className="border rounded-lg p-4 bg-muted/20 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-lg">Payment History</h3>
+                {payments.isLoading && <span className="text-xs text-muted-foreground">Loading…</span>}
+              </div>
+              <div className="space-y-2 text-sm">
+                {payments.payments.length === 0 && (
+                  <p className="text-muted-foreground">No payments recorded yet.</p>
+                )}
+                {payments.payments.map((payment) => (
+                  <div key={payment.id} className="border rounded-md p-3 bg-background space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">
+                        ${formatMoney(payment.amount)} · {payment.method}
+                      </span>
+                      {payment.voided_at ? (
+                        <Badge variant="outline" className="bg-destructive/10 text-destructive">
+                          Voided
+                        </Badge>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleVoidPayment(payment.id)}
+                          disabled={payments.voidPayment.isPending}
+                        >
+                          Void
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>{new Date(payment.created_at).toLocaleString()}</span>
+                      {payment.reference && <span>Ref: {payment.reference}</span>}
+                    </div>
+                    {payment.notes && <div className="text-xs text-muted-foreground">Notes: {payment.notes}</div>}
+                    {payment.void_reason && (
+                      <div className="text-xs text-muted-foreground">Void reason: {payment.void_reason}</div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -1136,7 +1348,7 @@ export default function SalesOrderDetail() {
                 <SelectTrigger className="flex-1"><SelectValue placeholder="Select part" /></SelectTrigger>
                 <SelectContent>
                   {activeParts.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.part_number} - {p.description} (${p.selling_price.toFixed(2)})</SelectItem>
+                    <SelectItem key={p.id} value={p.id}>{p.part_number} - {p.description} (${formatMoney(p.selling_price)})</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

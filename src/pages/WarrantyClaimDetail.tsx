@@ -14,6 +14,11 @@ import { getWarrantyClaimInsights } from '@/services/returnsWarrantyInsights';
 
 const STATUS_FLOW: WarrantyClaimStatus[] = ['OPEN', 'SUBMITTED', 'APPROVED', 'DENIED', 'PAID', 'CLOSED', 'CANCELLED'];
 
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
 export default function WarrantyClaimDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -290,10 +295,10 @@ export default function WarrantyClaimDetail() {
                     <TableRow key={line.id}>
                       <TableCell>{line.description || part?.part_number || '—'}</TableCell>
                       <TableCell>{line.quantity ?? '—'}</TableCell>
-                      <TableCell>{line.unit_cost != null ? `$${line.unit_cost.toFixed(2)}` : '—'}</TableCell>
+                      <TableCell>{line.unit_cost != null ? `$${toNumber(line.unit_cost).toFixed(2)}` : '—'}</TableCell>
                       <TableCell>{line.labor_hours ?? '—'}</TableCell>
-                      <TableCell>{line.labor_rate != null ? `$${line.labor_rate.toFixed(2)}` : '—'}</TableCell>
-                      <TableCell>{line.amount != null ? `$${line.amount.toFixed(2)}` : '—'}</TableCell>
+                      <TableCell>{line.labor_rate != null ? `$${toNumber(line.labor_rate).toFixed(2)}` : '—'}</TableCell>
+                      <TableCell>{line.amount != null ? `$${toNumber(line.amount).toFixed(2)}` : '—'}</TableCell>
                       <TableCell>
                         <Button variant="ghost" size="sm" onClick={() => removeWarrantyClaimLine(line.id)}>
                           Remove
@@ -310,12 +315,12 @@ export default function WarrantyClaimDetail() {
         <div className="flex justify-end gap-4 text-sm">
           <div className="text-right">
             <p className="text-muted-foreground">Total Requested</p>
-            <p className="font-semibold">${totalRequested.toFixed(2)}</p>
+            <p className="font-semibold">${toNumber(totalRequested).toFixed(2)}</p>
           </div>
           <div className="text-right">
             <p className="text-muted-foreground">Approved</p>
             <p className="font-semibold">
-              {claim.approved_amount != null ? `$${claim.approved_amount.toFixed(2)}` : '—'}
+              {claim.approved_amount != null ? `$${toNumber(claim.approved_amount).toFixed(2)}` : '—'}
             </p>
           </div>
         </div>

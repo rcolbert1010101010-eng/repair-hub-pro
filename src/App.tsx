@@ -16,8 +16,12 @@ import Categories from "@/pages/Categories";
 import CategoryDetail from "@/pages/CategoryDetail";
 import Inventory from "@/pages/Inventory";
 import PartForm from "@/pages/PartForm";
+import ManufacturingProductsPage from "@/pages/manufacturing/ProductsPage";
+import ManufacturingProductFormPage from "@/pages/manufacturing/ProductFormPage";
 import SalesOrders from "@/pages/SalesOrders";
 import SalesOrderDetail from "@/pages/SalesOrderDetail";
+import ManufacturingBuildsPage from "@/pages/manufacturing/BuildsPage";
+import ManufacturingBuildFormPage from "@/pages/manufacturing/BuildFormPage";
 import WorkOrders from "@/pages/WorkOrders";
 import WorkOrderDetail from "@/pages/WorkOrderDetail";
 import PurchaseOrders from "@/pages/PurchaseOrders";
@@ -26,6 +30,7 @@ import Technicians from "@/pages/Technicians";
 import TechnicianDetail from "@/pages/TechnicianDetail";
 import Settings from "@/pages/Settings";
 import NotFound from "@/pages/NotFound";
+import PaymentsPage from "@/pages/Payments";
 import CycleCounts from "@/pages/CycleCounts";
 import CycleCountDetail from "@/pages/CycleCountDetail";
 import Returns from "@/pages/Returns";
@@ -42,6 +47,8 @@ import Scheduling from "@/pages/Scheduling";
 import ReceiveInventory from "@/pages/ReceiveInventory";
 import ReceivingHistory from "@/pages/ReceivingHistory";
 import ReceivingReceiptDetail from "@/pages/ReceivingReceiptDetail";
+import InvoiceDetail from "@/pages/InvoiceDetail";
+import InvoiceRegistry from "@/pages/InvoiceRegistry";
 
 const queryClient = new QueryClient();
 
@@ -69,6 +76,12 @@ const App = () => (
               <Route path="/receiving-history" element={<ReceivingHistory />} />
               <Route path="/receiving-history/:id" element={<ReceivingReceiptDetail />} />
               <Route path="/inventory/:id" element={<PartForm />} />
+              <Route path="/manufacturing/products" element={<ManufacturingProductsPage />} />
+              <Route path="/manufacturing/products/new" element={<ManufacturingProductFormPage />} />
+              <Route path="/manufacturing/products/:id" element={<ManufacturingProductFormPage />} />
+              <Route path="/manufacturing/builds" element={<ManufacturingBuildsPage />} />
+              <Route path="/manufacturing/builds/new" element={<ManufacturingBuildFormPage />} />
+              <Route path="/manufacturing/builds/:id" element={<ManufacturingBuildFormPage />} />
               <Route path="/sales-orders" element={<SalesOrders />} />
               <Route path="/sales-orders/:id" element={<SalesOrderDetail />} />
               <Route path="/plasma" element={<PlasmaProjects />} />
@@ -78,6 +91,8 @@ const App = () => (
               <Route path="/plasma/templates/:id" element={<PlasmaTemplateDetail />} />
               <Route path="/work-orders" element={<WorkOrders />} />
               <Route path="/work-orders/:id" element={<WorkOrderDetail />} />
+              <Route path="/invoices" element={<InvoiceRegistry />} />
+              <Route path="/invoices/:id" element={<InvoiceDetail />} />
               <Route path="/scheduling" element={<Scheduling />} />
               <Route path="/purchase-orders" element={<PurchaseOrders />} />
               <Route path="/purchase-orders/:id" element={<PurchaseOrderDetail />} />
@@ -86,6 +101,7 @@ const App = () => (
               <Route path="/warranty" element={<WarrantyClaims />} />
               <Route path="/warranty/:id" element={<WarrantyClaimDetail />} />
               <Route path="/reports/returns-warranty" element={<ReturnsWarrantyReport />} />
+              <Route path="/payments" element={<PaymentsPage />} />
               <Route path="/cycle-counts" element={<CycleCounts />} />
               <Route path="/cycle-counts/:id" element={<CycleCountDetail />} />
               <Route path="/technicians" element={<Technicians />} />

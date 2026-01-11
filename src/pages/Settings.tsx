@@ -25,6 +25,9 @@ export default function Settings() {
     default_tax_rate: settings.default_tax_rate.toString(),
     currency: settings.currency,
     units: settings.units,
+    markup_retail_percent: settings.markup_retail_percent.toString(),
+    markup_fleet_percent: settings.markup_fleet_percent.toString(),
+    markup_wholesale_percent: settings.markup_wholesale_percent.toString(),
     session_user_name: settings.session_user_name || '',
     inventory_negative_qoh_policy: settings.inventory_negative_qoh_policy || 'WARN',
   });
@@ -36,6 +39,9 @@ export default function Settings() {
       default_tax_rate: settings.default_tax_rate.toString(),
       currency: settings.currency,
       units: settings.units,
+      markup_retail_percent: settings.markup_retail_percent.toString(),
+      markup_fleet_percent: settings.markup_fleet_percent.toString(),
+      markup_wholesale_percent: settings.markup_wholesale_percent.toString(),
       session_user_name: settings.session_user_name || '',
       inventory_negative_qoh_policy: settings.inventory_negative_qoh_policy || 'WARN',
     });
@@ -57,12 +63,36 @@ export default function Settings() {
       return;
     }
 
+    const parsePercent = (value: string) => {
+      const num = parseFloat(value);
+      return Number.isFinite(num) ? num : 0;
+    };
+
+    const markupRetail = parsePercent(formData.markup_retail_percent);
+    const markupFleet = parsePercent(formData.markup_fleet_percent);
+    const markupWholesale = parsePercent(formData.markup_wholesale_percent);
+
+    const hasInvalidMarkup =
+      [markupRetail, markupFleet, markupWholesale].some((num) => num < 0 || num > 1000);
+
+    if (hasInvalidMarkup) {
+      toast({
+        title: 'Validation Error',
+        description: 'Markup percentages must be between 0 and 1000.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const payload = {
       shop_name: formData.shop_name.trim(),
       default_labor_rate: parseFloat(formData.default_labor_rate) || 0,
       default_tax_rate: parseFloat(formData.default_tax_rate) || 0,
       currency: formData.currency,
       units: formData.units,
+      markup_retail_percent: markupRetail,
+      markup_fleet_percent: markupFleet,
+      markup_wholesale_percent: markupWholesale,
       session_user_name: formData.session_user_name.trim(),
       inventory_negative_qoh_policy: formData.inventory_negative_qoh_policy,
     };
@@ -239,6 +269,51 @@ export default function Settings() {
               onChange={(e) => setFormData({ ...formData, session_user_name: e.target.value })}
               disabled={!editing}
               placeholder="Used for audit logging until auth is implemented"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="form-section max-w-xl mt-6">
+        <h2 className="text-lg font-semibold mb-4">Pricing</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <Label htmlFor="markup_retail_percent">Retail Markup (%)</Label>
+            <Input
+              id="markup_retail_percent"
+              type="number"
+              min="0"
+              max="1000"
+              step="0.01"
+              value={formData.markup_retail_percent}
+              onChange={(e) => setFormData({ ...formData, markup_retail_percent: e.target.value })}
+              disabled={!editing}
+            />
+          </div>
+          <div>
+            <Label htmlFor="markup_fleet_percent">Fleet Markup (%)</Label>
+            <Input
+              id="markup_fleet_percent"
+              type="number"
+              min="0"
+              max="1000"
+              step="0.01"
+              value={formData.markup_fleet_percent}
+              onChange={(e) => setFormData({ ...formData, markup_fleet_percent: e.target.value })}
+              disabled={!editing}
+            />
+          </div>
+          <div>
+            <Label htmlFor="markup_wholesale_percent">Wholesale Markup (%)</Label>
+            <Input
+              id="markup_wholesale_percent"
+              type="number"
+              min="0"
+              max="1000"
+              step="0.01"
+              value={formData.markup_wholesale_percent}
+              onChange={(e) => setFormData({ ...formData, markup_wholesale_percent: e.target.value })}
+              disabled={!editing}
             />
           </div>
         </div>

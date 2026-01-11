@@ -7,6 +7,11 @@ import { useRepos } from '@/repos';
 import type { Technician } from '@/types';
 import { Badge } from '@/components/ui/badge';
 
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
 export default function Technicians() {
   const navigate = useNavigate();
   const repos = useRepos();
@@ -20,14 +25,14 @@ export default function Technicians() {
       key: 'hourly_cost_rate',
       header: 'Cost Rate',
       sortable: true,
-      render: (item) => `$${item.hourly_cost_rate.toFixed(2)}/hr`,
+      render: (item) => `$${toNumber(item.hourly_cost_rate).toFixed(2)}/hr`,
       className: 'text-right',
     },
     {
       key: 'default_billable_rate',
       header: 'Billable Rate',
       sortable: true,
-      render: (item) => item.default_billable_rate ? `$${item.default_billable_rate.toFixed(2)}/hr` : '-',
+      render: (item) => item.default_billable_rate != null ? `$${toNumber(item.default_billable_rate).toFixed(2)}/hr` : '-',
       className: 'text-right',
     },
     {

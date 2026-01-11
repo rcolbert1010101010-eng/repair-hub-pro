@@ -19,6 +19,10 @@ import {
   BarChart2,
   Flame,
   Calendar,
+  Factory,
+  Layers,
+  CreditCard,
+  FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
@@ -30,7 +34,7 @@ import type { LucideIcon } from 'lucide-react';
 type NavLink = { type: 'link'; path: string; label: string; icon: LucideIcon };
 type NavGroup = {
   type: 'group';
-  key: 'serviceOrders' | 'inventory' | 'returnsWarranty';
+  key: 'serviceOrders' | 'inventory' | 'returnsWarranty' | 'manufacturing';
   label: string;
   icon: LucideIcon;
   children: NavLink[];
@@ -42,6 +46,8 @@ const navItems: NavItem[] = [
   { type: 'link', path: '/customers', label: 'Customers', icon: Users },
   { type: 'link', path: '/scheduling', label: 'Scheduling', icon: Calendar },
   { type: 'link', path: '/sales-orders', label: 'Sales Orders', icon: ShoppingCart },
+  { type: 'link', path: '/invoices', label: 'Invoices', icon: FileText },
+  { type: 'link', path: '/payments', label: 'Payments', icon: CreditCard },
   {
     type: 'group',
     key: 'serviceOrders',
@@ -67,6 +73,16 @@ const navItems: NavItem[] = [
       { type: 'link', path: '/vendors', label: 'Vendors', icon: Building2 },
       { type: 'link', path: '/categories', label: 'Categories', icon: Tags },
       { type: 'link', path: '/cycle-counts', label: 'Cycle Counts', icon: ListChecks },
+    ],
+  },
+  {
+    type: 'group',
+    key: 'manufacturing',
+    label: 'Manufacturing',
+    icon: Factory,
+    children: [
+      { type: 'link', path: '/manufacturing/products', label: 'Products', icon: Package },
+      { type: 'link', path: '/manufacturing/builds', label: 'Builds', icon: Layers },
     ],
   },
   { type: 'link', path: '/purchase-orders', label: 'Purchase Orders', icon: ClipboardList },

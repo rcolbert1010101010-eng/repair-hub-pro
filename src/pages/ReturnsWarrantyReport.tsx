@@ -6,6 +6,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useRepos } from '@/repos';
 import { computeReturnsWarrantyReport } from '@/services/returnsWarrantyReporting';
 
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+const formatMoney = (value: number | string | null | undefined) => `$${toNumber(value).toFixed(2)}`;
+
 const DATE_OPTIONS = [
   { value: '30', label: 'Last 30 days' },
   { value: '90', label: 'Last 90 days' },
@@ -94,7 +100,7 @@ export default function ReturnsWarrantyReport() {
             <CardTitle className="text-sm">Approved / Credit</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-semibold">${(report.financial.approved + report.financial.credit).toFixed(2)}</p>
+            <p className="text-2xl font-semibold">{formatMoney(report.financial.approved + report.financial.credit)}</p>
           </CardContent>
         </Card>
         <Card>
@@ -102,7 +108,7 @@ export default function ReturnsWarrantyReport() {
             <CardTitle className="text-sm">Reimbursed</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-semibold">${report.financial.reimbursed.toFixed(2)}</p>
+            <p className="text-2xl font-semibold">{formatMoney(report.financial.reimbursed)}</p>
           </CardContent>
         </Card>
       </div>
@@ -183,7 +189,7 @@ export default function ReturnsWarrantyReport() {
                     <TableRow key={v.vendor_id}>
                       <TableCell>{v.name}</TableCell>
                       <TableCell className="text-right">{v.count}</TableCell>
-                      <TableCell className="text-right">${v.amount.toFixed(2)}</TableCell>
+                      <TableCell className="text-right">${formatMoney(v.amount)}</TableCell>
                     </TableRow>
                   ))
                 )}
@@ -217,7 +223,7 @@ export default function ReturnsWarrantyReport() {
                     <TableRow key={p.part_id}>
                       <TableCell>{p.part_number}</TableCell>
                       <TableCell className="text-right">{p.count}</TableCell>
-                      <TableCell className="text-right">${p.amount.toFixed(2)}</TableCell>
+                      <TableCell className="text-right">${formatMoney(p.amount)}</TableCell>
                     </TableRow>
                   ))
                 )}

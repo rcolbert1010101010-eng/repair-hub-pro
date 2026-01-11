@@ -16,6 +16,11 @@ type ClaimRow = WarrantyClaim & { vendor_name: string; work_order_number: string
 
 const STATUS_FILTERS = ['ALL', 'OPEN', 'SUBMITTED', 'APPROVED', 'DENIED', 'PAID', 'CLOSED'] as const;
 
+const toNumber = (value: number | string | null | undefined) => {
+  const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
 export default function WarrantyClaims() {
   const repos = useRepos();
   const navigate = useNavigate();
@@ -66,12 +71,12 @@ export default function WarrantyClaims() {
     {
       key: 'amount_requested',
       header: 'Requested',
-      render: (item) => (item.amount_requested != null ? `$${item.amount_requested.toFixed(2)}` : '—'),
+      render: (item) => (item.amount_requested != null ? `$${toNumber(item.amount_requested).toFixed(2)}` : '—'),
     },
     {
       key: 'approved_amount',
       header: 'Approved',
-      render: (item) => (item.approved_amount != null ? `$${item.approved_amount.toFixed(2)}` : '—'),
+      render: (item) => (item.approved_amount != null ? `$${toNumber(item.approved_amount).toFixed(2)}` : '—'),
     },
     {
       key: 'updated_at',
