@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -27,6 +27,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { StatCard } from '@/components/ui/stat-card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { useRepos } from '@/repos';
@@ -36,11 +42,13 @@ import { Save, X, Trash2, Edit, Wrench, ShoppingCart, Clock3, Timer, CalendarPlu
 import { PMSection } from '@/components/pm/PMSection';
 import { UnitImagesSection } from '@/components/units/UnitImagesSection';
 import { useShopStore } from '@/stores/shopStore';
+import { SmartSearchSelect } from '@/components/common/SmartSearchSelect';
 
 const toNumber = (value: number | string | null | undefined) => {
   const numeric = typeof value === 'number' ? value : value != null ? Number(value) : NaN;
   return Number.isFinite(numeric) ? numeric : 0;
 };
+const BROWSE_CUSTOMERS_PAGE_SIZE = 25;
 
 export default function UnitForm() {
   const { id } = useParams<{ id: string }>();
@@ -73,12 +81,66 @@ export default function UnitForm() {
     hours: unit?.hours?.toString() || '',
     notes: unit?.notes || '',
   });
+  const [isBrowseCustomersOpen, setIsBrowseCustomersOpen] = useState(false);
+  const [browseCustomersActiveOnly, setBrowseCustomersActiveOnly] = useState(true);
+  const [browseCustomersPage, setBrowseCustomersPage] = useState(0);
 
-  const activeCustomers = customers.filter((c) => c.is_active && c.id !== 'walkin');
+  const activeCustomers = useMemo(
+    () => customers.filter((c) => c.is_active && c.id !== 'walkin'),
+    [customers]
+  );
+  const customerPickerItems = useMemo(
+    () =>
+      activeCustomers.map((c) => {
+        const company = (c as any).company_name ?? '';
+        const contact = (c as any).contact_name ?? '';
+        const phone = (c as any).phone ?? '';
+        const email = (c as any).email ?? '';
+        const street = (c as any).street_1 ?? (c as any).street ?? (c as any).address ?? '';
+        const city = (c as any).city ?? '';
+        const state = (c as any).state ?? '';
+        const postal = (c as any).postal_code ?? '';
+
+        const primaryParts = [company, contact, phone].filter(Boolean);
+        const secondaryParts = [email, street, city, state, postal].filter(Boolean);
+
+        const baseLabel = primaryParts.length > 0 ? primaryParts.join(' • ') : 'Unnamed customer';
+        const label = secondaryParts.length > 0 ? `${baseLabel} — ${secondaryParts.join(', ')}` : baseLabel;
+
+        const searchText = [company, contact, phone, email, street, city, state, postal]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+
+        return {
+          id: String(c.id),
+          label,
+          searchText,
+        };
+      }),
+    [activeCustomers]
+  );
+  const browseableCustomers = useMemo(
+    () =>
+      customers.filter((c) => {
+        if (browseCustomersActiveOnly && c.is_active === false) return false;
+        if ((c as any).is_walk_in) return false;
+        return true;
+      }),
+    [customers, browseCustomersActiveOnly]
+  );
+  const totalBrowseCustomerPages = Math.max(1, Math.ceil(browseableCustomers.length / BROWSE_CUSTOMERS_PAGE_SIZE));
+  const safeBrowseCustomersPage = Math.min(browseCustomersPage, totalBrowseCustomerPages - 1);
+  const browseCustomersStart = safeBrowseCustomersPage * BROWSE_CUSTOMERS_PAGE_SIZE;
+  const browseCustomersEnd = browseCustomersStart + BROWSE_CUSTOMERS_PAGE_SIZE;
+  const pagedBrowseCustomers = browseableCustomers.slice(browseCustomersStart, browseCustomersEnd);
   const pmSchedulesForUnit = useMemo(
     () => (unit ? pmSchedules?.filter((s) => s.unit_id === unit.id && s.is_active !== false) || [] : []),
     [pmSchedules, unit]
   );
+  useEffect(() => {
+    setBrowseCustomersPage(0);
+  }, [browseCustomersActiveOnly]);
   const pmHistoryForUnit = useMemo(
     () => (unit ? pmHistory?.filter((h) => h.unit_id === unit.id) || [] : []),
     [pmHistory, unit]
@@ -641,21 +703,28 @@ export default function UnitForm() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="customer_id">Customer *</Label>
-                  <Select
-                    value={formData.customer_id}
-                    onValueChange={(value) => setFormData({ ...formData, customer_id: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a customer" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {activeCustomers.map((customer) => (
-                        <SelectItem key={customer.id} value={customer.id}>
-                          {customer.company_name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-2">
+                    <SmartSearchSelect
+                      className="flex-1 min-w-0"
+                      value={formData.customer_id || null}
+                      onChange={(id) => {
+                        const next = id ?? '';
+                        setFormData({ ...formData, customer_id: next });
+                      }}
+                      items={customerPickerItems}
+                      placeholder="Search customers by name, phone, email, or address..."
+                      minChars={2}
+                      limit={25}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-shrink-0"
+                      onClick={() => setIsBrowseCustomersOpen(true)}
+                    >
+                      Browse customers
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="unit_name">Unit Name *</Label>
@@ -1092,6 +1161,109 @@ export default function UnitForm() {
           </div>
         </>
       )}
+
+      <Dialog open={isBrowseCustomersOpen} onOpenChange={setIsBrowseCustomersOpen}>
+        <DialogContent className="max-w-4xl w-full">
+          <DialogHeader>
+            <DialogTitle>Browse customers</DialogTitle>
+          </DialogHeader>
+
+          <p className="text-sm text-muted-foreground mb-3">
+            Viewing customers. Use the active filter and pagination to browse, then select one to attach to this unit.
+          </p>
+
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={browseCustomersActiveOnly}
+                  onChange={(e) => setBrowseCustomersActiveOnly(e.target.checked)}
+                />
+                Active only
+              </label>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Page {safeBrowseCustomersPage + 1} of {totalBrowseCustomerPages} • {browseableCustomers.length} customers
+            </div>
+          </div>
+
+          <div className="border rounded-md overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">Customer</th>
+                  <th className="px-3 py-2 text-left font-medium">Phone</th>
+                  <th className="px-3 py-2 text-left font-medium">Email</th>
+                  <th className="px-3 py-2 text-left font-medium">Location</th>
+                  <th className="px-3 py-2 text-right font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pagedBrowseCustomers.map((c) => (
+                  <tr key={c.id} className="border-t">
+                    <td className="px-3 py-2">
+                      <div className="font-medium">{(c as any).company_name || (c as any).contact_name || 'Unnamed'}</div>
+                      {(c as any).contact_name && (c as any).company_name && (
+                        <div className="text-xs text-muted-foreground">{(c as any).contact_name}</div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2">{(c as any).phone ?? '-'}</td>
+                    <td className="px-3 py-2">{(c as any).email ?? '-'}</td>
+                    <td className="px-3 py-2">
+                      <span className="text-xs text-muted-foreground">
+                        {[(c as any).city, (c as any).state].filter(Boolean).join(', ') || '-'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          const idStr = String(c.id);
+                          setFormData({ ...formData, customer_id: idStr });
+                          setIsBrowseCustomersOpen(false);
+                        }}
+                      >
+                        Select
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+                {pagedBrowseCustomers.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-6 text-center text-sm text-muted-foreground">
+                      No customers found.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex items-center justify-between mt-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={safeBrowseCustomersPage === 0}
+              onClick={() => setBrowseCustomersPage((page) => Math.max(0, page - 1))}
+            >
+              Previous
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={safeBrowseCustomersPage >= totalBrowseCustomerPages - 1}
+              onClick={() => setBrowseCustomersPage((page) => Math.min(totalBrowseCustomerPages - 1, page + 1))}
+            >
+              Next
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

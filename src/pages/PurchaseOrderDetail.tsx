@@ -66,6 +66,7 @@ export default function PurchaseOrderDetail() {
     updatePurchaseOrderLinks,
   } = repos.purchaseOrders;
   const { vendors } = repos.vendors;
+  const { categories } = repos.categories;
   const { parts, addPart } = repos.parts;
   const { salesOrders } = repos.salesOrders;
   const { workOrders } = repos.workOrders;

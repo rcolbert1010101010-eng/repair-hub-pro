@@ -93,7 +93,7 @@ export function SmartSearchSelect(props: SmartSearchSelectProps) {
   };
 
   return (
-    <div className={cn('flex flex-col gap-1', className)}>
+    <div className={cn('flex flex-col gap-1 w-full max-w-full', className)}>
       {label && <Label className="mb-1">{label}</Label>}
 
       <Popover open={open} onOpenChange={setOpen}>
@@ -105,12 +105,14 @@ export function SmartSearchSelect(props: SmartSearchSelectProps) {
             aria-expanded={open}
             disabled={disabled}
             className={cn(
-              'w-full justify-between font-normal',
+              'w-full max-w-full justify-between items-center gap-2 font-normal',
               !selectedItem && 'text-muted-foreground'
             )}
           >
-            {selectedItem ? selectedItem.label : placeholder}
-            <div className="flex items-center gap-1">
+            <span className="flex-1 min-w-0 text-left truncate">
+              {selectedItem ? selectedItem.label : placeholder}
+            </span>
+            <div className="flex items-center gap-1 flex-shrink-0">
               {selectedItem && !disabled && (
                 <X
                   className="h-3 w-3 text-muted-foreground"
